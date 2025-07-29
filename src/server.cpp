@@ -44,10 +44,7 @@ server::io_worker::~io_worker() noexcept {
         if (m_listening_fd != -1) {
             close(m_listening_fd);
         }
-    } catch (const std::exception& e) {
-        util::log::error("Exception in io_worker destructor: {}", e.what());
-        // Do not rethrow!
-    }
+    } catch (const std::exception& e) { }
 }
 
 void server::io_worker::run() {

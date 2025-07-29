@@ -25,8 +25,6 @@ public:
         try {
             stop();
         } catch (const std::exception& e) {
-            util::log::error("Exception in thread_pool destructor: {}", e.what());
-            // Do not rethrow!
         }
     }
 
