@@ -403,10 +403,9 @@ auto request::get_path() const noexcept -> std::string_view { return m_path; }
 auto request::get_file_parts() const noexcept -> const std::vector<multipart_item>& { return m_fileParts; }
 
 auto request::get_bearer_token() const noexcept -> std::optional<std::string_view> {
-    auto it = m_headers.find("Authorization");
-    if (it != m_headers.end() && it->second.starts_with("Bearer "sv)) {
+    if (auto it = m_headers.find("Authorization"); it != m_headers.end() && it->second.starts_with("Bearer "sv)) {
         return it->second.substr(7);
-    }
+    }    
     return std::nullopt;
 }
 
