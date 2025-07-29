@@ -100,9 +100,9 @@ private:
         void process_request(int fd);
         void dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
-        bool handle_internal_api(const http::request& req, http::response& res);
+        bool handle_internal_api(const http::request& req, http::response& res) const;
         
-        void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint);
+        void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint) const;
 
         int m_listening_fd{-1};
         uint16_t m_port;

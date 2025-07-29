@@ -88,7 +88,7 @@ void server::io_worker::run() {
     util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
-void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) {
+void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) const {
     try {
         if (endpoint->method != request_ref.get_method()) {
             res.set_body(http::status::bad_request, R"({"error":"Method Not Allowed"})");
@@ -326,7 +326,7 @@ void server::io_worker::process_request(int fd) {
     }
 }
 
-bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) {
+bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {
     if (req.get_path() == "/metrics") {
         res.set_body(http::status::ok, m_metrics->to_json());
         return true;
