@@ -6,22 +6,9 @@
 #include <optional>
 #include <unordered_set>
 #include <functional> // For std::equal_to
+#include "util.hpp"
 
 namespace cors {
-
-// A transparent hasher that can hash std::string and std::string_view interchangeably.
-struct string_hash {
-    using is_transparent = void;
-    [[nodiscard]] size_t operator()(const char* txt) const {
-        return std::hash<std::string_view>{}(txt);
-    }
-    [[nodiscard]] size_t operator()(std::string_view txt) const {
-        return std::hash<std::string_view>{}(txt);
-    }
-    [[nodiscard]] size_t operator()(const std::string& txt) const {
-        return std::hash<std::string>{}(txt);
-    }
-};
 
 /**
  * @brief Checks if a given request origin is present in the set of allowed origins.
@@ -32,7 +19,7 @@ struct string_hash {
  */
 [[nodiscard]] inline bool is_origin_allowed(
     const std::optional<std::string_view>& origin,
-    const std::unordered_set<std::string, string_hash, std::equal_to<>>& allowed_origins)
+    const std::unordered_set<std::string, util::string_hash, std::equal_to<>>& allowed_origins)
 {
     // If there is no Origin header, it's not a cross-origin request. Allow.
     if (!origin.has_value()) {

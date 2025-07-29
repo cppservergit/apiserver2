@@ -1,6 +1,7 @@
 #ifndef ENV_HPP
 #define ENV_HPP
 
+#include "util.hpp"
 #include "pkeyutil.hpp"
 #include <string>
 #include <stdexcept>
@@ -32,26 +33,11 @@ namespace env {
                         std::same_as<T, bool>;
 
     namespace detail {
-        // *** SONARCLOUD FIX ***
-        // A transparent hasher that allows lookups using std::string_view
-        // without creating a temporary std::string.
-        struct string_hash {
-            using is_transparent = void;
-            [[nodiscard]] size_t operator()(const char* txt) const {
-                return std::hash<std::string_view>{}(txt);
-            }
-            [[nodiscard]] size_t operator()(std::string_view txt) const {
-                return std::hash<std::string_view>{}(txt);
-            }
-            [[nodiscard]] size_t operator()(const std::string& txt) const {
-                return std::hash<std::string>{}(txt);
-            }
-        };
 
         // Replaced the global variable with a function that returns a reference
         // to a static thread_local cache, now using the transparent hasher.
-        inline std::unordered_map<std::string, std::string, string_hash, std::equal_to<>>& get_cache() noexcept {
-            static thread_local std::unordered_map<std::string, std::string, string_hash, std::equal_to<>> g_cache;
+        inline std::unordered_map<std::string, std::string, util::string_hash, std::equal_to<>>& get_cache() noexcept {
+            static thread_local std::unordered_map<std::string, std::string, util::string_hash, std::equal_to<>> g_cache;
             return g_cache;
         }
 

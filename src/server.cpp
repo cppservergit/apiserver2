@@ -24,7 +24,7 @@ server::io_worker::io_worker(uint16_t port,
                              std::shared_ptr<metrics> metrics_ptr, 
                              const api_router& router,
                              // *** BUG FIX *** Use the correct set type with the transparent hasher
-                             const std::unordered_set<std::string, cors::string_hash, std::equal_to<>>& allowed_origins,
+                             const std::unordered_set<std::string, util::string_hash, std::equal_to<>>& allowed_origins,
                              int worker_thread_count,
                              std::atomic<bool>& running_flag)
     : m_port(port),
