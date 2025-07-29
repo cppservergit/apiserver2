@@ -41,6 +41,7 @@ public:
     [[nodiscard]] T get_value(std::string_view col_name) const;
 
 private:
+    // Grant friendship to StmtHandle so it can construct row objects.
     friend class detail::StmtHandle;
     std::unordered_map<std::string, std::any> m_data;
 };
@@ -112,7 +113,9 @@ public:
     SQLHANDLE get() const { return m_handle; }
     SQLHANDLE* get_ptr() { return &m_handle; }
 
-protected:
+private:
+    // Changed from protected to private to improve encapsulation.
+    // Derived classes use the public get() and get_ptr() accessors.
     SQLHANDLE m_handle = SQL_NULL_HANDLE;
 };
 
@@ -130,11 +133,20 @@ class StmtHandle : public ODBCHandle<SQL_HANDLE_STMT> {
 public:
     explicit StmtHandle(const DbcHandle& dbc);
     [[nodiscard]] resultset fetch_all();
+private:
+    // Helper functions for fetch_all, made static members to access row's private data
+    // via the friend declaration in the row class.
+    static std::vector<std::string> get_column_names(SQLHSTMT stmt_handle, SQLSMALLINT num_cols);
+    static row fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, const std::vector<std::string>& col_names);
 };
 
 
 // --- Error Handling ---
 void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_type, std::string_view context);
+
+// --- Fetch Helpers ---
+// Marked inline to prevent "multiple definition" linker errors.
+[[nodiscard]] inline std::optional<std::string> fetch_json_result(StmtHandle& stmt);
 
 
 // --- Connection Class ---

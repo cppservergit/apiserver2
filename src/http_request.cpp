@@ -1,8 +1,8 @@
 #include "http_request.hpp"
 #include <utility>
 #include <format>
-#include <locale> // Required for std::locale::classic()
-#include <memory> // Required for std::to_address
+#include <locale> 
+#include <memory> 
 
 using namespace std::literals::string_view_literals;
 
@@ -12,8 +12,9 @@ namespace http {
 //         request_parser: Implementation
 // ===================================================================
 
+// REFACTOR: Explicit empty destructor to satisfy static analysis tools.
 request_parser::request_parser() = default;
-request_parser::~request_parser() = default;
+request_parser::~request_parser() {}
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
@@ -23,17 +24,25 @@ auto request_parser::parse_part_headers(std::string_view part_headers_sv) -> req
 
     for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
         std::string_view line(line_range.begin(), line_range.end());
-        if (line.empty()) continue;
+        if (line.empty()) {
+            continue;
+        }
         
         auto parse_param = [&](std::string_view param_name) -> std::optional<std::string_view> {
-            if (auto param_pos = line.find(param_name); param_pos != std::string_view::npos) {
-                auto value_start = line.find('"', param_pos) + 1;
-                auto value_end = line.find('"', value_start);
-                if (value_start != std::string_view::npos && value_end != std::string_view::npos) {
-                    return line.substr(value_start, value_end - value_start);
-                }
+            auto param_pos = line.find(param_name);
+            if (param_pos == std::string_view::npos) {
+                return std::nullopt;
             }
-            return std::nullopt;
+            auto value_start = line.find('"', param_pos);
+            if (value_start == std::string_view::npos) {
+                return std::nullopt;
+            }
+            value_start++; // Move past the quote
+            auto value_end = line.find('"', value_start);
+            if (value_end == std::string_view::npos) {
+                return std::nullopt;
+            }
+            return line.substr(value_start, value_end - value_start);
         };
 
         if (line.starts_with("Content-Disposition:"sv)) {
@@ -55,14 +64,18 @@ void request_parser::process_multipart_part(std::string_view part_sv) {
     if (part_sv.ends_with("\r\n"sv)) part_sv.remove_suffix(2);
     
     const auto headers_end_pos = part_sv.find("\r\n\r\n"sv);
-    if (headers_end_pos == std::string_view::npos) return;
+    if (headers_end_pos == std::string_view::npos) {
+        return;
+    }
 
     const auto part_headers_sv = part_sv.substr(0, headers_end_pos);
     const auto part_content_sv = part_sv.substr(headers_end_pos + 4);
     
     const multipart_part_headers headers = parse_part_headers(part_headers_sv);
     
-    if (!headers.field_name) return;
+    if (!headers.field_name) {
+        return;
+    }
 
     if (headers.filename) {
         m_fileParts.emplace_back(multipart_item{*headers.filename, part_content_sv, headers.content_type.value_or(""), *headers.field_name});
@@ -85,19 +98,21 @@ void request_parser::update_pos(ssize_t bytes_read) {
 auto request_parser::eof() -> bool {
     using enum http::method;
 
+    // REFACTOR: Use guard clauses to simplify logic.
     if (!find_and_store_header_end()) return false;
     if (!parse_and_store_method()) return false;
-    if (!parse_and_store_content_length()) return false;
-
+    
     if (m_identifiedMethod == get || m_identifiedMethod == options) {
         return true;
     }
+    
     if (m_identifiedMethod == post) {
-        if (!m_identifiedContentLength.has_value() || !m_identifiedHeaderSize.has_value()) {
-             return false;
+        if (!parse_and_store_content_length()) {
+            return false;
         }
         return m_buffer->size() >= (*m_identifiedHeaderSize + *m_identifiedContentLength);
     }
+
     return false;
 }
 
@@ -113,11 +128,11 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     }
 
     const auto request_sv = m_buffer->view();
-
     const auto first_line_end_pos = request_sv.find("\r\n"sv);
     if (first_line_end_pos == std::string_view::npos) {
         return std::unexpected(request_parse_error("Malformed request: request line not found."));
     }
+
     if (auto err = parse_request_line(request_sv.substr(0, first_line_end_pos))) {
         return std::unexpected(*err);
     }
@@ -130,6 +145,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     }
     m_headerSize = *m_identifiedHeaderSize;
 
+    // REFACTOR: Flattened logic for handling POST requests.
     if (m_parsedMethod == post) {
         if (!m_identifiedContentLength.has_value()) {
              return std::unexpected(request_parse_error("POST request without Content-Length header."));
@@ -149,9 +165,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
                 ));
             }
         }
-    }
-
-    if (m_parsedMethod == post) {
+        
         if (auto err = parse_body()) {
             return std::unexpected(*err);
         }
@@ -177,42 +191,37 @@ auto request_parser::find_and_store_header_end() -> bool {
 auto request_parser::parse_and_store_method() -> bool {
     using enum http::method;
 
-    if (m_identifiedMethod.has_value()) {
-        return true;
-    }
-    if (!m_identifiedHeaderSize.has_value()) {
-        return false;
-    }
+    if (m_identifiedMethod.has_value()) return true;
+    if (!m_identifiedHeaderSize.has_value()) return false;
+
     const auto current_buffer_view = m_buffer->view();
-    if (current_buffer_view.empty() || current_buffer_view.size() < *m_identifiedHeaderSize) {
-        return false;
-    }
+    if (current_buffer_view.empty() || current_buffer_view.size() < *m_identifiedHeaderSize) return false;
+
     const auto request_line_end = current_buffer_view.find("\r\n"sv);
-    if (request_line_end == std::string_view::npos || request_line_end == 0) {
+    if (request_line_end == std::string_view::npos || request_line_end == 0 || request_line_end >= (*m_identifiedHeaderSize - 4)) {
         return false;
     }
-    if (request_line_end >= (*m_identifiedHeaderSize - 4)) {
-         return false;
-    }
+
     const std::string_view request_line_sv = current_buffer_view.substr(0, request_line_end);
-    
-    if (const auto method_space_pos = request_line_sv.find(' '); method_space_pos != std::string_view::npos) {
-        const std::string_view method_sv = request_line_sv.substr(0, method_space_pos);
-        if (method_sv == "GET"sv)       m_identifiedMethod = get;
-        else if (method_sv == "POST"sv)    m_identifiedMethod = post;
-        else if (method_sv == "OPTIONS"sv) m_identifiedMethod = options;
-        else                            m_identifiedMethod = unknown;
-    } else {
+    const auto method_space_pos = request_line_sv.find(' ');
+    if (method_space_pos == std::string_view::npos) {
         m_identifiedMethod = unknown;
+        return false;
     }
+    
+    const std::string_view method_sv = request_line_sv.substr(0, method_space_pos);
+    if (method_sv == "GET"sv)       m_identifiedMethod = get;
+    else if (method_sv == "POST"sv)    m_identifiedMethod = post;
+    else if (method_sv == "OPTIONS"sv) m_identifiedMethod = options;
+    else                            m_identifiedMethod = unknown;
     
     return m_identifiedMethod != unknown;
 }
 
 auto request_parser::parse_and_store_content_length() -> bool {
-    if (m_identifiedMethod != method::post || m_identifiedContentLength.has_value() || !m_identifiedHeaderSize.has_value()) {
-        return true;
-    }
+    if (m_identifiedMethod != method::post) return true;
+    if (m_identifiedContentLength.has_value()) return true;
+    if (!m_identifiedHeaderSize.has_value()) return false;
 
     const auto current_buffer_view = m_buffer->view();
     const auto request_line_end = current_buffer_view.find("\r\n"sv);
@@ -243,9 +252,9 @@ auto request_parser::parse_and_store_content_length() -> bool {
             m_identifiedContentLength = temp_cl;
             return true;
         }
-        return false;
+        return false; // Malformed Content-Length value
     }
-    return false;
+    return false; // Content-Length header not found
 }
 
 auto request_parser::parse_request_line(std::string_view request_line) -> std::optional<request_parse_error> {
@@ -267,7 +276,9 @@ auto request_parser::parse_request_line(std::string_view request_line) -> std::o
 void request_parser::parse_uri(std::string_view uri) {
     auto query_pos = uri.find('?');
     m_path = uri.substr(0, query_pos);
-    if (query_pos == std::string_view::npos) return;
+    if (query_pos == std::string_view::npos) {
+        return;
+    }
 
     std::string_view query_string = uri.substr(query_pos + 1);
     for (const auto param_range : query_string | std::views::split('&')) {
@@ -280,44 +291,52 @@ void request_parser::parse_uri(std::string_view uri) {
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
-        if (auto pos = header_line.find(':'); pos != std::string_view::npos) {
-            auto key = header_line.substr(0, pos);
-            auto value = header_line.substr(pos + 1);
-            value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
-            m_headers.try_emplace(std::string(key), value);
+        auto pos = header_line.find(':');
+        if (pos == std::string_view::npos) {
+            continue;
         }
+        auto key = header_line.substr(0, pos);
+        auto value = header_line.substr(pos + 1);
+        value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
+        m_headers.try_emplace(std::string(key), value);
     }
     return std::nullopt;
 }
 
 auto request_parser::parse_body() -> std::optional<request_parse_error> {
     const auto body_view = m_buffer->view().substr(m_headerSize, m_contentLength);
-    
-    if (auto it = m_headers.find("content-type"); it != m_headers.end()) {
-        const auto& content_type = it->second;
-        if (content_type.starts_with("application/json"sv)) {
-            try {
-                m_jsonPayload = std::make_unique<json::json_parser>(body_view);
-                m_body = body_view;
-            } catch (const json::parsing_error& e) {
-                return request_parse_error(std::string("JSON parse error: ") + e.what());
-            }
-        } else if (content_type.starts_with("multipart/form-data"sv)) {
-            const std::string_view boundary_prefix = "boundary="sv;
-            if (auto boundary_pos = content_type.find(boundary_prefix); boundary_pos != std::string_view::npos) {
-                auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
-                if (boundary.starts_with('"')) boundary.remove_prefix(1);
-                if (boundary.ends_with('"')) boundary.remove_suffix(1);
-                return parse_multipart_form_data(boundary);
-            } else {
-                return request_parse_error("Malformed multipart/form-data: boundary not found.");
-            }
-        } else {
-            m_body = body_view;
-        }
-    } else {
+    auto it = m_headers.find("content-type");
+
+    // REFACTOR: Flattened logic using guard clauses.
+    if (it == m_headers.end()) {
         m_body = body_view;
+        return std::nullopt;
     }
+    
+    const auto& content_type = it->second;
+    if (content_type.starts_with("application/json"sv)) {
+        try {
+            m_jsonPayload = std::make_unique<json::json_parser>(body_view);
+            m_body = body_view;
+        } catch (const json::parsing_error& e) {
+            return request_parse_error(std::string("JSON parse error: ") + e.what());
+        }
+        return std::nullopt;
+    }
+    
+    if (content_type.starts_with("multipart/form-data"sv)) {
+        const std::string_view boundary_prefix = "boundary="sv;
+        auto boundary_pos = content_type.find(boundary_prefix);
+        if (boundary_pos == std::string_view::npos) {
+            return request_parse_error("Malformed multipart/form-data: boundary not found.");
+        }
+        auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
+        if (boundary.starts_with('"')) boundary.remove_prefix(1);
+        if (boundary.ends_with('"')) boundary.remove_suffix(1);
+        return parse_multipart_form_data(boundary);
+    }
+    
+    m_body = body_view;
     return std::nullopt;
 }
 
@@ -326,8 +345,6 @@ auto request_parser::parse_multipart_form_data(std::string_view boundary) -> std
     const auto body_view = m_buffer->view().substr(m_headerSize, m_contentLength);
     
     for (const auto part_range : body_view | std::views::split(full_boundary) | std::views::drop(1)) {
-        // *** SONARCLOUD FIX ***
-        // Explicitly cast the result of std::ranges::distance to size_t to avoid narrowing conversion.
         process_multipart_part({std::to_address(part_range.begin()), static_cast<size_t>(std::ranges::distance(part_range))});
     }
     return std::nullopt;
@@ -350,7 +367,8 @@ request::request(request_parser&& parser, std::string_view remote_ip)
       m_remote_ip(remote_ip)
 {}
 
-request::~request() = default;
+// REFACTOR: Explicit empty destructor to satisfy static analysis tools.
+request::~request() {}
 request::request(request&&) noexcept = default;
 request& request::operator=(request&&) noexcept = default;
 
@@ -371,7 +389,8 @@ auto request::get_remote_ip() const noexcept -> std::string_view {
 }
 
 auto request::get_header_value(std::string_view key) const noexcept -> std::optional<std::string_view> {
-    if (auto it = m_headers.find(key); it != m_headers.end()) {
+    auto it = m_headers.find(key);
+    if (it != m_headers.end()) {
         return it->second;
     }
     return std::nullopt;
@@ -384,10 +403,9 @@ auto request::get_path() const noexcept -> std::string_view { return m_path; }
 auto request::get_file_parts() const noexcept -> const std::vector<multipart_item>& { return m_fileParts; }
 
 auto request::get_bearer_token() const noexcept -> std::optional<std::string_view> {
-    if (auto it = m_headers.find("Authorization"); it != m_headers.end()) {
-        if (it->second.starts_with("Bearer "sv)) {
-            return it->second.substr(7);
-        }
+    auto it = m_headers.find("Authorization");
+    if (it != m_headers.end() && it->second.starts_with("Bearer "sv)) {
+        return it->second.substr(7);
     }
     return std::nullopt;
 }
@@ -399,6 +417,37 @@ auto request::get_file_upload(std::string_view field_name) const noexcept -> con
     return (it != m_fileParts.end()) ? &(*it) : nullptr;
 }
 
+// Helper for parsing date/time from a string_view
+template<typename T>
+concept is_chrono_type = std::is_same_v<T, std::chrono::system_clock::time_point> ||
+                         std::is_same_v<T, std::chrono::year_month_day>;
+
+template <is_chrono_type T>
+auto parse_chrono_type(std::string_view sv) -> std::optional<T> {
+    T value{};
+    std::istringstream iss{std::string(sv)};
+    iss.imbue(std::locale::classic());
+
+    if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
+        // Try ISO 8601 format first
+        std::chrono::from_stream(iss, "%Y-%m-%dT%H:%M:%S", value);
+        if (!iss.fail()) return value;
+        // Reset and try another common format
+        iss.clear();
+        iss.seekg(0);
+        std::chrono::from_stream(iss, "%Y-%m-%d %H:%M:%S", value);
+        if (!iss.fail()) return value;
+    } else if constexpr (std::is_same_v<T, std::chrono::year_month_day>) {
+        std::chrono::from_stream(iss, "%Y-%m-%d", value);
+        if (!iss.fail()) {
+            iss >> std::ws;
+            if (iss.eof()) return value;
+        }
+    }
+    return std::nullopt;
+}
+
+
 template <typename t>
 auto request::get_value(std::string_view param_name) const noexcept -> std::expected<std::optional<t>, param_error> {
     std::optional<std::string_view> value_sv_opt;
@@ -407,6 +456,7 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
     } else if (m_jsonPayload && m_jsonPayload->has_key(param_name)) {
         value_sv_opt = m_jsonPayload->get_string(param_name);
     }
+
     if (!value_sv_opt) {
         return std::optional<t>{};
     }
@@ -418,30 +468,13 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
         return std::optional{std::string(value_sv)};
     } else if constexpr (std::is_same_v<t, std::string_view>) {
         return std::optional{value_sv};
-    } else if constexpr (std::is_same_v<t, std::chrono::system_clock::time_point>) {
-        std::chrono::system_clock::time_point value{};
-        std::istringstream iss{std::string(value_sv)};
-        iss.imbue(std::locale::classic());
-        std::chrono::from_stream(iss, "%Y-%m-%dT%H:%M:%S", value);
-        if (!iss.fail()) return std::optional{value};
-        iss.clear();
-        iss.seekg(0);
-        std::chrono::from_stream(iss, "%Y-%m-%d %H:%M:%S", value);
-        if (!iss.fail()) return std::optional{value};
-        return make_error();
-    } else if constexpr (std::is_same_v<t, std::chrono::year_month_day>) {
-        std::chrono::year_month_day value{};
-        std::istringstream iss{std::string(value_sv)};
-        iss.imbue(std::locale::classic());
-        std::chrono::from_stream(iss, "%Y-%m-%d", value);
-        if (!iss.fail()) {
-            iss >> std::ws;
-            if (iss.eof()) {
-                return std::optional{value};
-            }
+    } else if constexpr (is_chrono_type<t>) {
+        if (auto parsed_value = parse_chrono_type<t>(value_sv)) {
+            return std::optional{parsed_value};
+        } else {
+            return make_error();
         }
-        return make_error();
-    } else {
+    } else { // For numeric types
         t value{};
         auto result = std::from_chars(value_sv.data(), value_sv.data() + value_sv.size(), value);
         if (result.ec == std::errc() && result.ptr == value_sv.data() + value_sv.size()) {

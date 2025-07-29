@@ -37,11 +37,16 @@ server::io_worker::io_worker(uint16_t port,
 }
 
 server::io_worker::~io_worker() noexcept {
-    if (m_thread_pool) {
-        m_thread_pool->stop();
-    }
-    if (m_listening_fd != -1) {
-        close(m_listening_fd);
+    try {
+        if (m_thread_pool) {
+            m_thread_pool->stop();
+        }
+        if (m_listening_fd != -1) {
+            close(m_listening_fd);
+        }
+    } catch (const std::exception& e) {
+        util::log::error("Exception in io_worker destructor: {}", e.what());
+        // Do not rethrow!
     }
 }
 
@@ -53,7 +58,7 @@ void server::io_worker::run() {
         return;
     }
 
-    util::log::info("I/O worker thread {} started and listening on port {}.", std::this_thread::get_id(), m_port);
+    util::log::debug("I/O worker thread {} started and listening on port {}.", std::this_thread::get_id(), m_port);
     m_thread_pool->start();
 
     std::vector<epoll_event> events(MAX_EVENTS);
@@ -82,7 +87,7 @@ void server::io_worker::run() {
         }
         process_response_queue();
     }
-    util::log::info("I/O worker thread {} finished.", std::this_thread::get_id());
+    util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
 void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) {
@@ -282,7 +287,7 @@ void server::io_worker::process_request(int fd) {
     
     connection_state& conn = it->second;
 
-    if (auto res = conn.parser.finalize(); !res) {
+    if (auto res = conn.parser.finalize(); !res.has_value()) {
         util::log::error("Failed to parse request on fd {}: {}", fd, res.error().what());
         http::response err_res;
         err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");

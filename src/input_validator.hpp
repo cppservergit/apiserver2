@@ -53,7 +53,7 @@ template<typename T>
 class rule {
 public:
     // Constructor for simple rules (e.g., just checking for presence).
-    rule(std::string_view name_sv, requirement r)
+    explicit rule(std::string_view name_sv, requirement r)
         : name(name_sv),
           req(r),
           predicate([](const T&){ return true; }), // Default "always pass" predicate
@@ -61,7 +61,7 @@ public:
     {}
 
     // Constructor for rules with a custom validation predicate.
-    rule(std::string_view name_sv, requirement r, std::function<bool(const T&)> p, std::string_view msg)
+    explicit rule(std::string_view name_sv, requirement r, std::function<bool(const T&)> p, std::string_view msg)
         : name(name_sv),
           req(r),
           predicate(std::move(p)),

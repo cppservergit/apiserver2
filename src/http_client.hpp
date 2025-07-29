@@ -92,7 +92,7 @@ public:
     /**
      * @brief Destructor.
      */
-    ~http_client() noexcept;;
+    ~http_client();
 
     http_client(const http_client&) = delete;
     http_client& operator=(const http_client&) = delete;
@@ -134,3 +134,5 @@ private:
 };
 
 #endif // HTTP_CLIENT_HPP
+
+}

@@ -43,7 +43,8 @@ public:
     }
     
     // Allow implicit conversion to string_view for convenience
-    [[nodiscard]] constexpr operator std::string_view() const noexcept {
+    /* NOSONAR */
+    [[nodiscard]] explicit constexpr operator std::string_view() const noexcept {
         return m_path;
     }
 

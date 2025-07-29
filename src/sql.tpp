@@ -78,10 +78,53 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
     }, params_tuple);
 }
 
+/**
+ * @brief Fetches a single-column result from all rows, handling chunked data.
+ * @param stmt The statement handle to fetch from.
+ * @return An optional containing the complete concatenated string result, or nullopt if no data.
+ */
+[[nodiscard]] inline std::optional<std::string> fetch_json_result(StmtHandle& stmt) {
+    std::string result_string;
+    constexpr size_t buffer_size = 4096;
+    std::vector<char> buffer(buffer_size);
+    SQLLEN indicator;
+    SQLRETURN ret;
+    bool has_data = false;
+
+    // Loop through all rows returned by the query
+    while ((ret = SQLFetch(stmt.get())) != SQL_NO_DATA) {
+        check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLFetch");
+        has_data = true;
+
+        // Inner loop to get all data for the first column of the current row,
+        // which may be sent in chunks.
+        while (true) {
+            ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+            if (ret == SQL_NO_DATA) {
+                break; // Finished fetching all chunks for this column
+            }
+            check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLGetData");
+            
+            if (indicator > 0 && indicator != SQL_NULL_DATA) {
+                result_string.append(buffer.data(), static_cast<size_t>(indicator));
+            }
+            
+            // If SQLGetData returns SQL_SUCCESS_WITH_INFO, it means the buffer was too small
+            // and there is more data to fetch. The loop will continue. Otherwise, we break.
+            if (ret != SQL_SUCCESS_WITH_INFO) {
+                break;
+            }
+        }
+    }
+
+    return has_data ? std::optional{result_string} : std::nullopt;
+}
+
+
 } // namespace detail
 
 
-// --- Public `get` Function Implementation ---
+// --- Public `get` Function Implementation (Restored Behavior) ---
 
 template<typename... Args>
 [[nodiscard]] std::optional<std::string> get(std::string_view db_key, std::string_view sql_query, Args&&... args) {
@@ -100,28 +143,11 @@ template<typename... Args>
         SQLRETURN ret = SQLExecute(stmt.get());
         detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
 
-        std::string json_result;
-        constexpr size_t buffer_size = 4096;
-        std::vector<char> buffer(buffer_size);
-        SQLLEN indicator;
-        bool has_data = false;
-
-        while ((ret = SQLFetch(stmt.get())) != SQL_NO_DATA) {
-            detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLFetch");
-            has_data = true;
-            while (true) {
-                ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-                if (ret == SQL_NO_DATA) break;
-                detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLGetData");
-                if (indicator > 0 && indicator != SQL_NULL_DATA) {
-                    json_result.append(buffer.data(), static_cast<size_t>(indicator));
-                }
-                if (ret != SQL_SUCCESS_WITH_INFO) break;
-            }
-        }
+        // Use the refactored helper function to fetch the result
+        auto result = detail::fetch_json_result(stmt);
         
         SQLFreeStmt(stmt.get(), SQL_CLOSE);
-        return has_data ? std::optional{json_result} : std::nullopt;
+        return result;
 
     } catch (const sql::error& e) {
         throw;

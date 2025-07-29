@@ -19,7 +19,9 @@ namespace util::log {
 // Each thread will have its own copy of this variable.
 // It's a string_view for efficiency, pointing to a string whose lifetime is
 // managed by the server's dispatch logic.
-inline thread_local std::string_view g_request_id;
+namespace {
+    inline thread_local std::string_view g_request_id;
+}
 
 /**
  * @class request_id_scope

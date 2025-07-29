@@ -21,8 +21,13 @@ public:
         }
     }
 
-    ~thread_pool() {
-        stop();
+    ~thread_pool() noexcept {
+        try {
+            stop();
+        } catch (const std::exception& e) {
+            util::log::error("Exception in thread_pool destructor: {}", e.what());
+            // Do not rethrow!
+        }
     }
 
     void start() {
@@ -41,7 +46,7 @@ public:
             queue->stop();
         }
         m_threads.clear();
-        util::log::info("Thread pool stopped.");
+        util::log::debug("Thread pool stopped.");
     }
 
     // The I/O thread calls this to dispatch a task in a round-robin fashion.

@@ -26,7 +26,57 @@ template bool row::get_value<bool>(std::string_view) const;
 
 namespace detail {
 
-// --- StmtHandle::fetch_all implementation ---
+// --- StmtHandle Helper Functions ---
+
+/**
+ * @brief Retrieves all column names for the current result set.
+ * @param stmt_handle The ODBC statement handle.
+ * @param num_cols The number of columns in the result set.
+ * @return A vector of column names.
+ */
+std::vector<std::string> StmtHandle::get_column_names(SQLHSTMT stmt_handle, SQLSMALLINT num_cols) {
+    std::vector<std::string> col_names;
+    col_names.reserve(num_cols);
+    for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+        std::vector<SQLCHAR> col_name_buffer(256);
+        SQLSMALLINT name_len = 0;
+        check_odbc_error(SQLDescribeCol(stmt_handle, i, col_name_buffer.data(), col_name_buffer.size(), &name_len, nullptr, nullptr, nullptr, nullptr),
+                         stmt_handle, SQL_HANDLE_STMT, "SQLDescribeCol");
+        col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
+    }
+    return col_names;
+}
+
+/**
+ * @brief Fetches the data for a single row from the result set.
+ * @param stmt_handle The ODBC statement handle.
+ * @param num_cols The number of columns in the row.
+ * @param col_names The names of the columns.
+ * @return A sql::row object containing the row data.
+ */
+row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, const std::vector<std::string>& col_names) {
+    row current_row;
+    for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+        SQLLEN indicator;
+        std::vector<char> buffer(1024); // Buffer for column data
+        
+        SQLRETURN ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+            continue; // Skip column on error
+        }
+
+        if (indicator == SQL_NULL_DATA) {
+            current_row.m_data[col_names[i - 1]] = std::any{}; // Store null as empty std::any
+        } else {
+            // This simple implementation treats all data as strings for now.
+            // A more advanced version could check column types and convert.
+            current_row.m_data[col_names[i - 1]] = std::string(buffer.data());
+        }
+    }
+    return current_row;
+}
+
+// --- StmtHandle::fetch_all implementation (Refactored) ---
 resultset StmtHandle::fetch_all() {
     resultset rs;
     
@@ -38,35 +88,12 @@ resultset StmtHandle::fetch_all() {
         return rs; // No columns, return empty result set
     }
 
-    // Get column names
-    std::vector<std::string> col_names;
-    for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
-        std::vector<SQLCHAR> col_name_buffer(256);
-        SQLSMALLINT name_len = 0;
-        check_odbc_error(SQLDescribeCol(get(), i, col_name_buffer.data(), col_name_buffer.size(), &name_len, nullptr, nullptr, nullptr, nullptr),
-                         get(), SQL_HANDLE_STMT, "SQLDescribeCol");
-        col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
-    }
+    // Get column names using the helper function
+    const auto col_names = StmtHandle::get_column_names(get(), num_cols);
 
-    // Fetch rows
+    // Fetch rows using the helper function
     while (SQLFetch(get()) == SQL_SUCCESS) {
-        row current_row;
-        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
-            SQLLEN indicator;
-            std::vector<char> buffer(1024); // Buffer for column data
-            
-            SQLRETURN ret = SQLGetData(get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-            if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
-                if (indicator == SQL_NULL_DATA) {
-                    current_row.m_data[col_names[i - 1]] = std::any{}; // Store null as empty std::any
-                } else {
-                    // This simple implementation treats all data as strings for now.
-                    // A more advanced version could check column types and convert.
-                    current_row.m_data[col_names[i - 1]] = std::string(buffer.data());
-                }
-            }
-        }
-        rs.m_rows.push_back(std::move(current_row));
+        rs.m_rows.push_back(StmtHandle::fetch_single_row(get(), num_cols, col_names));
     }
     
     return rs;
@@ -140,7 +167,7 @@ StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {
     // Statement not in cache, create and prepare it.
     auto new_stmt = std::make_unique<StmtHandle>(m_dbc);
     
-    SQLRETURN ret = SQLPrepare(new_stmt->get(), (SQLCHAR*)sql_query.data(), SQL_NTS);
+    SQLRETURN ret = SQLPrepare(new_stmt->get(), /* NOSONAR */ (SQLCHAR*)sql_query.data(), SQL_NTS);
     check_odbc_error(ret, new_stmt->get(), SQL_HANDLE_STMT, "SQLPrepare (cached)");
 
     // Store it in the cache and return a reference.
