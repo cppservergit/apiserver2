@@ -156,8 +156,8 @@ void http_client::impl::configure_post_body(/* NOSONAR */ CURL* curl, const std:
         throw curl_exception("Failed to create CURL easy handle.");
     }
 
-    auto curl_deleter = [](CURL* c) { curl_easy_cleanup(c); };
-    std::unique_ptr<CURL, decltype(curl_deleter)> curl_ptr(curl, curl_deleter);
+    auto curl_deleter = [](/* NOSONAR */ CURL* c) { curl_easy_cleanup(c); };
+    std::unique_ptr</* NOSONAR */ CURL, decltype(curl_deleter)> curl_ptr(curl, curl_deleter);
 
     auto slist_deleter = [](curl_slist* sl) { if(sl) curl_slist_free_all(sl); };
     std::unique_ptr<curl_slist, decltype(slist_deleter)> header_list_ptr(build_headers(headers), slist_deleter);
