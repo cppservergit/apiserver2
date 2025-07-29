@@ -24,14 +24,15 @@ enum class status {
 };
 
 [[nodiscard]] constexpr std::string_view to_reason_phrase(status s) {
+    using enum status;
     switch (s) {
-        case status::ok: return "OK";
-        case status::no_content: return "No Content";
-        case status::bad_request: return "Bad Request";
-        case status::unauthorized: return "Unauthorized";
-        case status::forbidden: return "Forbidden";
-        case status::not_found: return "Not Found";
-        case status::internal_server_error: return "Internal Server Error";
+        case ok: return "OK";
+        case no_content: return "No Content";
+        case bad_request: return "Bad Request";
+        case unauthorized: return "Unauthorized";
+        case forbidden: return "Forbidden";
+        case not_found: return "Not Found";
+        case internal_server_error: return "Internal Server Error";
     }
     return "Unknown Status";
 }

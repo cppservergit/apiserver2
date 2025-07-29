@@ -119,7 +119,6 @@ private:
 class request_parser {
 public:
     friend class request;
-
     request_parser();
     ~request_parser();
     request_parser(request_parser&&) noexcept;

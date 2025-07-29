@@ -11,12 +11,11 @@ namespace http {
 // ===================================================================
 //         request_parser: Implementation
 // ===================================================================
-
-// REFACTOR: Explicit empty destructor to satisfy static analysis tools.
-request_parser::request_parser() = default;
-request_parser::~request_parser() {}
+request_parser::request_parser() : m_buffer{std::make_unique<socket_buffer>()} {}
+request_parser::~request_parser() = default;
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
+
 
 // Helper function to parse headers from a multipart form part.
 auto request_parser::parse_part_headers(std::string_view part_headers_sv) -> request_parser::multipart_part_headers {
@@ -78,7 +77,7 @@ void request_parser::process_multipart_part(std::string_view part_sv) {
     }
 
     if (headers.filename) {
-        m_fileParts.emplace_back(multipart_item{*headers.filename, part_content_sv, headers.content_type.value_or(""), *headers.field_name});
+        m_fileParts.emplace_back(*headers.filename, part_content_sv, headers.content_type.value_or(""), *headers.field_name);
     } else {
         m_params.try_emplace(*headers.field_name, part_content_sv);
     }
@@ -209,12 +208,10 @@ auto request_parser::parse_and_store_method() -> bool {
         return false;
     }
     
-    const std::string_view method_sv = request_line_sv.substr(0, method_space_pos);
-    if (method_sv == "GET"sv)       m_identifiedMethod = get;
+    if (const std::string_view method_sv = request_line_sv.substr(0, method_space_pos); method_sv == "GET"sv) m_identifiedMethod = get;
     else if (method_sv == "POST"sv)    m_identifiedMethod = post;
     else if (method_sv == "OPTIONS"sv) m_identifiedMethod = options;
-    else                            m_identifiedMethod = unknown;
-    
+    else m_identifiedMethod = unknown;
     return m_identifiedMethod != unknown;
 }
 
@@ -367,8 +364,7 @@ request::request(request_parser&& parser, std::string_view remote_ip)
       m_remote_ip(remote_ip)
 {}
 
-// REFACTOR: Explicit empty destructor to satisfy static analysis tools.
-request::~request() {}
+request::~request() noexcept = default;
 request::request(request&&) noexcept = default;
 request& request::operator=(request&&) noexcept = default;
 
@@ -389,8 +385,7 @@ auto request::get_remote_ip() const noexcept -> std::string_view {
 }
 
 auto request::get_header_value(std::string_view key) const noexcept -> std::optional<std::string_view> {
-    auto it = m_headers.find(key);
-    if (it != m_headers.end()) {
+    if (auto it = m_headers.find(key); it != m_headers.end()) {
         return it->second;
     }
     return std::nullopt;
@@ -413,7 +408,7 @@ auto request::get_file_upload(std::string_view field_name) const noexcept -> con
     auto it = std::ranges::find_if(m_fileParts, [&](const auto& item){
         return item.field_name == field_name;
     });
-    return (it != m_fileParts.end()) ? &(*it) : nullptr;
+    return (it != m_fileParts.end()) ? std::to_address(it) : nullptr;
 }
 
 // Helper for parsing date/time from a string_view

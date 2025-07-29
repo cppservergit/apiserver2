@@ -44,7 +44,7 @@ $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(2))
 endef
 
 # --- Libraries to Link ---
-LIBS = -lcurl -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid -ltbb # Added -ltbb
+LIBS = -lcurl -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid
 
 # --- User-Facing Commands ---
 .PHONY: all release debug server run run_server clean help \
