@@ -86,7 +86,7 @@ inline void response::set_body(status s, std::string_view body, std::string_view
     std::format_to(
         std::back_inserter(m_buffer),
         format_template,
-        static_cast<int>(s),
+        std::to_underlying(s),
         to_reason_phrase(s),
         std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()),
         cors_header,

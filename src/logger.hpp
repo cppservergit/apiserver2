@@ -14,40 +14,6 @@
 
 namespace util::log {
 
-// --- Thread-Local Request ID for Traceability ---
-
-// Each thread will have its own copy of this variable.
-// It's a string_view for efficiency, pointing to a string whose lifetime is
-// managed by the server's dispatch logic.
-namespace {
-    inline thread_local std::string_view g_request_id;
-}
-
-/**
- * @class request_id_scope
- * @brief A RAII helper to set and clear the thread-local request ID.
- *
- * Create an instance of this on the stack at the beginning of a request's
- * lifecycle. When it goes out of scope, the request ID will be cleared.
- */
-class request_id_scope {
-public:
-    explicit request_id_scope(std::string_view id) noexcept {
-        g_request_id = id;
-    }
-    // *** SONARCLOUD FIX ***
-    // Destructors should never throw. Added the noexcept specifier.
-    ~request_id_scope() noexcept {
-        g_request_id = {}; // Clear the ID
-    }
-    // Non-copyable and non-movable
-    request_id_scope(const request_id_scope&) = delete;
-    request_id_scope& operator=(const request_id_scope&) = delete;
-    request_id_scope(request_id_scope&&) = delete;
-    request_id_scope& operator=(request_id_scope&&) = delete;
-};
-
-
 // --- Compile-time configuration for debug logging ---
 #ifdef ENABLE_DEBUG_LOGS
 constexpr bool debug_logging_enabled = true;
@@ -66,29 +32,64 @@ enum class Level {
 };
 
 namespace detail {
+    /* NOSONAR */ inline thread_local std::string_view g_request_id;
     inline void vprint(
         const Level level,
         const std::string_view fmt,
         std::format_args args) 
     {
-        // The log prefix now includes the request ID if it has been set.
+        std::string_view level_str;
+        using enum Level;
+        switch (level) {
+            case Debug:   level_str = "DEBUG";   break;
+            case Info:    level_str = "INFO";    break;
+            case Warning: level_str = "WARN";    break;
+            case Error:   level_str = "ERROR";   break;
+            case Critical:level_str = "CRITICAL";break;
+            default:      level_str = "UNKNOWN"; break;
+        }
         const auto log_prefix = std::format(
             "[{:^8}] [Thread: {}] [{}] ",
-            level == Level::Debug ? "DEBUG" : (level == Level::Info ? "INFO" : (level == Level::Warning ? "WARN" : (level == Level::Error ? "ERROR" : "CRITICAL"))),
+            level_str,
             std::this_thread::get_id(),
             g_request_id.empty() ? "--------" : g_request_id
         );
-        std::osyncstream synced_out((level == Level::Error || level == Level::Critical) ? std::cerr : std::cout);
+        std::osyncstream synced_out((level == Error || level == Critical) ? std::cerr : std::cout);
         synced_out << log_prefix;
         synced_out << std::vformat(fmt, args);
         synced_out << '\n';
         #ifdef USE_STACKTRACE
-        if (level == Level::Error || level == Level::Critical) {
+        if (level == Error || level == Critical) {
             synced_out << "--- Stack Trace ---\n" << std::stacktrace::current() << "-------------------\n";
         }
         #endif
     }
 } // namespace detail
+
+/**
+ * @class request_id_scope
+ * @brief A RAII helper to set and clear the thread-local request ID.
+ *
+ * Create an instance of this on the stack at the beginning of a request's
+ * lifecycle. When it goes out of scope, the request ID will be cleared.
+ */
+class request_id_scope {
+public:
+    explicit request_id_scope(std::string_view id) noexcept {
+        detail::g_request_id = id;
+    }
+    // *** SONARCLOUD FIX ***
+    // Destructors should never throw. Added the noexcept specifier.
+    ~request_id_scope() noexcept {
+        detail::g_request_id = {}; // Clear the ID
+    }
+    // Non-copyable and non-movable
+    request_id_scope(const request_id_scope&) = delete;
+    request_id_scope& operator=(const request_id_scope&) = delete;
+    request_id_scope(request_id_scope&&) = delete;
+    request_id_scope& operator=(request_id_scope&&) = delete;
+};
+
 
 // --- Public-facing convenience functions ---
 
