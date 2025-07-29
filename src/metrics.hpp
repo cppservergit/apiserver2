@@ -38,7 +38,7 @@ public:
     }
 
     void register_thread_pool(const thread_pool* pool) {
-        std::lock_guard<std::mutex> lock(m_pools_mutex);
+        std::scoped_lock lock(m_pools_mutex);
         m_thread_pools.push_back(pool);
     }
 
@@ -54,7 +54,7 @@ public:
 
         size_t pending_tasks = 0;
         {
-            std::lock_guard<std::mutex> lock(m_pools_mutex);
+            std::scoped_lock lock(m_pools_mutex);
             for (const auto* pool : m_thread_pools) {
                 if (pool) {
                     pending_tasks += pool->get_total_pending_tasks();
@@ -62,20 +62,21 @@ public:
             }
         }
 
+        constexpr auto json_tpl = R"({{
+            "pod_name": "{}",
+            "start_time": "{}",
+            "total_requests": {},
+            "average_processing_time_seconds": {:.6f},
+            "current_connections": {},
+            "current_active_threads": {},
+            "pending_tasks": {},
+            "thread_pool_size": {},
+            "total_ram_kb": {},
+            "memory_usage_kb": {},
+            "memory_usage_percentage": {:.2f}
+            }})";
         return std::format(
-            "{{"
-            "\"pod\":\"{}\","
-            "\"startDate\":\"{}\","
-            "\"totalRequests\":{},"
-            "\"avgTimePerRequest\":{:.6f},"
-            "\"connections\":{},"
-            "\"activeThreads\":{},"
-            "\"pendingTasks\":{},"
-            "\"poolSize\":{},"
-            "\"totalRam\":{},"
-            "\"memoryUsage\":{},"
-            "\"memoryUsagePercentage\":{:.4f}"
-            "}}",
+            json_tpl,
             m_pod_name, m_start_date_str, total_reqs, avg_time_s, current_connections,
             current_active_threads, pending_tasks, m_pool_size,
             m_total_ram_kb, memory_usage_kb, memory_usage_percentage
