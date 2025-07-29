@@ -120,7 +120,7 @@ class request_parser {
 public:
     friend class request;
     request_parser();
-    ~request_parser();
+    ~request_parser() noexcept;
     request_parser(request_parser&&) noexcept;
     request_parser& operator=(request_parser&&) noexcept;
     request_parser(const request_parser&) = delete;

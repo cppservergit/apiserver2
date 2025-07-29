@@ -94,7 +94,7 @@ public:
     /**
      * @brief Destructor.
      */
-    ~http_client();
+    ~http_client() noexcept;
 
     http_client(const http_client&) = delete;
     http_client& operator=(const http_client&) = delete;

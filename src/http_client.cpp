@@ -193,7 +193,7 @@ void http_client::impl::configure_post_body(/* NOSONAR */ CURL* curl, const std:
 }
 
 http_client::http_client(http_client_config config) : pimpl_(std::make_unique<impl>(std::move(config))) {}
-http_client::~http_client() {};
+http_client::~http_client() noexcept {};
 http_client::http_client(http_client&&) noexcept = default;
 http_client& http_client::operator=(http_client&&) noexcept = default;
 

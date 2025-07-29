@@ -82,7 +82,7 @@ template<typename... Rules>
 class validator {
 public:
     /// @brief Constructs a validator with a set of rules.
-    constexpr validator(Rules... rules) : m_rulesTuple{std::move(rules)...} {}
+    explicit constexpr validator(Rules... rules) : m_rulesTuple{std::move(rules)...} {}
 
     /// @brief Validates an HTTP request against all rules.
     /// @param req The http::request object to validate.
