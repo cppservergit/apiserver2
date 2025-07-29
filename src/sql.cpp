@@ -3,7 +3,6 @@
 
 namespace sql {
 
-// --- row::get_value implementation ---
 template<typename T>
 T row::get_value(std::string_view col_name) const {
     try {
@@ -76,8 +75,7 @@ row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, con
     return current_row;
 }
 
-// --- StmtHandle::fetch_all implementation (Refactored) ---
-resultset StmtHandle::fetch_all() {
+resultset StmtHandle::fetch_all() const {
     resultset rs;
     
     // Get number of columns
@@ -107,15 +105,18 @@ void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_ty
         return;
     }
 
-    SQLCHAR sql_state[6];
+    std::vector<SQLCHAR> sql_state(6);
     SQLINTEGER native_error;
-    SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH];
-    SQLSMALLINT text_length;
+    std::vector<SQLCHAR> message_text(SQL_MAX_MESSAGE_LENGTH);
+    SQLSMALLINT text_length = 0;
     std::string error_msg = std::format("ODBC Error on '{}': ", context);
 
     SQLSMALLINT i = 1;
-    while (SQLGetDiagRec(handle_type, handle, i, sql_state, &native_error, message_text, sizeof(message_text), &text_length) == SQL_SUCCESS) {
-        error_msg += std::format("[SQLState: {}] [Native Error: {}] {}", (char*)sql_state, native_error, (char*)message_text);
+    while (SQLGetDiagRec(handle_type, handle, i, sql_state.data(), &native_error, message_text.data(), message_text.size(), &text_length) == SQL_SUCCESS) {
+        error_msg += std::format("[SQLState: {}] [Native Error: {}] {}",
+                                 reinterpret_cast<char*>(sql_state.data()),
+                                 native_error,
+                                 reinterpret_cast<char*>(message_text.data()));
         i++;
     }
 

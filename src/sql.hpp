@@ -132,7 +132,7 @@ public:
 class StmtHandle : public ODBCHandle<SQL_HANDLE_STMT> {
 public:
     explicit StmtHandle(const DbcHandle& dbc);
-    [[nodiscard]] resultset fetch_all();
+    [[nodiscard]] resultset fetch_all() const;
 private:
     // Helper functions for fetch_all, made static members to access row's private data
     // via the friend declaration in the row class.

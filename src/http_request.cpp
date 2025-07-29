@@ -12,7 +12,10 @@ namespace http {
 //         request_parser: Implementation
 // ===================================================================
 request_parser::request_parser() = default;
-request_parser::~request_parser() noexcept {};
+
+// FIX: Use = default for the destructor
+request_parser::~request_parser() noexcept = default;
+
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 

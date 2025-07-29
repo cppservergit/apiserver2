@@ -4,6 +4,7 @@
 #include "sql.hpp"
 #include "jwt.hpp"
 #include "cors.hpp"
+#include "http_client.hpp"
 #include <system_error>
 #include <format>
 #include <cstring>
@@ -44,7 +45,7 @@ server::io_worker::~io_worker() noexcept {
         if (m_listening_fd != -1) {
             close(m_listening_fd);
         }
-    } catch (const std::exception& e) { }
+    } catch (const std::exception& e) { /* NOSONAR */ }
 }
 
 void server::io_worker::run() {
@@ -106,7 +107,19 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
 
     } catch (const validation::validation_error& e) {
         res.set_body(http::status::bad_request, std::format(R"({{"error":"{}"}})", e.what()));
-    } catch (const std::exception& e) {
+    } catch (const sql::error& e) {
+        util::log::error("SQL error in handler for path '{}': {}", request_ref.get_path(), e.what());
+        res.set_body(http::status::internal_server_error, R"({"error":"Database operation failed"})");
+    } catch (const json::parsing_error& e) {
+        util::log::error("JSON parsing error in handler for path '{}': {}", request_ref.get_path(), e.what());
+        res.set_body(http::status::bad_request, R"({"error":"Invalid JSON format in request"})");
+    } catch (const json::output_error& e) {
+        util::log::error("JSON output error in handler for path '{}': {}", request_ref.get_path(), e.what());
+        res.set_body(http::status::internal_server_error, R"({"error":"Failed to generate JSON response"})");
+    } catch (const curl_exception& e) {
+        util::log::error("HTTP client error in handler for path '{}': {}", request_ref.get_path(), e.what());
+        res.set_body(http::status::internal_server_error, R"({"error":"Internal communication failed"})");
+    } catch (/* NOSONAR */ const std::exception& e) {
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(http::status::internal_server_error, R"({"error":"Internal Server Error"})");
     }
@@ -116,14 +129,11 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
     auto req_ptr = std::make_shared<http::request>(std::move(req));
 
     m_thread_pool->push_task([this, fd, req_ptr, endpoint]() {
-        std::string request_id_str;
-        if (auto id_sv = req_ptr->get_header_value("x-request-id")) {
-            request_id_str = *id_sv;
-        } else {
-            request_id_str = util::get_uuid();
-        }
+        const std::string request_id_str(req_ptr->get_header_value("x-request-id").value_or(""));
         const util::log::request_id_scope rid_scope(request_id_str);
 
+        util::log::debug("Dispatching request to worker thread {} for fd {}", req_ptr->get_path(), fd);
+        
         const auto start_time = std::chrono::high_resolution_clock::now();
         m_metrics->increment_active_threads();
         
@@ -164,10 +174,8 @@ void server::io_worker::add_to_epoll(int fd, uint32_t events) {
     epoll_event event{};
     event.events = events | EPOLLET | EPOLLRDHUP;
     event.data.fd = fd;
-    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
-        if (errno != EEXIST) {
-            throw server_error(std::format("Failed to add fd {} to epoll", fd));
-        }
+    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1 && errno != EEXIST) {
+        throw server_error(std::format("Failed to add fd {} to epoll", fd));
     }
 }
 
