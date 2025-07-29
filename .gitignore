@@ -1,0 +1,4 @@
+docs/
+obj/
+server_*
+.vscode/

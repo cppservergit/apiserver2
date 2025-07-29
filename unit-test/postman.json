@@ -1,0 +1,496 @@
+{
+	"info": {
+		"_postman_id": "a8b2c1d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+		"name": "C++ REST API Tests",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Body contains id_token\", function () {",
+									"        const jsonData = pm.response.json();",
+									"        pm.expect(jsonData.id_token).to.not.be.empty;",
+									"        pm.collectionVariables.set(\"jwt_token\", jsonData.id_token);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"mcordova\",\n    \"password\": \"basica\"\n}"
+						},
+						"url": {
+							"raw": "{{serverUrl}}/login",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Authenticates the user and saves the JWT token to a collection variable."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "API Endpoints",
+			"item": [
+				{
+					"name": "Get Shippers",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/shippers",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"shippers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Products",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/products",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"products"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/metrics",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Ping",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/ping",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"ping"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer ANATR",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=anatr",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "anatr"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer QUICK",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=quick",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "quick"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer BERGS",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=bergs",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "bergs"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer ERNSH",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=ernsh",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "ernsh"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer FI SA",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=fi sa",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "fi sa"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer DRACD",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=dracd",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "dracd"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer SAVEA",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{serverUrl}}/customer?id=savea",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"customer"
+							],
+							"query": [
+								{
+									"key": "id",
+									"value": "savea"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Sales 1994-1996",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"start_date\": \"1994-01-01\",\n    \"end_date\": \"1996-12-31\"\n}"
+						},
+						"url": {
+							"raw": "{{serverUrl}}/sales",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"sales"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Sales 1994",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"start_date\": \"1994-01-01\",\n    \"end_date\": \"1994-12-31\"\n}"
+						},
+						"url": {
+							"raw": "{{serverUrl}}/sales",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"sales"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Sales 1995",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"start_date\": \"1995-01-01\",\n    \"end_date\": \"1995-12-31\"\n}"
+						},
+						"url": {
+							"raw": "{{serverUrl}}/sales",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"sales"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Sales 1996",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"start_date\": \"1996-01-01\",\n    \"end_date\": \"1996-12-31\"\n}"
+						},
+						"url": {
+							"raw": "{{serverUrl}}/sales",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"sales"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "title",
+									"value": "Synthetic Upload Test",
+									"type": "text"
+								},
+								{
+									"key": "file1",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{serverUrl}}/upload",
+							"host": [
+								"{{serverUrl}}"
+							],
+							"path": [
+								"upload"
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"auth": {
+				"type": "bearer",
+				"bearer": [
+					{
+						"key": "token",
+						"value": "{{jwt_token}}",
+						"type": "string"
+					}
+				]
+			},
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						]
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "serverUrl",
+			"value": "http://cpp14.mshome.net:8080",
+			"type": "string"
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

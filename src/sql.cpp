@@ -1,0 +1,172 @@
+#include "sql.hpp"
+#include <vector>
+
+namespace sql {
+
+// --- row::get_value implementation ---
+template<typename T>
+T row::get_value(std::string_view col_name) const {
+    try {
+        const auto& value_any = m_data.at(std::string(col_name));
+        return std::any_cast<T>(value_any);
+    } catch (const std::out_of_range&) {
+        throw sql::error(std::format("Column '{}' not found in result set.", col_name));
+    } catch (const std::bad_any_cast&) {
+        throw sql::error(std::format("Invalid type requested for column '{}'.", col_name));
+    }
+}
+
+// Explicit template instantiations for common types
+template std::string row::get_value<std::string>(std::string_view) const;
+template int row::get_value<int>(std::string_view) const;
+template long row::get_value<long>(std::string_view) const;
+template double row::get_value<double>(std::string_view) const;
+template bool row::get_value<bool>(std::string_view) const;
+
+
+namespace detail {
+
+// --- StmtHandle::fetch_all implementation ---
+resultset StmtHandle::fetch_all() {
+    resultset rs;
+    
+    // Get number of columns
+    SQLSMALLINT num_cols = 0;
+    check_odbc_error(SQLNumResultCols(get(), &num_cols), get(), SQL_HANDLE_STMT, "SQLNumResultCols");
+
+    if (num_cols == 0) {
+        return rs; // No columns, return empty result set
+    }
+
+    // Get column names
+    std::vector<std::string> col_names;
+    for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+        std::vector<SQLCHAR> col_name_buffer(256);
+        SQLSMALLINT name_len = 0;
+        check_odbc_error(SQLDescribeCol(get(), i, col_name_buffer.data(), col_name_buffer.size(), &name_len, nullptr, nullptr, nullptr, nullptr),
+                         get(), SQL_HANDLE_STMT, "SQLDescribeCol");
+        col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
+    }
+
+    // Fetch rows
+    while (SQLFetch(get()) == SQL_SUCCESS) {
+        row current_row;
+        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+            SQLLEN indicator;
+            std::vector<char> buffer(1024); // Buffer for column data
+            
+            SQLRETURN ret = SQLGetData(get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+            if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
+                if (indicator == SQL_NULL_DATA) {
+                    current_row.m_data[col_names[i - 1]] = std::any{}; // Store null as empty std::any
+                } else {
+                    // This simple implementation treats all data as strings for now.
+                    // A more advanced version could check column types and convert.
+                    current_row.m_data[col_names[i - 1]] = std::string(buffer.data());
+                }
+            }
+        }
+        rs.m_rows.push_back(std::move(current_row));
+    }
+    
+    return rs;
+}
+
+
+// --- Error Handling Implementation ---
+
+void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_type, std::string_view context) {
+    if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
+        return;
+    }
+
+    SQLCHAR sql_state[6];
+    SQLINTEGER native_error;
+    SQLCHAR message_text[SQL_MAX_MESSAGE_LENGTH];
+    SQLSMALLINT text_length;
+    std::string error_msg = std::format("ODBC Error on '{}': ", context);
+
+    SQLSMALLINT i = 1;
+    while (SQLGetDiagRec(handle_type, handle, i, sql_state, &native_error, message_text, sizeof(message_text), &text_length) == SQL_SUCCESS) {
+        error_msg += std::format("[SQLState: {}] [Native Error: {}] {}", (char*)sql_state, native_error, (char*)message_text);
+        i++;
+    }
+
+    if (retcode == SQL_NO_DATA) {
+        return;
+    }
+    
+    throw sql::error(error_msg);
+}
+
+// --- RAII Handle Implementation ---
+
+EnvHandle::EnvHandle() {
+    check_odbc_error(SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, get_ptr()),
+                     SQL_NULL_HANDLE, SQL_HANDLE_ENV, "SQLAllocHandle (ENV)");
+    check_odbc_error(SQLSetEnvAttr(get(), SQL_ATTR_ODBC_VERSION, (void*)SQL_OV_ODBC3, 0),
+                     get(), SQL_HANDLE_ENV, "SQLSetEnvAttr (ODBC_VERSION)");
+}
+
+DbcHandle::DbcHandle(const EnvHandle& env) {
+    check_odbc_error(SQLAllocHandle(SQL_HANDLE_DBC, env.get(), get_ptr()),
+                     env.get(), SQL_HANDLE_ENV, "SQLAllocHandle (DBC)");
+}
+
+StmtHandle::StmtHandle(const DbcHandle& dbc) {
+    check_odbc_error(SQLAllocHandle(SQL_HANDLE_STMT, dbc.get(), get_ptr()),
+                     dbc.get(), SQL_HANDLE_DBC, "SQLAllocHandle (STMT)");
+}
+
+// --- Connection Implementation ---
+
+Connection::Connection(std::string_view conn_str) : m_dbc(m_env) {
+    std::vector<SQLCHAR> connection_string_buffer(conn_str.begin(), conn_str.end());
+    connection_string_buffer.push_back('\0');
+
+    check_odbc_error(SQLDriverConnect(m_dbc.get(), nullptr, connection_string_buffer.data(),
+                                      SQL_NTS, nullptr, 0, nullptr, SQL_DRIVER_NOPROMPT),
+                     m_dbc.get(), SQL_HANDLE_DBC, "SQLDriverConnect");
+}
+
+StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {
+    // Use a std::string for the key as string_view can't be a key in a non-transparent map
+    std::string query_key(sql_query);
+    
+    if (auto it = m_statement_cache.find(query_key); it != m_statement_cache.end()) {
+        return *it->second;
+    }
+
+    // Statement not in cache, create and prepare it.
+    auto new_stmt = std::make_unique<StmtHandle>(m_dbc);
+    
+    SQLRETURN ret = SQLPrepare(new_stmt->get(), (SQLCHAR*)sql_query.data(), SQL_NTS);
+    check_odbc_error(ret, new_stmt->get(), SQL_HANDLE_STMT, "SQLPrepare (cached)");
+
+    // Store it in the cache and return a reference.
+    auto& stmt_ref = *new_stmt;
+    m_statement_cache[query_key] = std::move(new_stmt);
+    
+    util::log::debug("Cached new prepared statement for thread {}", std::this_thread::get_id());
+    return stmt_ref;
+}
+
+// --- Connection Manager Implementation ---
+
+Connection& ConnectionManager::get_connection(std::string_view db_key) {
+    std::string key(db_key);
+    if (auto it = m_connections.find(key); it != m_connections.end()) {
+        return *it->second;
+    }
+
+    std::string conn_str = env::get<std::string>(key);
+    auto new_conn = std::make_unique<Connection>(conn_str);
+    auto& conn_ref = *new_conn;
+    m_connections[key] = std::move(new_conn);
+    
+    util::log::debug("Created new ODBC connection for '{}' on thread {}", key, std::this_thread::get_id());
+    return conn_ref;
+}
+
+} // namespace sql::detail
+} // namespace sql

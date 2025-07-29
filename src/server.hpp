@@ -1,0 +1,137 @@
+#ifndef SERVER_HPP
+#define SERVER_HPP
+
+#include "http_request.hpp"
+#include "http_response.hpp"
+#include "logger.hpp"
+#include "env.hpp"
+#include "signal_handler.hpp"
+#include "metrics.hpp"
+#include "api_router.hpp"
+#include "thread_pool.hpp"
+#include "shared_queue.hpp"
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
+#include <memory>
+#include <vector>
+#include <functional>
+#include <atomic>
+#include <thread>
+#include <cstdint> // *** BUG FIX *** Explicitly include for uint16_t
+
+using dispatch_task = std::function<void()>;
+
+class server_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+struct connection_state {
+    explicit connection_state(std::string ip) : remote_ip(std::move(ip)) {}
+    connection_state() = default;
+    http::request_parser parser;
+    std::optional<http::response> response;
+    std::string remote_ip;
+};
+
+struct response_item {
+    int client_fd;
+    http::response res;
+};
+
+class server {
+public:
+    server();
+    ~server();
+
+    server(const server&) = delete;
+    server& operator=(const server&) = delete;
+    server(server&&) = delete;
+    server& operator=(server&&) = delete;
+
+    template<typename Validator>
+    void register_api(webapi_path path, http::method method, const Validator& v, api_handler_func handler, bool is_secure = true) {
+        m_router.register_api(path, method, v, std::move(handler), is_secure);
+    }
+
+    void register_api(webapi_path path, http::method method, api_handler_func handler, bool is_secure = true) {
+        m_router.register_api(path, method, std::move(handler), is_secure);
+    }
+
+    void start();
+
+private:
+    class io_worker {
+    public:
+        io_worker(uint16_t port,
+                  std::shared_ptr<metrics> metrics, 
+                  const api_router& router,
+                  const std::unordered_set<std::string>& allowed_origins,
+                  int worker_thread_count,
+                  std::atomic<bool>& running_flag);
+        
+        ~io_worker();
+        void run();
+
+        [[nodiscard]] const thread_pool* get_thread_pool() const {
+            return m_thread_pool.get();
+        }
+
+    private:
+        void setup_listening_socket();
+        void add_to_epoll(int fd, uint32_t events);
+        void remove_from_epoll(int fd);
+        void modify_epoll(int fd, uint32_t events);
+
+        void on_connect();
+        void on_read(int fd);
+        void on_write(int fd);
+        void close_connection(int fd, uint32_t events = 0);
+
+        bool handle_socket_read(connection_state& conn, int fd);
+        void process_request(int fd);
+        void dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint);
+        void process_response_queue();
+        bool handle_internal_api(const http::request& req, http::response& res);
+        
+        // This helper function was added in the previous refactoring step
+        void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint);
+
+        int m_listening_fd{-1};
+        uint16_t m_port;
+        int m_epoll_fd{-1};
+        
+        std::shared_ptr<metrics> m_metrics;
+        const api_router& m_router;
+        const std::unordered_set<std::string>& m_allowed_origins;
+        std::atomic<bool>& m_running;
+        
+        std::unique_ptr<thread_pool> m_thread_pool;
+        std::unique_ptr<shared_queue<response_item>> m_response_queue;
+        std::unordered_map<int, connection_state> m_connections;
+    };
+
+    static inline constexpr int MAX_EVENTS = 4096;
+    static inline constexpr int LISTEN_BACKLOG = 8192;
+	static inline constexpr int EPOLL_WAIT_MS = 10;
+
+    uint16_t m_port;
+    int m_io_threads;
+    int m_worker_threads;
+    
+    std::unique_ptr<util::signal_handler> m_signals;
+    std::shared_ptr<metrics> m_metrics;
+    api_router m_router;
+    std::unordered_set<std::string> m_allowed_origins;
+
+    std::vector<std::unique_ptr<io_worker>> m_workers;
+    std::atomic<bool> m_running{true};
+};
+
+#endif // SERVER_HPP

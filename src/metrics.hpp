@@ -1,0 +1,101 @@
+#ifndef METRICS_HPP
+#define METRICS_HPP
+
+#include "util.hpp"
+#include "thread_pool.hpp"
+
+#include <string>
+#include <chrono>
+#include <atomic>
+#include <vector>
+#include <memory>
+#include <numeric>
+#include <format>
+#include <mutex>
+
+using dispatch_task = std::function<void()>;
+
+class metrics {
+public:
+    explicit metrics(int pool_size)
+        : m_pod_name(util::get_pod_name()),
+          m_start_time(std::chrono::system_clock::now()),
+          m_pool_size(pool_size),
+          m_total_ram_kb(util::get_total_memory()),
+          m_start_date_str(std::format("{:%FT%T}", 
+              std::chrono::zoned_time{std::chrono::current_zone(), 
+              std::chrono::floor<std::chrono::seconds>(m_start_time)}))
+    {}
+
+    void increment_connections() noexcept { m_connections.fetch_add(1, std::memory_order_relaxed); }
+    void decrement_connections() noexcept { m_connections.fetch_sub(1, std::memory_order_relaxed); }
+    void increment_active_threads() noexcept { m_active_threads.fetch_add(1, std::memory_order_relaxed); }
+    void decrement_active_threads() noexcept { m_active_threads.fetch_sub(1, std::memory_order_relaxed); }
+    
+    void record_request_time(std::chrono::microseconds duration) noexcept {
+        m_total_requests.fetch_add(1, std::memory_order_relaxed);
+        m_total_processing_time_us.fetch_add(duration.count(), std::memory_order_relaxed);
+    }
+
+    void register_thread_pool(const thread_pool* pool) {
+        std::lock_guard<std::mutex> lock(m_pools_mutex);
+        m_thread_pools.push_back(pool);
+    }
+
+    [[nodiscard]] std::string to_json() const {
+        const long long total_reqs = m_total_requests.load(std::memory_order_relaxed);
+        const long long total_time_us = m_total_processing_time_us.load(std::memory_order_relaxed);
+        const int current_connections = m_connections.load(std::memory_order_relaxed);
+        const int current_active_threads = m_active_threads.load(std::memory_order_relaxed);
+        
+        const size_t memory_usage_kb = util::get_memory_usage();
+        double avg_time_s = (total_reqs > 0) ? (static_cast<double>(total_time_us) / static_cast<double>(total_reqs) / 1'000'000.0) : 0.0;
+        double memory_usage_percentage = (m_total_ram_kb > 0) ? ((static_cast<double>(memory_usage_kb) / static_cast<double>(m_total_ram_kb)) * 100.0) : 0.0;
+
+        size_t pending_tasks = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_pools_mutex);
+            for (const auto* pool : m_thread_pools) {
+                if (pool) {
+                    pending_tasks += pool->get_total_pending_tasks();
+                }
+            }
+        }
+
+        return std::format(
+            "{{"
+            "\"pod\":\"{}\","
+            "\"startDate\":\"{}\","
+            "\"totalRequests\":{},"
+            "\"avgTimePerRequest\":{:.6f},"
+            "\"connections\":{},"
+            "\"activeThreads\":{},"
+            "\"pendingTasks\":{},"
+            "\"poolSize\":{},"
+            "\"totalRam\":{},"
+            "\"memoryUsage\":{},"
+            "\"memoryUsagePercentage\":{:.4f}"
+            "}}",
+            m_pod_name, m_start_date_str, total_reqs, avg_time_s, current_connections,
+            current_active_threads, pending_tasks, m_pool_size,
+            m_total_ram_kb, memory_usage_kb, memory_usage_percentage
+        );
+    }
+
+private:
+    const std::string m_pod_name;
+    const std::chrono::system_clock::time_point m_start_time;
+    const int m_pool_size;
+    const size_t m_total_ram_kb;
+    const std::string m_start_date_str;
+
+    std::atomic<long long> m_total_requests{0};
+    std::atomic<long long> m_total_processing_time_us{0};
+    std::atomic<int> m_connections{0};
+    std::atomic<int> m_active_threads{0};
+
+    mutable std::mutex m_pools_mutex;
+    std::vector<const thread_pool*> m_thread_pools;
+};
+
+#endif // METRICS_HPP

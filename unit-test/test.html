@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>REST API Unit Tester</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+      background: #111;
+      color: #ffbf00;
+    }
+    input, button {
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      font-size: 1rem;
+      background-color: #222;
+      color: #ffbf00;
+      border: 1px solid #ffbf00;
+    }
+    button:hover {
+      background-color: #333;
+    }
+    #terminal {
+      background-color: #000000;
+      color: #ffbf00;
+      padding: 1rem;
+      font-family: monospace;
+      border: 2px solid #ffbf00;
+      height: 60vh;
+      overflow-y: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      color: #ffbf00;
+    }
+    th, td {
+      border: 1px solid #ffbf00;
+      padding: 0.5rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #1a1a1a;
+    }
+    .fail {
+      color: #ff4c00;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h2>🟧 REST API Unit Tester</h2>
+  <label for="serverUrl">Server URL:</label><br>
+  <input type="text" id="serverUrl" value="http://cpp14.mshome.net:8080" size="50"/><br>
+  <button id="runTestsBtn">Run Tests</button>
+  <div id="terminal"></div>
+
+  <script type="module">
+    const terminal = document.getElementById('terminal');
+    const runButton = document.getElementById('runTestsBtn');
+
+    const endpoints = [
+      { path: '/shippers', method: 'GET' },
+      { path: '/products', method: 'GET' },
+      { path: '/metrics', method: 'GET' },
+      { path: '/ping', method: 'GET' },
+      { path: '/customer?id=anatr', method: 'GET' },
+      { path: '/customer?id=quick', method: 'GET' },
+      { path: '/customer?id=bergs', method: 'GET' },
+      { path: '/customer?id=ernsh', method: 'GET' },
+      { path: '/customer?id=fissa', method: 'GET' },
+      { path: '/customer?id=dracd', method: 'GET' },
+      { path: '/customer?id=savea', method: 'GET' },
+      {
+        path: '/sales',
+        method: 'POST',
+        body: JSON.stringify({
+          start_date: "1994-01-01",
+          end_date: "1996-12-31"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/sales',
+        method: 'POST',
+        body: JSON.stringify({
+          start_date: "1994-01-01",
+          end_date: "1994-12-31"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/sales',
+        method: 'POST',
+        body: JSON.stringify({
+          start_date: "1995-01-01",
+          end_date: "1995-12-31"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/sales',
+        method: 'POST',
+        body: JSON.stringify({
+          start_date: "1996-01-01",
+          end_date: "1996-12-31"
+        }),
+        contentType: 'application/json'
+      },	  
+      {
+        path: '/upload',
+        method: 'POST',
+        multipart: true
+      }
+    ];
+
+    async function runTests() {
+      terminal.innerHTML = '';
+      const server = document.getElementById('serverUrl').value;
+      let token = null;
+      let displayname = '';
+      const results = [];
+
+      try {
+        const loginResp = await fetch(`${server}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'mcordova', password: 'basica' })
+        });
+        const bodyText = await loginResp.text();
+        const loginSuccess = loginResp.status === 200;
+        
+        if (loginSuccess && bodyText) {
+          try {
+            const loginJson = JSON.parse(bodyText);
+            token = loginJson.id_token;
+            displayname = loginJson.displayname;
+          } catch (e) {
+            console.error("Could not parse login JSON", e);
+          }
+        }
+        results.push({ endpoint: '/login', status: loginResp.status, success: loginSuccess, body: bodyText });
+      } catch (e) {
+        results.push({ endpoint: '/login', status: 'error', success: false, body: e.message });
+      }
+
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      for (const ep of endpoints) {
+        try {
+          let options = { method: ep.method, headers: { ...headers } };
+
+          if (ep.multipart) {
+            const form = new FormData();
+            form.append('title', 'Synthetic Upload Test');
+            const fileBlob = new Blob(['This file was generated in JS'], { type: 'text/plain' });
+            form.append('file1', fileBlob, 'test.txt');
+            options.body = form;
+            delete options.headers['Content-Type']; 
+          } else if (ep.body) {
+            options.body = ep.body;
+            if (ep.contentType) options.headers['Content-Type'] = ep.contentType;
+          }
+
+          const resp = await fetch(`${server}${ep.path}`, options);
+          const bodyText = await resp.text();
+          results.push({
+            endpoint: ep.path,
+            status: resp.status,
+            success: resp.status === 200,
+            body: bodyText
+          });
+        } catch (e) {
+          results.push({
+            endpoint: ep.path,
+            status: 'error',
+            success: false,
+            body: e.message
+          });
+        }
+      }
+
+      renderTable(results, displayname);
+    }
+
+    function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') return '';
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function renderTable(results, user) {
+      let html = `<h3>Test Results${user ? ` for ${user}` : ''}</h3>`;
+      html += `<table>
+        <tr><th>Endpoint</th><th>Status</th><th>Result</th><th>Error Description</th></tr>`;
+      for (const r of results) {
+        const resultClass = r.success ? '' : 'fail';
+        const resultText = r.success ? '✅ Passed' : '❌ Failed';
+        const bodyContent = !r.success && r.body ? `<pre>${escapeHtml(r.body)}</pre>` : '';
+
+        html += `<tr>
+          <td class="${resultClass}">${r.endpoint}</td>
+          <td class="${resultClass}">${r.status}</td>
+          <td class="${resultClass}">${resultText}</td>
+          <td>${bodyContent}</td>
+        </tr>`;
+      }
+      html += `</table>`;
+      terminal.innerHTML = html;
+    }
+
+    runButton.addEventListener('click', runTests);
+  </script>
+</body>
+</html>
