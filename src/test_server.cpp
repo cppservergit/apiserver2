@@ -6,6 +6,7 @@
 #include "util.hpp"
 #include "json_parser.hpp"
 #include "jwt.hpp"
+#include "http_client.hpp"
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -47,6 +48,12 @@ const validator upload_validator{
 // --- User-Defined API Handlers ---
 
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
+    try {
+        http_client client;
+        http_response response = client.get("https://httpbin.org/get");
+    } catch (const curl_exception& e) {
+        std::cerr << std::format("Test 'Simple GET' failed: {}\n", e.what());
+    }    
     res.set_body(http::status::ok, R"({"message":"Hello, World!"})");
 }
 

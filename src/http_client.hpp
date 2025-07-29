@@ -1,9 +1,11 @@
-#ifndef HTTP_CLIENT_HPP
-#define HTTP_CLIENT_HPP
+#ifndef HTTP_CLIENT_H
+#define HTTP_CLIENT_H
 
 /**
  * @file http_client.hpp
  * @brief Defines the interface for a modern C++ HTTP client wrapper for libcurl.
+ * @author Your Name
+ * @date 2025-06-26
  */
 
 #include <string>
@@ -133,6 +135,4 @@ private:
     std::unique_ptr<impl> pimpl_;
 };
 
-#endif // HTTP_CLIENT_HPP
-
-}
+#endif // HTTP_CLIENT_H

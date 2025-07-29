@@ -35,7 +35,7 @@ TARGET_SERVER_SANITIZER_LEAK = server_sanitizer_leak_app
 # --- Source File Lists ---
 TESTRUNNER_SRCS = main.cpp
 SERVER_SRCS = test_server.cpp
-COMMON_LIB_SRCS = http_request.cpp json_parser.cpp pkeyutil.cpp sql.cpp jwt.cpp
+COMMON_LIB_SRCS = http_client.cpp http_request.cpp json_parser.cpp pkeyutil.cpp sql.cpp jwt.cpp
 SERVER_LIB_SRCS = server.cpp
 
 # --- Object File Definitions ---
@@ -44,7 +44,7 @@ $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(2))
 endef
 
 # --- Libraries to Link ---
-LIBS = -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid -ltbb # Added -ltbb
+LIBS = -lcurl -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid -ltbb # Added -ltbb
 
 # --- User-Facing Commands ---
 .PHONY: all release debug server run run_server clean help \

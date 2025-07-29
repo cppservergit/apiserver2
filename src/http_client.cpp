@@ -1,6 +1,8 @@
 /**
  * @file http_client.cpp
  * @brief Implements the http_client class, a modern C++ wrapper for libcurl.
+ * @author Your Name
+ * @date 2025-06-26
  */
 
 #include "http_client.hpp"
@@ -8,8 +10,8 @@
 #include <iostream>
 #include <utility>
 #include <limits>
-#include <functional>
-#include <cstdlib>
+#include <functional> // For std::less
+#include <cstdlib>    // for std::abort
 #include <format> 
 
 namespace {
@@ -53,7 +55,7 @@ private:
     void configure_common_options(/* NOSONAR */ CURL* curl, const std::string& url, http_response& response) const;
     [[nodiscard]] curl_slist* build_headers(const std::map<std::string, std::string, std::less<>>& headers) const;
     void configure_post_body(/* NOSONAR */ CURL* curl, const std::string& post_body) const;
-    [[nodiscard]] curl_mime* build_multipart_form(CURL* curl, const std::vector<http_form_part>& form_parts) const;
+    [[nodiscard]] curl_mime* build_multipart_form(/* NOSONAR */ CURL* curl, const std::vector<http_form_part>& form_parts) const;
     
     static size_t write_callback(const char* ptr, size_t size, size_t nmemb, /* NOSONAR */ void* userdata);
     static size_t header_callback(const char* buffer, size_t size, size_t nitems, /* NOSONAR */ void* userdata);
@@ -156,10 +158,10 @@ void http_client::impl::configure_post_body(/* NOSONAR */ CURL* curl, const std:
         throw curl_exception("Failed to create CURL easy handle.");
     }
 
-    auto curl_deleter = [](/* NOSONAR */ CURL* c) { curl_easy_cleanup(c); };
-    std::unique_ptr</* NOSONAR */ CURL, decltype(curl_deleter)> curl_ptr(curl, curl_deleter);
+    auto curl_deleter = [](CURL* c) { curl_easy_cleanup(c); };
+    std::unique_ptr<CURL, decltype(curl_deleter)> curl_ptr(curl, curl_deleter);
 
-    auto slist_deleter = [](curl_slist* sl) { if(sl) curl_slist_free_all(sl); };
+    auto slist_deleter = [](curl_slist* sl) { curl_slist_free_all(sl); };
     std::unique_ptr<curl_slist, decltype(slist_deleter)> header_list_ptr(build_headers(headers), slist_deleter);
     
     auto mime_deleter = [](curl_mime* m) { if(m) curl_mime_free(m); };
@@ -191,11 +193,7 @@ void http_client::impl::configure_post_body(/* NOSONAR */ CURL* curl, const std:
 }
 
 http_client::http_client(http_client_config config) : pimpl_(std::make_unique<impl>(std::move(config))) {}
-
-// Explicitly define the destructor with an empty body to satisfy SonarCloud's rule
-// for classes participating in resource management via the PIMPL idiom.
-http_client::~http_client() {}
-
+http_client::~http_client() = default;
 http_client::http_client(http_client&&) noexcept = default;
 http_client& http_client::operator=(http_client&&) noexcept = default;
 
@@ -209,6 +207,4 @@ http_client& http_client::operator=(http_client&&) noexcept = default;
 
 [[nodiscard]] http_response http_client::post(const std::string& url, const std::vector<http_form_part>& form_parts, const std::map<std::string, std::string, std::less<>>& headers) const {
     return pimpl_->perform_request(url, std::nullopt, form_parts, headers);
-}
-
 }
