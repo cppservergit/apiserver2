@@ -11,14 +11,14 @@ namespace http {
 // ===================================================================
 //         request_parser: Implementation
 // ===================================================================
-request_parser::request_parser() : m_buffer{std::make_unique<socket_buffer>()} {}
+request_parser::request_parser() {}
 request_parser::~request_parser() = default;
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
 
 // Helper function to parse headers from a multipart form part.
-auto request_parser::parse_part_headers(std::string_view part_headers_sv) -> request_parser::multipart_part_headers {
+auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> request_parser::multipart_part_headers {
     multipart_part_headers headers;
 
     for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {

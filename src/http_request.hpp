@@ -147,7 +147,7 @@ private:
     auto parse_body() -> std::optional<request_parse_error>;
     auto parse_multipart_form_data(std::string_view boundary) -> std::optional<request_parse_error>;
     void process_multipart_part(std::string_view part_sv);
-    [[nodiscard]] auto parse_part_headers(std::string_view part_headers_sv) -> multipart_part_headers;
+    [[nodiscard]] auto parse_part_headers(std::string_view part_headers_sv) const -> multipart_part_headers;
 
     std::unique_ptr<socket_buffer> m_buffer{std::make_unique<socket_buffer>()};
     
