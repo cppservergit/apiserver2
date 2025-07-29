@@ -16,9 +16,6 @@
 
 using namespace std::chrono_literals;
 
-// --- Server Version ---
-static constexpr std::string_view SERVER_VERSION = "1.0.0";
-
 // ===================================================================
 //         server::io_worker Implementation
 // ===================================================================
@@ -26,7 +23,8 @@ static constexpr std::string_view SERVER_VERSION = "1.0.0";
 server::io_worker::io_worker(uint16_t port,
                              std::shared_ptr<metrics> metrics_ptr, 
                              const api_router& router,
-                             const std::unordered_set<std::string>& allowed_origins,
+                             // *** BUG FIX *** Use the correct set type with the transparent hasher
+                             const std::unordered_set<std::string, cors::string_hash, std::equal_to<>>& allowed_origins,
                              int worker_thread_count,
                              std::atomic<bool>& running_flag)
     : m_port(port),
@@ -38,7 +36,7 @@ server::io_worker::io_worker(uint16_t port,
     m_response_queue = std::make_unique<shared_queue<response_item>>();
 }
 
-server::io_worker::~io_worker() {
+server::io_worker::~io_worker() noexcept {
     if (m_thread_pool) {
         m_thread_pool->stop();
     }
@@ -55,7 +53,7 @@ void server::io_worker::run() {
         return;
     }
 
-    util::log::debug("I/O worker thread {} started and listening on port {}.", std::this_thread::get_id(), m_port);
+    util::log::info("I/O worker thread {} started and listening on port {}.", std::this_thread::get_id(), m_port);
     m_thread_pool->start();
 
     std::vector<epoll_event> events(MAX_EVENTS);
@@ -84,7 +82,7 @@ void server::io_worker::run() {
         }
         process_response_queue();
     }
-    util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
+    util::log::info("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
 void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) {
@@ -101,15 +99,12 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
             }
         }
 
-        // If security checks passed, validate and execute the handler.
         endpoint->validator(request_ref);
         endpoint->handler(request_ref, res);
 
     } catch (const validation::validation_error& e) {
-        // Handle specific validation errors with a 400 Bad Request.
         res.set_body(http::status::bad_request, std::format(R"({{"error":"{}"}})", e.what()));
     } catch (const std::exception& e) {
-        // Handle all other exceptions with a 500 Internal Server Error.
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(http::status::internal_server_error, R"({"error":"Internal Server Error"})");
     }
@@ -132,7 +127,6 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
         
         http::response res(req_ptr->get_header_value("Origin"));
         
-        // Call the new, cleaner helper function.
         execute_handler(*req_ptr, res, endpoint);
         
         m_response_queue->push({fd, std::move(res)});
@@ -332,7 +326,7 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         return true;
     }
     if (req.get_path() == "/version") {
-        res.set_body(http::status::ok, std::format(R"({{"version":"{}"}})", SERVER_VERSION));
+        res.set_body(http::status::ok, std::format(R"({{"version":"{}"}})", "1.0.0")); // Assuming a version, replace if needed
         return true;
     }
     return false;
@@ -375,11 +369,11 @@ server::server() {
     }
 }
 
-server::~server() = default;
+server::~server() noexcept = default;
 
 void server::start() {
     util::log::info("Server version {} starting on port {} with {} I/O threads and {} total worker threads.", 
-        SERVER_VERSION, m_port, m_io_threads, m_worker_threads);
+        "1.0.0", m_port, m_io_threads, m_worker_threads);
 
     const int worker_threads_per_io = std::max(1, m_worker_threads / m_io_threads);
     util::log::info("Assigning {} worker threads per I/O worker.", worker_threads_per_io);

@@ -33,7 +33,9 @@ public:
     explicit request_id_scope(std::string_view id) noexcept {
         g_request_id = id;
     }
-    ~request_id_scope() {
+    // *** SONARCLOUD FIX ***
+    // Destructors should never throw. Added the noexcept specifier.
+    ~request_id_scope() noexcept {
         g_request_id = {}; // Clear the ID
     }
     // Non-copyable and non-movable

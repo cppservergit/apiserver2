@@ -133,6 +133,14 @@ public:
     [[nodiscard]] auto finalize() -> std::expected<void, request_parse_error>;
 
 private:
+    // *** BUG FIX ***
+    // Helper struct and functions for multipart parsing are now private members.
+    struct multipart_part_headers {
+        std::optional<std::string_view> field_name;
+        std::optional<std::string_view> filename;
+        std::optional<std::string_view> content_type;
+    };
+
     auto find_and_store_header_end() -> bool;
     auto parse_and_store_method() -> bool;
     auto parse_and_store_content_length() -> bool;
@@ -141,8 +149,11 @@ private:
     void parse_uri(std::string_view uri);
     auto parse_body() -> std::optional<request_parse_error>;
     auto parse_multipart_form_data(std::string_view boundary) -> std::optional<request_parse_error>;
+    void process_multipart_part(std::string_view part_sv);
+    [[nodiscard]] multipart_part_headers parse_part_headers(std::string_view part_headers_sv);
 
-    std::unique_ptr<socket_buffer> m_buffer;
+    std::unique_ptr<socket_buffer> m_buffer{std::make_unique<socket_buffer>()};
+    
     std::unique_ptr<json::json_parser> m_jsonPayload;
     method m_parsedMethod{method::unknown};
     std::optional<method> m_identifiedMethod;

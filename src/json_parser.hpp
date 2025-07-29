@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 #include <functional> // For std::less
+#include <memory>     // For std::unique_ptr
+#include <new>        // For std::bad_alloc
 
 namespace json {
 
@@ -30,7 +32,39 @@ public:
     json_parser(json_parser&& other) noexcept;
     json_parser& operator=(json_parser&& other) noexcept;
 
-    [[nodiscard]] static std::string build(const std::map<std::string, std::string>& data);
+    /**
+     * @brief Builds a JSON object string from any map-like container of strings.
+     * @tparam MapType A type that can be iterated over yielding key-value pairs of strings.
+     * @param data The map-like container.
+     * @return A JSON object as a std::string.
+     */
+    template<typename MapType>
+    [[nodiscard]] static std::string build(const MapType& data) {
+        auto* obj = json_object_new_object();
+        if (!obj) {
+            throw std::bad_alloc{};
+        }
+        std::unique_ptr<json_object, decltype(&json_object_put)> obj_ptr(obj, &json_object_put);
+
+        for (const auto& [key, value] : data) {
+            auto* j_value = json_object_new_string(value.c_str());
+            if (!j_value) {
+                throw output_error("json build: failed to create json string for value: " + value);
+            }
+            if (json_object_object_add(obj_ptr.get(), key.c_str(), j_value) != 0) {
+                json_object_put(j_value);
+                throw output_error("json build: failed to add key to json object: " + key);
+            }
+        }
+
+        const char* json_str = json_object_to_json_string_ext(obj_ptr.get(), JSON_C_TO_STRING_PLAIN);
+        if (!json_str) {
+            throw output_error("json build: failed to convert json object to string");
+        }
+
+        return std::string{json_str};
+    }
+
     [[nodiscard]] std::string_view get_string(std::string_view key) const;
     [[nodiscard]] bool has_key(std::string_view key) const noexcept;
     [[nodiscard]] json_parser at(std::string_view key) const;

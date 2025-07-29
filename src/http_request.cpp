@@ -2,6 +2,7 @@
 #include <utility>
 #include <format>
 #include <locale> // Required for std::locale::classic()
+#include <memory> // Required for std::to_address
 
 using namespace std::literals::string_view_literals;
 
@@ -11,10 +12,64 @@ namespace http {
 //         request_parser: Implementation
 // ===================================================================
 
-request_parser::request_parser() : m_buffer{std::make_unique<socket_buffer>()} {}
+request_parser::request_parser() = default;
 request_parser::~request_parser() = default;
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
+
+// Helper function to parse headers from a multipart form part.
+auto request_parser::parse_part_headers(std::string_view part_headers_sv) -> request_parser::multipart_part_headers {
+    multipart_part_headers headers;
+
+    for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
+        std::string_view line(line_range.begin(), line_range.end());
+        if (line.empty()) continue;
+        
+        auto parse_param = [&](std::string_view param_name) -> std::optional<std::string_view> {
+            if (auto param_pos = line.find(param_name); param_pos != std::string_view::npos) {
+                auto value_start = line.find('"', param_pos) + 1;
+                auto value_end = line.find('"', value_start);
+                if (value_start != std::string_view::npos && value_end != std::string_view::npos) {
+                    return line.substr(value_start, value_end - value_start);
+                }
+            }
+            return std::nullopt;
+        };
+
+        if (line.starts_with("Content-Disposition:"sv)) {
+            headers.field_name = parse_param("name="sv);
+            headers.filename = parse_param("filename="sv);
+        } else if (line.starts_with("Content-Type:"sv)) {
+            auto value = line.substr(line.find(':') + 1);
+            value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
+            headers.content_type = value;
+        }
+    }
+    return headers;
+}
+
+// Helper function to process a single part of a multipart form.
+void request_parser::process_multipart_part(std::string_view part_sv) {
+    if (part_sv.starts_with("--"sv)) return; // End boundary
+    if (part_sv.starts_with("\r\n"sv)) part_sv.remove_prefix(2);
+    if (part_sv.ends_with("\r\n"sv)) part_sv.remove_suffix(2);
+    
+    const auto headers_end_pos = part_sv.find("\r\n\r\n"sv);
+    if (headers_end_pos == std::string_view::npos) return;
+
+    const auto part_headers_sv = part_sv.substr(0, headers_end_pos);
+    const auto part_content_sv = part_sv.substr(headers_end_pos + 4);
+    
+    const multipart_part_headers headers = parse_part_headers(part_headers_sv);
+    
+    if (!headers.field_name) return;
+
+    if (headers.filename) {
+        m_fileParts.emplace_back(multipart_item{*headers.filename, part_content_sv, headers.content_type.value_or(""), *headers.field_name});
+    } else {
+        m_params.try_emplace(*headers.field_name, part_content_sv);
+    }
+}
 
 auto request_parser::get_buffer() noexcept -> std::span<char> {
     return m_buffer->buffer();
@@ -28,14 +83,16 @@ void request_parser::update_pos(ssize_t bytes_read) {
 }
 
 auto request_parser::eof() -> bool {
+    using enum http::method;
+
     if (!find_and_store_header_end()) return false;
     if (!parse_and_store_method()) return false;
     if (!parse_and_store_content_length()) return false;
 
-    if (m_identifiedMethod == method::get || m_identifiedMethod == method::options) {
+    if (m_identifiedMethod == get || m_identifiedMethod == options) {
         return true;
     }
-    if (m_identifiedMethod == method::post) {
+    if (m_identifiedMethod == post) {
         if (!m_identifiedContentLength.has_value() || !m_identifiedHeaderSize.has_value()) {
              return false;
         }
@@ -45,6 +102,8 @@ auto request_parser::eof() -> bool {
 }
 
 auto request_parser::finalize() -> std::expected<void, request_parse_error> {
+    using enum http::method;
+
     if (m_isFinalized) {
         return {};
     }
@@ -62,7 +121,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     if (auto err = parse_request_line(request_sv.substr(0, first_line_end_pos))) {
         return std::unexpected(*err);
     }
-    m_parsedMethod = m_identifiedMethod.value_or(method::unknown);
+    m_parsedMethod = m_identifiedMethod.value_or(unknown);
 
     const auto headers_end_pos_marker = *m_identifiedHeaderSize - 4;
     const auto headers_sv = request_sv.substr(first_line_end_pos + 2, headers_end_pos_marker - (first_line_end_pos + 2));
@@ -71,7 +130,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     }
     m_headerSize = *m_identifiedHeaderSize;
 
-    if (m_parsedMethod == method::post) {
+    if (m_parsedMethod == post) {
         if (!m_identifiedContentLength.has_value()) {
              return std::unexpected(request_parse_error("POST request without Content-Length header."));
         }
@@ -92,7 +151,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
         }
     }
 
-    if (m_parsedMethod == method::post) {
+    if (m_parsedMethod == post) {
         if (auto err = parse_body()) {
             return std::unexpected(*err);
         }
@@ -116,6 +175,8 @@ auto request_parser::find_and_store_header_end() -> bool {
 }
 
 auto request_parser::parse_and_store_method() -> bool {
+    using enum http::method;
+
     if (m_identifiedMethod.has_value()) {
         return true;
     }
@@ -134,33 +195,23 @@ auto request_parser::parse_and_store_method() -> bool {
          return false;
     }
     const std::string_view request_line_sv = current_buffer_view.substr(0, request_line_end);
-    const auto method_space_pos = request_line_sv.find(' ');
-    if (method_space_pos == std::string_view::npos) {
-        return false;
-    }
-    const std::string_view method_sv = request_line_sv.substr(0, method_space_pos);
-    if (method_sv == "GET"sv) {
-        m_identifiedMethod = method::get;
-    } else if (method_sv == "POST"sv) {
-        m_identifiedMethod = method::post;
-    } else if (method_sv == "OPTIONS"sv) {
-        m_identifiedMethod = method::options;
+    
+    if (const auto method_space_pos = request_line_sv.find(' '); method_space_pos != std::string_view::npos) {
+        const std::string_view method_sv = request_line_sv.substr(0, method_space_pos);
+        if (method_sv == "GET"sv)       m_identifiedMethod = get;
+        else if (method_sv == "POST"sv)    m_identifiedMethod = post;
+        else if (method_sv == "OPTIONS"sv) m_identifiedMethod = options;
+        else                            m_identifiedMethod = unknown;
     } else {
-        m_identifiedMethod = method::unknown;
-        return false;
+        m_identifiedMethod = unknown;
     }
-    return true;
+    
+    return m_identifiedMethod != unknown;
 }
 
 auto request_parser::parse_and_store_content_length() -> bool {
-    if (m_identifiedMethod != method::post) {
+    if (m_identifiedMethod != method::post || m_identifiedContentLength.has_value() || !m_identifiedHeaderSize.has_value()) {
         return true;
-    }
-    if (m_identifiedContentLength.has_value()) {
-        return true;
-    }
-    if (!m_identifiedHeaderSize.has_value()) {
-        return false;
     }
 
     const auto current_buffer_view = m_buffer->view();
@@ -176,19 +227,23 @@ auto request_parser::parse_and_store_content_length() -> bool {
 
     for (const auto line_range : headers_part | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
-        if (auto colon_pos = header_line.find(':'); colon_pos != std::string_view::npos) {
-            if (sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
-                std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
-                cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
-                size_t temp_cl = 0;
-                auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
-                if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
-                    m_identifiedContentLength = temp_cl;
-                    return true;
-                }
-                return false;
-            }
+        
+        auto colon_pos = header_line.find(':');
+        if (colon_pos == std::string_view::npos || !sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
+            continue;
         }
+
+        std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
+        cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
+        
+        size_t temp_cl = 0;
+        auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
+        
+        if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
+            m_identifiedContentLength = temp_cl;
+            return true;
+        }
+        return false;
     }
     return false;
 }
@@ -203,7 +258,8 @@ auto request_parser::parse_request_line(std::string_view request_line) -> std::o
     if (it == parts.end()) {
         return request_parse_error("Malformed request line: missing URI.");
     }
-    const std::string_view uri_sv((*it).begin(), std::ranges::distance(*it));
+    
+    const std::string_view uri_sv(std::to_address((*it).begin()), std::ranges::distance(*it));
     parse_uri(uri_sv);
     return std::nullopt;
 }
@@ -217,7 +273,7 @@ void request_parser::parse_uri(std::string_view uri) {
     for (const auto param_range : query_string | std::views::split('&')) {
         std::string_view param_sv(param_range.begin(), param_range.end());
         auto eq_pos = param_sv.find('=');
-        m_params.emplace(param_sv.substr(0, eq_pos), eq_pos == std::string_view::npos ? ""sv : param_sv.substr(eq_pos + 1));
+        m_params.try_emplace(param_sv.substr(0, eq_pos), eq_pos == std::string_view::npos ? ""sv : param_sv.substr(eq_pos + 1));
     }
 }
 
@@ -228,7 +284,7 @@ auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional
             auto key = header_line.substr(0, pos);
             auto value = header_line.substr(pos + 1);
             value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
-            m_headers.emplace(std::string(key), value);
+            m_headers.try_emplace(std::string(key), value);
         }
     }
     return std::nullopt;
@@ -236,28 +292,28 @@ auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional
 
 auto request_parser::parse_body() -> std::optional<request_parse_error> {
     const auto body_view = m_buffer->view().substr(m_headerSize, m_contentLength);
-    const auto content_type_it = m_headers.find("content-type");
-    if (content_type_it == m_headers.end()) {
-        m_body = body_view;
-        return std::nullopt;
-    }
-    const auto& content_type = content_type_it->second;
-    if (content_type.starts_with("application/json"sv)) {
-        try {
-            m_jsonPayload = std::make_unique<json::json_parser>(body_view);
-            m_body = body_view;
-        } catch (const json::parsing_error& e) {
-            return request_parse_error(std::string("JSON parse error: ") + e.what());
-        }
-    } else if (content_type.starts_with("multipart/form-data"sv)) {
-        const std::string_view boundary_prefix = "boundary="sv;
-        if (auto boundary_pos = content_type.find(boundary_prefix); boundary_pos != std::string_view::npos) {
-            auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
-            if (boundary.starts_with('"')) boundary.remove_prefix(1);
-            if (boundary.ends_with('"')) boundary.remove_suffix(1);
-            return parse_multipart_form_data(boundary);
+    
+    if (auto it = m_headers.find("content-type"); it != m_headers.end()) {
+        const auto& content_type = it->second;
+        if (content_type.starts_with("application/json"sv)) {
+            try {
+                m_jsonPayload = std::make_unique<json::json_parser>(body_view);
+                m_body = body_view;
+            } catch (const json::parsing_error& e) {
+                return request_parse_error(std::string("JSON parse error: ") + e.what());
+            }
+        } else if (content_type.starts_with("multipart/form-data"sv)) {
+            const std::string_view boundary_prefix = "boundary="sv;
+            if (auto boundary_pos = content_type.find(boundary_prefix); boundary_pos != std::string_view::npos) {
+                auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
+                if (boundary.starts_with('"')) boundary.remove_prefix(1);
+                if (boundary.ends_with('"')) boundary.remove_suffix(1);
+                return parse_multipart_form_data(boundary);
+            } else {
+                return request_parse_error("Malformed multipart/form-data: boundary not found.");
+            }
         } else {
-            return request_parse_error("Malformed multipart/form-data: boundary not found.");
+            m_body = body_view;
         }
     } else {
         m_body = body_view;
@@ -268,48 +324,11 @@ auto request_parser::parse_body() -> std::optional<request_parse_error> {
 auto request_parser::parse_multipart_form_data(std::string_view boundary) -> std::optional<request_parse_error> {
     const std::string full_boundary = "--" + std::string(boundary);
     const auto body_view = m_buffer->view().substr(m_headerSize, m_contentLength);
-    auto parts_range = body_view | std::views::split(full_boundary) | std::views::drop(1);
-
-    for (const auto part_range : parts_range) {
-        std::string_view part_sv(part_range.begin(), part_range.end());
-        if (part_sv.starts_with("--"sv)) break;
-        if (part_sv.starts_with("\r\n"sv)) part_sv.remove_prefix(2);
-        if (part_sv.ends_with("\r\n"sv)) part_sv.remove_suffix(2);
-        const auto headers_end_pos = part_sv.find("\r\n\r\n"sv);
-        if (headers_end_pos == std::string_view::npos) continue;
-
-        const auto part_headers_sv = part_sv.substr(0, headers_end_pos);
-        const auto part_content_sv = part_sv.substr(headers_end_pos + 4);
-        std::optional<std::string_view> field_name, filename, content_type;
-
-        for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
-            std::string_view line(line_range.begin(), line_range.end());
-            if (line.empty()) continue;
-            auto parse_param = [&](std::string_view param_name) -> std::optional<std::string_view> {
-                if (auto param_pos = line.find(param_name); param_pos != std::string_view::npos) {
-                    auto value_start = line.find('"', param_pos) + 1;
-                    auto value_end = line.find('"', value_start);
-                    if (value_start != std::string_view::npos && value_end != std::string_view::npos) {
-                        return line.substr(value_start, value_end - value_start);
-                    }
-                }
-                return std::nullopt;
-            };
-            if (line.starts_with("Content-Disposition:"sv)) {
-                field_name = parse_param("name="sv);
-                filename = parse_param("filename="sv);
-            } else if (line.starts_with("Content-Type:"sv)) {
-                auto value = line.substr(line.find(':') + 1);
-                value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
-                content_type = value;
-            }
-        }
-        if (!field_name) continue;
-        if (filename) {
-            m_fileParts.emplace_back(multipart_item{*filename, part_content_sv, content_type.value_or(""), *field_name});
-        } else {
-            m_params.emplace(*field_name, part_content_sv);
-        }
+    
+    for (const auto part_range : body_view | std::views::split(full_boundary) | std::views::drop(1)) {
+        // *** SONARCLOUD FIX ***
+        // Explicitly cast the result of std::ranges::distance to size_t to avoid narrowing conversion.
+        process_multipart_part({std::to_address(part_range.begin()), static_cast<size_t>(std::ranges::distance(part_range))});
     }
     return std::nullopt;
 }
@@ -338,11 +357,12 @@ request& request::operator=(request&&) noexcept = default;
 auto request::get_method() const noexcept -> method { return m_method; }
 
 auto request::get_method_str() const noexcept -> std::string_view {
+    using enum http::method;
     switch (m_method) {
-        case method::get:     return "GET"sv;
-        case method::post:    return "POST"sv;
-        case method::options: return "OPTIONS"sv;
-        default:              return "UNKNOWN"sv;
+        case get:     return "GET"sv;
+        case post:    return "POST"sv;
+        case options: return "OPTIONS"sv;
+        default:      return "UNKNOWN"sv;
     }
 }
 
@@ -412,10 +432,8 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
     } else if constexpr (std::is_same_v<t, std::chrono::year_month_day>) {
         std::chrono::year_month_day value{};
         std::istringstream iss{std::string(value_sv)};
-        // FIX: Imbue the stream with the classic locale to ensure consistent parsing.
         iss.imbue(std::locale::classic());
         std::chrono::from_stream(iss, "%Y-%m-%d", value);
-        // Make parsing more robust by allowing trailing whitespace
         if (!iss.fail()) {
             iss >> std::ws;
             if (iss.eof()) {

@@ -10,6 +10,7 @@
 #include "api_router.hpp"
 #include "thread_pool.hpp"
 #include "shared_queue.hpp"
+#include "cors.hpp" // Include for cors::string_hash
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -23,7 +24,7 @@
 #include <functional>
 #include <atomic>
 #include <thread>
-#include <cstdint> // *** BUG FIX *** Explicitly include for uint16_t
+#include <cstdint>
 
 using dispatch_task = std::function<void()>;
 
@@ -48,7 +49,7 @@ struct response_item {
 class server {
 public:
     server();
-    ~server();
+    ~server() noexcept;
 
     server(const server&) = delete;
     server& operator=(const server&) = delete;
@@ -72,11 +73,12 @@ private:
         io_worker(uint16_t port,
                   std::shared_ptr<metrics> metrics, 
                   const api_router& router,
-                  const std::unordered_set<std::string>& allowed_origins,
+                  // *** BUG FIX *** Use the correct set type with the transparent hasher
+                  const std::unordered_set<std::string, cors::string_hash, std::equal_to<>>& allowed_origins,
                   int worker_thread_count,
                   std::atomic<bool>& running_flag);
         
-        ~io_worker();
+        ~io_worker() noexcept;
         void run();
 
         [[nodiscard]] const thread_pool* get_thread_pool() const {
@@ -100,7 +102,6 @@ private:
         void process_response_queue();
         bool handle_internal_api(const http::request& req, http::response& res);
         
-        // This helper function was added in the previous refactoring step
         void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint);
 
         int m_listening_fd{-1};
@@ -109,7 +110,8 @@ private:
         
         std::shared_ptr<metrics> m_metrics;
         const api_router& m_router;
-        const std::unordered_set<std::string>& m_allowed_origins;
+        // *** BUG FIX *** Use the correct set type with the transparent hasher
+        const std::unordered_set<std::string, cors::string_hash, std::equal_to<>>& m_allowed_origins;
         std::atomic<bool>& m_running;
         
         std::unique_ptr<thread_pool> m_thread_pool;
@@ -128,7 +130,8 @@ private:
     std::unique_ptr<util::signal_handler> m_signals;
     std::shared_ptr<metrics> m_metrics;
     api_router m_router;
-    std::unordered_set<std::string> m_allowed_origins;
+    // *** BUG FIX *** Use the correct set type with the transparent hasher
+    std::unordered_set<std::string, cors::string_hash, std::equal_to<>> m_allowed_origins;
 
     std::vector<std::unique_ptr<io_worker>> m_workers;
     std::atomic<bool> m_running{true};

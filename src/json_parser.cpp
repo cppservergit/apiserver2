@@ -21,9 +21,6 @@ json_parser::json_parser(std::string_view json_str) {
         throw std::bad_alloc{};
     }
 
-    // FIX: Create a temporary null-terminated std::string for the C-API.
-    // This prevents subtle bugs in libraries that might misbehave with
-    // non-null-terminated buffers, even when a length is provided.
     const std::string temp_json_for_c_api(json_str);
 
     m_obj = json_tokener_parse_ex(
@@ -35,7 +32,6 @@ json_parser::json_parser(std::string_view json_str) {
     if (json_tokener_get_error(tok) != json_tokener_success || m_obj == nullptr) {
         std::string err = json_tokener_error_desc(json_tokener_get_error(tok));
         json_tokener_free(tok);
-        // Log the original string_view for accurate debugging.
         throw parsing_error(std::format("JSON parsing error: {} payload: {}", err, json_str));
     }
 
@@ -71,32 +67,6 @@ json_parser& json_parser::operator=(json_parser&& other) noexcept {
         other.m_obj = nullptr;
     }
     return *this;
-}
-
-std::string json_parser::build(const std::map<std::string, std::string>& data) {
-    auto* obj = json_object_new_object();
-    if (!obj) {
-        throw std::bad_alloc{};
-    }
-    std::unique_ptr<json_object, decltype(&json_object_put)> obj_ptr(obj, &json_object_put);
-
-    for (const auto& [key, value] : data) {
-        auto* j_value = json_object_new_string(value.c_str());
-        if (!j_value) {
-            throw output_error("json build: failed to create json string for value: " + value);
-        }
-        if (json_object_object_add(obj_ptr.get(), key.c_str(), j_value) != 0) {
-            json_object_put(j_value);
-            throw output_error("json build: failed to add key to json object: " + key);
-        }
-    }
-
-    const char* json_str = json_object_to_json_string_ext(obj_ptr.get(), JSON_C_TO_STRING_PLAIN);
-    if (!json_str) {
-        throw output_error("json build: failed to convert json object to string");
-    }
-
-    return std::string{json_str};
 }
 
 std::string_view json_parser::get_string(std::string_view key) const {

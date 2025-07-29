@@ -114,11 +114,14 @@ void login(const http::request& req, http::response& res) {
             return;
         }
 
-        std::string success_body = json::json_parser::build({
+        // *** BUG FIX ***
+        // Explicitly create a map to resolve the template deduction ambiguity.
+        const std::map<std::string, std::string> response_data = {
             {"displayname", display_name},
             {"token_type", "bearer"},
             {"id_token", *token_result}
-        });
+        };
+        std::string success_body = json::json_parser::build(response_data);
 
 		util::log::info("Login OK for user '{}': sessionId {} - from {}", user, session_id, remote_ip);
 
@@ -204,13 +207,14 @@ void upload_file(const http::request& req, http::response& res) {
         );
 
         // 5. Send a success response.
-        std::string success_body = json::json_parser::build({
+        const std::map<std::string, std::string> response_data = {
             {"status", "ok"},
             {"title", title},
             {"originalFilename", std::string(file_part->filename)},
             {"savedFilename", new_filename},
             {"size", std::to_string(file_part->content.size())}
-        });
+        };
+        std::string success_body = json::json_parser::build(response_data);
         res.set_body(http::status::ok, success_body);
 
     } catch (const std::exception& e) {

@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <charconv>
 #include <cstdlib>
+#include <functional> // Required for std::equal_to
 
 namespace env {
 
@@ -31,8 +32,28 @@ namespace env {
                         std::same_as<T, bool>;
 
     namespace detail {
-        // Use an inline thread_local cache to avoid repeated getenv calls.
-        inline thread_local std::unordered_map<std::string, std::string> g_cache;
+        // *** SONARCLOUD FIX ***
+        // A transparent hasher that allows lookups using std::string_view
+        // without creating a temporary std::string.
+        struct string_hash {
+            using is_transparent = void;
+            [[nodiscard]] size_t operator()(const char* txt) const {
+                return std::hash<std::string_view>{}(txt);
+            }
+            [[nodiscard]] size_t operator()(std::string_view txt) const {
+                return std::hash<std::string_view>{}(txt);
+            }
+            [[nodiscard]] size_t operator()(const std::string& txt) const {
+                return std::hash<std::string>{}(txt);
+            }
+        };
+
+        // Replaced the global variable with a function that returns a reference
+        // to a static thread_local cache, now using the transparent hasher.
+        inline std::unordered_map<std::string, std::string, string_hash, std::equal_to<>>& get_cache() noexcept {
+            static thread_local std::unordered_map<std::string, std::string, string_hash, std::equal_to<>> g_cache;
+            return g_cache;
+        }
 
         // Helper functions for type conversion
         template <Supported T>
@@ -70,24 +91,29 @@ namespace env {
             throw error("invalid bool for key '" + key + "' (expected '0' or '1'): " + std::string(value));
         }
 
-        inline std::string fetch_string(const std::string& key) {
-            if (auto it = g_cache.find(key); it != g_cache.end()) {
+        inline std::string fetch_string(std::string_view key) {
+            auto& cache = get_cache();
+            // This find operation is now transparent and avoids a string allocation on cache hits.
+            if (auto it = cache.find(key); it != cache.end()) {
                 return it->second;
             }
 
-            const char* raw = std::getenv(key.c_str());
-            if (!raw) throw error("missing environment variable: " + key);
+            // std::getenv requires a null-terminated string, so we must create a 
+            // temporary std::string here for the C-API call and for potential insertion.
+            const std::string key_str(key);
+            const char* raw = std::getenv(key_str.c_str());
+            if (!raw) throw error("missing environment variable: " + key_str);
 
             std::string value = raw;
             if (value.ends_with(".enc")) {
                 const auto result = decrypt(value);
                 if (!result.success) {
-                    throw error("decryption failed for file '" + value + "' (from key '" + key + "'): " + result.content);
+                    throw error("decryption failed for file '" + value + "' (from key '" + key_str + "'): " + result.content);
                 }
                 value = result.content;
             }
 
-            g_cache[key] = value;
+            cache[key_str] = value;
             return value;
         }
     } // namespace detail
@@ -98,6 +124,7 @@ namespace env {
      */
     template <Supported T>
     [[nodiscard]] inline T get(const std::string& key) {
+        // The std::string key is implicitly converted to a std::string_view for fetch_string.
         const std::string value = detail::fetch_string(key);
         return detail::convert<T>(value, key);
     }
