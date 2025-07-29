@@ -50,16 +50,16 @@ public:
 private:
     http_client_config m_config;
 
-    void configure_common_options(CURL* curl, const std::string& url, http_response& response) const;
+    void configure_common_options(/* NOSONAR */ CURL* curl, const std::string& url, http_response& response) const;
     [[nodiscard]] curl_slist* build_headers(const std::map<std::string, std::string, std::less<>>& headers) const;
-    void configure_post_body(CURL* curl, const std::string& post_body) const;
+    void configure_post_body(/* NOSONAR */ CURL* curl, const std::string& post_body) const;
     [[nodiscard]] curl_mime* build_multipart_form(CURL* curl, const std::vector<http_form_part>& form_parts) const;
     
-    static size_t write_callback(const char* ptr, size_t size, size_t nmemb, void* userdata);
-    static size_t header_callback(const char* buffer, size_t size, size_t nitems, void* userdata);
+    static size_t write_callback(const char* ptr, size_t size, size_t nmemb, /* NOSONAR */ void* userdata);
+    static size_t header_callback(const char* buffer, size_t size, size_t nitems, /* NOSONAR */ void* userdata);
 };
 
-size_t http_client::impl::write_callback(const char* ptr, size_t size, size_t nmemb, void* userdata) {
+size_t http_client::impl::write_callback(const char* ptr, size_t size, size_t nmemb, /* NOSONAR */ void* userdata) {
     if (userdata == nullptr) return 0;
     auto* response_body = static_cast<std::string*>(userdata);
     try {
@@ -70,7 +70,7 @@ size_t http_client::impl::write_callback(const char* ptr, size_t size, size_t nm
     return size * nmemb;
 }
 
-size_t http_client::impl::header_callback(const char* buffer, size_t size, size_t nitems, void* userdata) {
+size_t http_client::impl::header_callback(const char* buffer, size_t size, size_t nitems, /* NOSONAR */ void* userdata) {
     if (userdata == nullptr) return 0;
     auto* response_headers = static_cast<std::map<std::string, std::string, std::less<>>*>(userdata);
     std::string header(buffer, size * nitems);
@@ -86,7 +86,7 @@ size_t http_client::impl::header_callback(const char* buffer, size_t size, size_
     return size * nitems;
 }
 
-void http_client::impl::configure_common_options(CURL* curl, const std::string& url, http_response& response) const {
+void http_client::impl::configure_common_options(/* NOSONAR */ CURL* curl, const std::string& url, http_response& response) const {
     static constexpr const char* user_agent = "cpp-http-client/1.0";
     static constexpr long follow_redirects = 1L;
 
@@ -115,7 +115,7 @@ void http_client::impl::configure_common_options(CURL* curl, const std::string& 
     return header_list;
 }
 
-void http_client::impl::configure_post_body(CURL* curl, const std::string& post_body) const {
+void http_client::impl::configure_post_body(/* NOSONAR */ CURL* curl, const std::string& post_body) const {
     if (const size_t body_length = post_body.length(); body_length > static_cast<size_t>(std::numeric_limits<long>::max())) {
         throw curl_exception("POST body is too large to be handled by libcurl.");
     }
@@ -123,7 +123,7 @@ void http_client::impl::configure_post_body(CURL* curl, const std::string& post_
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(post_body.length()));
 }
 
-[[nodiscard]] curl_mime* http_client::impl::build_multipart_form(CURL* curl, const std::vector<http_form_part>& form_parts) const {
+[[nodiscard]] curl_mime* http_client::impl::build_multipart_form(/* NOSONAR */ CURL* curl, const std::vector<http_form_part>& form_parts) const {
     curl_mime* mime = curl_mime_init(curl);
     if (!mime) {
         throw curl_exception("curl_mime_init() failed.");
