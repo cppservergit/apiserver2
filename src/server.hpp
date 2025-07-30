@@ -74,7 +74,7 @@ private:
                   std::shared_ptr<metrics> metrics, 
                   const api_router& router,
                   // *** BUG FIX *** Use the correct set type with the transparent hasher
-                  const std::unordered_set<std::string, util::string_hash, std::equal_to<>>& allowed_origins,
+                  const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins,
                   int worker_thread_count,
                   std::atomic<bool>& running_flag);
         
@@ -111,7 +111,7 @@ private:
         std::shared_ptr<metrics> m_metrics;
         const api_router& m_router;
         // *** BUG FIX *** Use the correct set type with the transparent hasher
-        const std::unordered_set<std::string, util::string_hash, std::equal_to<>>& m_allowed_origins;
+        const std::unordered_set<std::string, util::string_hash, util::string_equal>& m_allowed_origins;
         std::atomic<bool>& m_running;
         
         std::unique_ptr<thread_pool> m_thread_pool;
@@ -131,7 +131,7 @@ private:
     std::shared_ptr<metrics> m_metrics;
     api_router m_router;
     // *** BUG FIX *** Use the correct set type with the transparent hasher
-    std::unordered_set<std::string, util::string_hash, std::equal_to<>> m_allowed_origins;
+    std::unordered_set<std::string, util::string_hash, util::string_equal> m_allowed_origins;
 
     std::vector<std::unique_ptr<io_worker>> m_workers;
     std::atomic<bool> m_running{true};

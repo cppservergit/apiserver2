@@ -5,13 +5,19 @@ namespace sql {
 
 template<typename T>
 T row::get_value(std::string_view col_name) const {
-    try {
-        const auto& value_any = m_data.at(std::string(col_name));
-        return std::any_cast<T>(value_any);
-    } catch (const std::out_of_range&) {
+    // FIX: Use "if with initializer" to scope the iterator `it` to the conditional.
+    if (auto it = m_data.find(col_name); it != m_data.end()) {
+        try {
+            // Now that we have a valid iterator, get the value and perform the cast.
+            const auto& value_any = it->second;
+            return std::any_cast<T>(value_any);
+        } catch (const std::bad_any_cast&) {
+            // This catch block now only handles type casting errors.
+            throw sql::error(std::format("Invalid type requested for column '{}'.", col_name));
+        }
+    } else {
+        // Manually throw an exception to mimic the behavior of .at() when the key is not found.
         throw sql::error(std::format("Column '{}' not found in result set.", col_name));
-    } catch (const std::bad_any_cast&) {
-        throw sql::error(std::format("Invalid type requested for column '{}'.", col_name));
     }
 }
 
@@ -158,41 +164,36 @@ Connection::Connection(std::string_view conn_str) : m_dbc(m_env) {
 }
 
 StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {
-    // Use a std::string for the key as string_view can't be a key in a non-transparent map
-    std::string query_key(sql_query);
-    
-    if (auto it = m_statement_cache.find(query_key); it != m_statement_cache.end()) {
+    if (auto it = m_statement_cache.find(sql_query); it != m_statement_cache.end()) {
         return *it->second;
     }
-
     // Statement not in cache, create and prepare it.
     auto new_stmt = std::make_unique<StmtHandle>(m_dbc);
-    
     SQLRETURN ret = SQLPrepare(new_stmt->get(), /* NOSONAR */ (SQLCHAR*)sql_query.data(), SQL_NTS);
     check_odbc_error(ret, new_stmt->get(), SQL_HANDLE_STMT, "SQLPrepare (cached)");
 
     // Store it in the cache and return a reference.
     auto& stmt_ref = *new_stmt;
-    m_statement_cache[query_key] = std::move(new_stmt);
+    m_statement_cache[std::string(sql_query)] = std::move(new_stmt);
     
-    util::log::debug("Cached new prepared statement for thread {}", std::this_thread::get_id());
+    util::log::debug("Cached new prepared statement for {}", sql_query);
     return stmt_ref;
 }
 
 // --- Connection Manager Implementation ---
-
 Connection& ConnectionManager::get_connection(std::string_view db_key) {
-    std::string key(db_key);
-    if (auto it = m_connections.find(key); it != m_connections.end()) {
+    // FIX: Use string_view directly for lookup
+    if (auto it = m_connections.find(db_key); it != m_connections.end()) {
         return *it->second;
     }
 
-    std::string conn_str = env::get<std::string>(key);
+    std::string conn_str = env::get<std::string>(std::string(db_key));
     auto new_conn = std::make_unique<Connection>(conn_str);
     auto& conn_ref = *new_conn;
-    m_connections[key] = std::move(new_conn);
+    // FIX: Insertion requires a std::string key
+    m_connections[std::string(db_key)] = std::move(new_conn);
     
-    util::log::debug("Created new ODBC connection for '{}' on thread {}", key, std::this_thread::get_id());
+    util::log::debug("Created new ODBC connection for '{}' on thread {}", db_key, std::this_thread::get_id());
     return conn_ref;
 }
 

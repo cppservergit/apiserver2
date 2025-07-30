@@ -43,7 +43,7 @@ public:
 private:
     // Grant friendship to StmtHandle so it can construct row objects.
     friend class detail::StmtHandle;
-    std::unordered_map<std::string, std::any> m_data;
+    std::unordered_map<std::string, std::any, util::string_hash, util::string_equal> m_data;
 };
 
 /// @class resultset
@@ -159,7 +159,7 @@ public:
 private:
     EnvHandle m_env;
     DbcHandle m_dbc;
-    std::unordered_map<std::string, std::unique_ptr<StmtHandle>> m_statement_cache;
+    std::unordered_map<std::string, std::unique_ptr<StmtHandle>, util::string_hash, util::string_equal> m_statement_cache;
 };
 
 
@@ -168,7 +168,7 @@ class ConnectionManager {
 public:
     static Connection& get_connection(std::string_view db_key);
 private:
-    static inline thread_local std::unordered_map<std::string, std::unique_ptr<Connection>> m_connections;
+    static inline thread_local std::unordered_map<std::string, std::unique_ptr<Connection>, util::string_hash, util::string_equal> m_connections;
 };
 
 } // namespace detail

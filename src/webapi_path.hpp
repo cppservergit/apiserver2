@@ -36,7 +36,7 @@ public:
         
         constexpr std::string_view valid_chars{"abcdefghijklmnopqrstuvwxyz_-0123456789/"};
         for(const char c : path) {
-            if (valid_chars.find(c) == std::string_view::npos) {
+            if (!valid_chars.contains(c)) {
                 throw consteval_error("Invalid WebAPI path: contains an invalid character");
             }
         }

@@ -35,6 +35,15 @@ struct string_hash {
     }
 };
 
+// FIX: Add a custom transparent equality comparator
+struct string_equal {
+    using is_transparent = void;
+    [[nodiscard]] constexpr bool operator()(std::string_view lhs, std::string_view rhs) const {
+        return lhs == rhs;
+    }
+};
+
+
 /**
  * @brief Gets the hostname of the current machine (e.g., the pod name in k8s).
  * @return The hostname as a string, or a default string on failure.

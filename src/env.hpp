@@ -36,8 +36,8 @@ namespace env {
 
         // Replaced the global variable with a function that returns a reference
         // to a static thread_local cache, now using the transparent hasher.
-        inline std::unordered_map<std::string, std::string, util::string_hash, std::equal_to<>>& get_cache() noexcept {
-            static thread_local std::unordered_map<std::string, std::string, util::string_hash, std::equal_to<>> g_cache;
+        inline std::unordered_map<std::string, std::string, util::string_hash, util::string_equal>& get_cache() noexcept {
+            static thread_local std::unordered_map<std::string, std::string, util::string_hash, util::string_equal> g_cache;
             return g_cache;
         }
 

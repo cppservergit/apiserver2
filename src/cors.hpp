@@ -19,7 +19,7 @@ namespace cors {
  */
 [[nodiscard]] inline bool is_origin_allowed(
     const std::optional<std::string_view>& origin,
-    const std::unordered_set<std::string, util::string_hash, std::equal_to<>>& allowed_origins)
+    const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins)
 {
     // If there is no Origin header, it's not a cross-origin request. Allow.
     if (!origin.has_value()) {
