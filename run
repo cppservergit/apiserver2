@@ -1,7 +1,6 @@
 #!/bin/bash
 export POOL_SIZE=8
 export IO_THREADS=2
-export TEST_URL="https://cppserver.com/api/sysinfo"
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
 export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
 export CORS_ORIGINS="null,file://"

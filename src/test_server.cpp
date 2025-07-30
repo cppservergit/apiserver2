@@ -227,7 +227,7 @@ void upload_file(const http::request& req, http::response& res) {
         std::string success_body = json::json_parser::build(response_data);
         res.set_body(ok, success_body);
 
-    } catch (const std::exception& e) {
+    } catch (const file_system_error& e) {
         util::log::error("File upload failed: {}", e.what());
         res.set_body(internal_server_error, R"({"error":"Failed to save uploaded file."})");
     }
