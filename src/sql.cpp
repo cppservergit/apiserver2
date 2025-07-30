@@ -64,9 +64,8 @@ row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, con
     for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
         SQLLEN indicator;
         std::vector<char> buffer(1024); // Buffer for column data
-        
-        SQLRETURN ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+                
+        if (SQLRETURN ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator); ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
             continue; // Skip column on error
         }
 

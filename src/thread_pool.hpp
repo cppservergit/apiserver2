@@ -25,6 +25,8 @@ public:
         try {
             stop();
         } catch (const std::exception& e) {
+            /* NOSONAR */
+            // avoid program crash, nothing else to do here
         }
     }
 
@@ -79,7 +81,7 @@ private:
                 if (*task_opt) {
                     (*task_opt)(); // Execute the task
                 }
-            } catch (const std::exception& e) {
+            } catch (/* NOSONAR */ const std::exception& e) {
                 util::log::error("Exception caught in worker thread: {}", e.what());
             }
         }

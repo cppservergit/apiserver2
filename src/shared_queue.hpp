@@ -27,7 +27,7 @@ public:
      * @return An optional containing the item, or std::nullopt if the queue was stopped.
      */
     std::optional<T> wait_and_pop() {
-        std::unique_lock<std::mutex> lock(m_mutex);
+        std::unique_lock lock(m_mutex);
         m_cond.wait(lock, [this] { return !m_queue.empty() || m_stopped; });
         
         if (m_stopped && m_queue.empty()) {
