@@ -88,15 +88,16 @@ void server::io_worker::run() {
 }
 
 void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) const {
+    using enum http::status;
     try {
         if (endpoint->method != request_ref.get_method()) {
-            res.set_body(http::status::bad_request, R"({"error":"Method Not Allowed"})");
+            res.set_body(bad_request, R"({"error":"Method Not Allowed"})");
             return;
         }
 
         if (endpoint->is_secure) {
             if (auto token_opt = request_ref.get_bearer_token(); !token_opt || !jwt::is_valid(*token_opt)) {
-                res.set_body(http::status::unauthorized, R"({"error":"Invalid or missing token"})");
+                res.set_body(unauthorized, R"({"error":"Invalid or missing token"})");
                 return;
             }
         }
@@ -105,22 +106,22 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
         endpoint->handler(request_ref, res);
 
     } catch (const validation::validation_error& e) {
-        res.set_body(http::status::bad_request, std::format(R"({{"error":"{}"}})", e.what()));
+        res.set_body(bad_request, std::format(R"({{"error":"{}"}})", e.what()));
     } catch (const sql::error& e) {
         util::log::error("SQL error in handler for path '{}': {}", request_ref.get_path(), e.what());
-        res.set_body(http::status::internal_server_error, R"({"error":"Database operation failed"})");
+        res.set_body(internal_server_error, R"({"error":"Database operation failed"})");
     } catch (const json::parsing_error& e) {
         util::log::error("JSON parsing error in handler for path '{}': {}", request_ref.get_path(), e.what());
-        res.set_body(http::status::bad_request, R"({"error":"Invalid JSON format in request"})");
+        res.set_body(bad_request, R"({"error":"Invalid JSON format in request"})");
     } catch (const json::output_error& e) {
         util::log::error("JSON output error in handler for path '{}': {}", request_ref.get_path(), e.what());
-        res.set_body(http::status::internal_server_error, R"({"error":"Failed to generate JSON response"})");
+        res.set_body(internal_server_error, R"({"error":"Failed to generate JSON response"})");
     } catch (const curl_exception& e) {
         util::log::error("HTTP client error in handler for path '{}': {}", request_ref.get_path(), e.what());
-        res.set_body(http::status::internal_server_error, R"({"error":"Internal communication failed"})");
+        res.set_body(internal_server_error, R"({"error":"Internal communication failed"})");
     } catch (/* NOSONAR */ const std::exception& e) {
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
-        res.set_body(http::status::internal_server_error, R"({"error":"Internal Server Error"})");
+        res.set_body(internal_server_error, R"({"error":"Internal Server Error"})");
     }
 }
 
@@ -326,16 +327,17 @@ void server::io_worker::process_request(int fd) {
 }
 
 bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {
+    using enum http::status;
     if (req.get_path() == "/metrics") {
-        res.set_body(http::status::ok, m_metrics->to_json());
+        res.set_body(ok, m_metrics->to_json());
         return true;
     }
     if (req.get_path() == "/ping") {
-        res.set_body(http::status::ok, R"({"status":"OK"})");
+        res.set_body(ok, R"({"status":"OK"})");
         return true;
     }
     if (req.get_path() == "/version") {
-        res.set_body(http::status::ok, std::format(R"({{"version":"{}"}})", "1.0.0")); // Assuming a version, replace if needed
+        res.set_body(ok, std::format(R"({{"version":"{}"}})", "1.0.0")); // Assuming a version, replace if needed
         return true;
     }
     return false;
@@ -403,8 +405,7 @@ void server::start() {
     }
 
 	signalfd_siginfo ssi;
-    ssize_t bytes_read = read(m_signals->get_fd(), &ssi, sizeof(ssi));
-    if (bytes_read == sizeof(ssi)) {
+    if (ssize_t bytes_read = read(m_signals->get_fd(), &ssi, sizeof(ssi)); bytes_read == sizeof(ssi)) {
         const char* signal_name = strsignal(ssi.ssi_signo);
         util::log::info("Received signal {} ({}), shutting down.", ssi.ssi_signo, signal_name ? signal_name : "Unknown");
     }

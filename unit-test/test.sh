@@ -19,8 +19,9 @@ function show_result {
   [[ "$status" != "200" ]] && echo -e "${body}\n"
 }
 
+CURL_UUID="$(echo -n $(uuid))"
 login_response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-  -d "$LOGIN_PAYLOAD" "${BASE_URL}/login")
+  -H "X-Request-ID: $CURL_UUID" -d "$LOGIN_PAYLOAD" "${BASE_URL}/login")
 
 login_body="${login_response::-3}"
 login_status="${login_response: -3}"
@@ -62,9 +63,9 @@ for entry in "${endpoints[@]}"; do
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN" -d "$payload" "${BASE_URL}${uri}")
+      -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" -d "$payload" "${BASE_URL}${uri}")
   else
-    response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "${BASE_URL}${uri}")
+    response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" "${BASE_URL}${uri}")
   fi
 
   body="${response::-3}"
