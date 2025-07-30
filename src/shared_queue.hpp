@@ -16,7 +16,7 @@ public:
      */
     void push(T item) {
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::scoped_lock lock(m_mutex);
             m_queue.push(std::move(item));
         }
         m_cond.notify_one();
@@ -43,7 +43,7 @@ public:
      * @brief Moves all items from this queue into a target vector.
      */
     void drain_to(std::vector<T>& target) {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::scoped_lock lock(m_mutex);
         while (!m_queue.empty()) {
             target.push_back(std::move(m_queue.front()));
             m_queue.pop();
@@ -55,7 +55,7 @@ public:
      */
     void stop() {
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::scoped_lock lock(m_mutex);
             m_stopped = true;
         }
         m_cond.notify_all();
@@ -66,7 +66,7 @@ public:
      * @return The number of items.
      */
     [[nodiscard]] size_t size() const {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::scoped_lock lock(m_mutex);
         return m_queue.size();
     }
 
