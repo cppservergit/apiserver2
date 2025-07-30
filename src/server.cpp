@@ -337,7 +337,7 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         return true;
     }
     if (req.get_path() == "/version") {
-        res.set_body(ok, std::format(R"({{"version":"{}"}})", "1.0.0")); // Assuming a version, replace if needed
+        res.set_body(ok, std::format(R"({{"version":"{}"}})", g_version)); // Assuming a version, replace if needed
         return true;
     }
     return false;
@@ -383,8 +383,8 @@ server::server() {
 server::~server() noexcept = default;
 
 void server::start() {
-    util::log::info("Server version {} starting on port {} with {} I/O threads and {} total worker threads.", 
-        "1.0.0", m_port, m_io_threads, m_worker_threads);
+    util::log::info("APIServer2 version {} starting on port {} with {} I/O threads and {} total worker threads.", 
+        g_version, m_port, m_io_threads, m_worker_threads);
 
     const int worker_threads_per_io = std::max(1, m_worker_threads / m_io_threads);
     util::log::info("Assigning {} worker threads per I/O worker.", worker_threads_per_io);
