@@ -14,11 +14,18 @@
 
 namespace util::log {
 
-// --- Compile-time configuration for debug logging ---
+// --- Compile-time configuration for logging ---
 #ifdef ENABLE_DEBUG_LOGS
 constexpr bool debug_logging_enabled = true;
 #else
 constexpr bool debug_logging_enabled = false;
+#endif
+
+// FIX: Add compile-time flag for performance logging
+#ifdef ENABLE_PERF_LOGS
+constexpr bool perf_logging_enabled = true;
+#else
+constexpr bool perf_logging_enabled = false;
 #endif
 
 
@@ -28,7 +35,8 @@ enum class Level {
     Info,
     Warning,
     Error,
-    Critical
+    Critical,
+    Perf // FIX: Add new Perf level
 };
 
 namespace detail {
@@ -46,6 +54,8 @@ namespace detail {
             case Warning: level_str = "WARN";    break;
             case Error:   level_str = "ERROR";   break;
             case Critical:level_str = "CRITICAL";break;
+            // FIX: Handle new Perf level
+            case Perf:    level_str = "PERF";    break; 
             default:      level_str = "UNKNOWN"; break;
         }
         const auto log_prefix = std::format(
@@ -69,17 +79,12 @@ namespace detail {
 /**
  * @class request_id_scope
  * @brief A RAII helper to set and clear the thread-local request ID.
- *
- * Create an instance of this on the stack at the beginning of a request's
- * lifecycle. When it goes out of scope, the request ID will be cleared.
  */
 class request_id_scope {
 public:
     explicit request_id_scope(std::string_view id) noexcept {
         detail::g_request_id = id;
     }
-    // *** SONARCLOUD FIX ***
-    // Destructors should never throw. Added the noexcept specifier.
     ~request_id_scope() noexcept {
         detail::g_request_id = {}; // Clear the ID
     }
@@ -97,6 +102,14 @@ template<typename... Args>
 void debug(std::format_string<Args...> fmt, Args&&... args) {
     if constexpr (debug_logging_enabled) {
         detail::vprint(Level::Debug, fmt.get(), std::make_format_args(args...));
+    }
+}
+
+// FIX: Add new perf() log function
+template<typename... Args>
+void perf(std::format_string<Args...> fmt, Args&&... args) {
+    if constexpr (perf_logging_enabled) {
+        detail::vprint(Level::Perf, fmt.get(), std::make_format_args(args...));
     }
 }
 

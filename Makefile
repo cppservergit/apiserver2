@@ -7,6 +7,8 @@ CXXFLAGS_BASE = -std=c++23 -Wall -Wextra
 
 CXXFLAGS_DEBUG = -g -DENABLE_DEBUG_LOGS -DUSE_STACKTRACE
 CXXFLAGS_RELEASE = -O2 -march=native -DNDEBUG -flto=4
+# FIX: Add new perflog build flags
+CXXFLAGS_PERFLOG = -O2 -march=native -DNDEBUG -flto=4 -DENABLE_PERF_LOGS
 CXXFLAGS_SANITIZER_ADDRESS = -g -fsanitize=address -fno-omit-frame-pointer -O1
 CXXFLAGS_SANITIZER_THREAD = -g -fsanitize=thread
 CXXFLAGS_SANITIZER_LEAK = -g -fsanitize=address -fsanitize=leak -fno-omit-frame-pointer -O0
@@ -28,6 +30,8 @@ TARGET_TESTRUNNER_SANITIZER_LEAK = test_runner_sanitizer_leak
 
 TARGET_SERVER_RELEASE = server_app
 TARGET_SERVER_DEBUG = server_debug_app
+# FIX: Add new perflog target executable
+TARGET_SERVER_PERFLOG = server_perflog_app
 TARGET_SERVER_SANITIZER_ADDRESS = server_sanitizer_address_app
 TARGET_SERVER_SANITIZER_THREAD = server_sanitizer_thread_app
 TARGET_SERVER_SANITIZER_LEAK = server_sanitizer_leak_app
@@ -50,8 +54,8 @@ LIBS = -lcurl -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid
 .PHONY: all release debug server run run_server clean help \
 		sanitize_address sanitize_thread sanitize_leak \
 		run_sanitizer_address run_sanitizer_thread run_sanitizer_leak \
-		server_debug server_sanitize_address server_sanitize_thread server_sanitize_leak \
-		run_server_debug run_server_sanitizer_address run_server_sanitizer_thread run_server_sanitizer_leak
+		server_debug server_perflog server_sanitize_address server_sanitize_thread server_sanitize_leak \
+		run_server_debug run_server_perflog run_server_sanitizer_address run_server_sanitizer_thread run_server_sanitizer_leak
 
 all: release
 
@@ -70,6 +74,11 @@ server:
 server_debug:
 	@clear
 	@$(MAKE) --no-print-directory $(TARGET_SERVER_DEBUG)
+
+# FIX: Add new user-facing target
+server_perflog:
+	@clear
+	@$(MAKE) --no-print-directory $(TARGET_SERVER_PERFLOG)
 
 sanitize_address:
 	@clear
@@ -104,6 +113,10 @@ run_server: server
 run_server_debug: server_debug
 	./$(TARGET_SERVER_DEBUG)
 
+# FIX: Add new run target
+run_server_perflog: server_perflog
+	./$(TARGET_SERVER_PERFLOG)
+
 run_sanitizer_address: sanitize_address
 	./$(TARGET_TESTRUNNER_SANITIZER_ADDRESS)
 
@@ -131,24 +144,27 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Test Runner Targets:"
-	@echo "  release (default)    Build the release test runner."
-	@echo "  run                  Build and run the release test runner."
-	@echo "  debug                Build the debug test runner."
-	@echo "  sanitize_address     Build test runner with AddressSanitizer."
-	@echo "  sanitize_thread      Build test runner with ThreadSanitizer."
-	@echo "  sanitize_leak        Build test runner with LeakSanitizer."
+	@echo "  release (default)   Build the release test runner."
+	@echo "  run                 Build and run the release test runner."
+	@echo "  debug               Build the debug test runner."
+	@echo "  sanitize_address    Build test runner with AddressSanitizer."
+	@echo "  sanitize_thread     Build test runner with ThreadSanitizer."
+	@echo "  sanitize_leak       Build test runner with LeakSanitizer."
 	@echo ""
 	@echo "Server Targets:"
-	@echo "  server               Build the release server."
-	@echo "  run_server           Build and run the release server."
-	@echo "  server_debug         Build the debug server."
-	@echo "  run_server_debug     Build and run the debug server."
-	@echo "  server_sanitize_address Build server with AddressSanitizer."
-	@echo "  server_sanitize_thread Build server with ThreadSanitizer."
-	@echo "  server_sanitize_leak Build server with LeakSanitizer."
+	@echo "  server              Build the release server."
+	@echo "  run_server          Build and run the release server."
+	@echo "  server_debug        Build the debug server."
+	@echo "  run_server_debug    Build and run the debug server."
+	# FIX: Document the new target
+	@echo "  server_perflog      Build the release server with performance logging."
+	@echo "  run_server_perflog  Build and run the performance logging server."
+	@echo "  server_sanitize_address Build server with AddressSanitizer."
+	@echo "  server_sanitize_thread Build server with ThreadSanitizer."
+	@echo "  server_sanitize_leak Build server with LeakSanitizer."
 	@echo ""
 	@echo "Other Targets:"
-	@echo "  clean                Remove all build artifacts."
+	@echo "  clean               Remove all build artifacts."
 
 
 # --- Linking Rules (for build artifacts) ---
@@ -171,6 +187,13 @@ $(TARGET_SERVER_RELEASE): $(call GET_OBJS,release,$(SERVER_SRCS)) $(call GET_OBJ
 $(TARGET_SERVER_DEBUG): $(call GET_OBJS,debug,$(SERVER_SRCS)) $(call GET_OBJS,debug,$(COMMON_LIB_SRCS)) $(call GET_OBJS,debug,$(SERVER_LIB_SRCS))
 	@echo "==> Linking debug server: $@"
 	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_DEBUG) -o $@ $^ $(LIBS)
+
+# FIX: Add new linking rule for the perflog server
+$(TARGET_SERVER_PERFLOG): $(call GET_OBJS,perflog,$(SERVER_SRCS)) $(call GET_OBJS,perflog,$(COMMON_LIB_SRCS)) $(call GET_OBJS,perflog,$(SERVER_LIB_SRCS))
+	@echo "==> Linking performance log server: $@"
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_PERFLOG) -o $@ $^ $(LIBS)
+	@echo "==> Stripping symbols..."
+	strip $@
 
 $(TARGET_TESTRUNNER_SANITIZER_ADDRESS): $(call GET_OBJS,sanitize_address,$(TESTRUNNER_SRCS)) $(call GET_OBJS,sanitize_address,$(COMMON_LIB_SRCS))
 	@echo "==> Linking address sanitizer test runner: $@"
@@ -205,6 +228,11 @@ $(OBJ_DIR)/release/%.o: $(SRC_DIR)/%.cpp
 $(OBJ_DIR)/debug/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_DEBUG) -c $< -o $@
+
+# FIX: Add new compilation rule for perflog objects
+$(OBJ_DIR)/perflog/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_PERFLOG) -c $< -o $@
 
 $(OBJ_DIR)/sanitize_address/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)

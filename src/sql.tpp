@@ -140,7 +140,13 @@ template<typename... Args>
             detail::bind_all_params(stmt, params_tuple, indicators);
         }
 
+        const auto start_time = std::chrono::high_resolution_clock::now();
+        
         SQLRETURN ret = SQLExecute(stmt.get());
+        
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+        
         detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
 
         // Use the refactored helper function to fetch the result
@@ -172,7 +178,13 @@ template<typename... Args>
             detail::bind_all_params(stmt, params_tuple, indicators);
         }
         
+        const auto start_time = std::chrono::high_resolution_clock::now();
+
         SQLRETURN ret = SQLExecute(stmt.get());
+
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+
         detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
         
         resultset rs = stmt.fetch_all();
@@ -202,7 +214,13 @@ void exec(std::string_view db_key, std::string_view sql_query, Args&&... args) {
             detail::bind_all_params(stmt, params_tuple, indicators);
         }
         
+        const auto start_time = std::chrono::high_resolution_clock::now();
+
         SQLRETURN ret = SQLExecute(stmt.get());
+        
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+
         detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
         
         SQLFreeStmt(stmt.get(), SQL_CLOSE);

@@ -141,9 +141,15 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
         
         execute_handler(*req_ptr, res, endpoint);
         
+        // FIX: Capture duration for both metrics and performance logging.
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+        
         m_response_queue->push({fd, std::move(res)});
-        m_metrics->record_request_time(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time));
+        m_metrics->record_request_time(duration);
         m_metrics->decrement_active_threads();
+
+        // FIX: Add the performance log call. This will be compiled out when ENABLE_PERF_LOGS is not set.
+        util::log::perf("API handler for '{}' executed in {} microseconds.", req_ptr->get_path(), duration.count());
     });
 }
 
