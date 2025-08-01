@@ -2,12 +2,77 @@
 
 APIServer2 is a high-performance, multi-reactor web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic.
 
+```
+                             Client Connections
+                                        │
+                                        ▼
+                       ┌───────────────────────────────────┐
+                       │   Linux Kernel (SO_REUSEPORT)     │
+                       │ Load balances new connections...  │
+                       └───────────────────────────────────┘
+                                │               │
+              ┌─────────────────┴───────────────┴─────────────────┐
+              │                                                   │
+              ▼                                                   ▼
+┌───────────────────────────┐                       ┌───────────────────────────┐
+│   I/O Thread 1 (Reactor)  │                       │   I/O Thread N (Reactor)  │
+│ ┌───────────────────────┐ │                       │ ┌───────────────────────┐ │
+│ │ Listening Socket (FD) │ │                       │ │ Listening Socket (FD) │ │
+│ └───────────────────────┘ │                       │ └───────────────────────┘ │
+│ ┌───────────────────────┐ │                       │ ┌───────────────────────┐ │
+│ │  epoll_wait() loop    │ │                       │ │  epoll_wait() loop    │ │
+│ │ (Accepts & Reads)     │ │                       │ │ (Accepts & Reads)     │ │
+│ └───────────────────────┘ │                       │ └───────────────────────┘ │
+│             │             │                       │             │             │
+│             ▼             │                       │             ▼             │
+│ `dispatch_to_worker()`    │                       │ `dispatch_to_worker()`    │
+│ (Round-Robin Dispatch)    │                       │ (Round-Robin Dispatch)    │
+│   │       │       │       │                       │   │       │       │       │
+└─┬─│───────│───────│───────┘                       └─┬─│───────│───────│───────┘
+  │ │       │       │                                 │ │       │       │
+  ▼ │       ▼       ▼                                 ▼ │       ▼       ▼
+┌───┴───┐ ┌───┴───┐ ┌───┴───┐                       ┌───┴───┐ ┌───┴───┐ ┌───┴───┐
+│ Task  │ │ Task  │ │ Task  │ ...                   │ Task  │ │ Task  │ │ Task  │
+│ Queue │ │ Queue │ │ Queue │                       │ Queue │ │ Queue │ │ Queue │
+└───┬───┘ └───┬───┘ └───┬───┘                       └───┬───┘ └───┬───┘ └───┬───┘
+    │         │         │                               │         │         │
+    ▼         ▼         ▼                               ▼         ▼         ▼
+┌─────────┐ ┌─────────┐ ┌─────────┐                 ┌─────────┐ ┌─────────┐ ┌─────────┐
+│ Worker  │ │ Worker  │ │ Worker  │ ...             │ Worker  │ │ Worker  │ │ Worker  │
+│ Thread 1│ │ Thread 2│ │ Thread M│                 │ Thread 1│ │ Thread 2│ │ Thread M│
+└─────────┘ └─────────┘ └─────────┘                 └─────────┘ └─────────┘ └─────────┘
+    │         │         │                               │         │         │
+    └─────────┼─────────┘                               └─────────┼─────────┘
+              │                                                   │
+              ▼                                                   ▼
+    ┌───────────────────┐                             ┌───────────────────┐
+    │  Response Queue   │                             │  Response Queue   │
+    │ (MPSC)            │                             │ (MPSC)            │
+    └───────────────────┘                             └───────────────────┘
+              ▲                                                   ▲
+              │                                                   │
+┌─────────────┴─────────────┐                       ┌─────────────┴─────────────┐
+│ I/O Thread 1 (Reactor)    │                       │ I/O Thread N (Reactor)    │
+│ (Processes response queue │                       │ (Processes response queue │
+│  and writes to socket)    │                       │  and writes to socket)    │
+└───────────────────────────┘                       └───────────────────────────┘
+```
+
 ## **Core Features**
 
 * **High-Concurrency Multi-Reactor Model:** Utilizes the SO\_REUSEPORT socket option, allowing each I/O thread to have its own listening socket. This enables the kernel to efficiently load-balance incoming connections, eliminating the "thundering herd" problem and maximizing throughput.  
 * **Contention-Free Worker Pools:** Each I/O thread has its own private pool of worker threads. Tasks are dispatched via dedicated Single-Producer, Single-Consumer (SPSC) queues, ensuring that a high load on one part of the system does not impact the performance of others.  
 * **Modern C++23:** Leverages the latest C++ features for safety, performance, and code clarity, including std::jthread, std::expected, and std::string\_view.  
 * **Built-in Observability:** Comes with out-of-the-box monitoring through a set of internal API endpoints, providing real-time insights into the server's health and performance.
+
+## **Quality Control**
+
+APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analysis, specifically:
+
+* `-fsanitize=thread`: Thread-safe, no data races.
+* `-fsanitize=address`: Memory safety.
+* `-fsanitize=leak`: No memory leaks.
+* Top "A" qualification with SonarCloud for the Master branch, no issues at all.
 
 ## **Building the Server**
 
