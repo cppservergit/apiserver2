@@ -1,6 +1,6 @@
 # **APIServer2**
 
-APIServer2 is a high-performance, multi-reactor web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic.
+APIServer2 is a high-performance, multi-reactor web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic. This is the 2nd generation of APIServer, hence the name, it was written 100% with AI.
 
 ```
                              Client Connections
@@ -89,9 +89,9 @@ cd apiserver2
 ### **Install dependencies**
 ```
 sudo apt-get update
-
-sudo apt-get install -y \  
-    g++-14 \ 
+ 
+sudo apt-get install -y \
+    g++-14 \
     make \ 
     libssl-dev \
     libjson-c-dev \
