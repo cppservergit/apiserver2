@@ -72,17 +72,61 @@ APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analy
 * `-fsanitize=thread`: Thread-safe, no data races.
 * `-fsanitize=address`: Memory safety.
 * `-fsanitize=leak`: No memory leaks.
-* Top "A" qualification with SonarCloud for the Master branch, no issues at all.
+* Top "A" qualification with SonarCloud for the Main branch, no issues at all.
 
 ## **Building the Server**
 
-The project uses a Makefile for streamlined compilation.
+The test environment is Ubuntu 24.04 with GCC 14.2.
+
+### **Download Repo**
+
+In your projects or home directory, run:
+```
+git clone https://github.com/cppservergit/apiserver2.git
+cd apiserver2
+```
+
+### **Install dependencies**
+```
+sudo apt-get update
+
+sudo apt-get install -y \  
+    g++-14 \ 
+    make \ 
+    libssl-dev \
+    libjson-c-dev \
+    unixodbc-dev \  
+    tdsodbc \
+    uuid-dev \  
+    libbacktrace-dev \
+    libcurl4-openssl-dev \  
+    liboath-dev
+```
 
 ### **Release Build (Optimized)**
-
+```
 make server
+```
+This will create a stripped, optimized executable named server_app.
 
-This will create a stripped, optimized executable named server\_app.
+### **Run the server**
+
+The server is configured via environment variables. Use the provided `run ` bash script:
+
+```
+chmod +x run.sh  
+./run.sh
+```
+
+You should see output similar to this:
+```
+[  INFO  ] [Thread: 128360869079680] [--------] Application starting...
+[  INFO  ] [Thread: 128360869079680] [--------] CORS enabled for 2 origin(s).
+[  INFO  ] [Thread: 128360869079680] [--------] APIServer2 version 1.0.0 starting on port 8080 with 2 I/O threads and 8 total worker threads.
+[  INFO  ] [Thread: 128360869079680] [--------] Assigning 4 worker threads per I/O worker.
+```
+
+Use CTRL-C to stop the server
 
 ### **Debug Build**
 
