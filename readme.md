@@ -1,6 +1,6 @@
 # **APIServer2**
 
-APIServer2 is a high-performance, multi-reactor web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic. This is the 2nd generation of APIServer, hence the name, it was written 100% with AI.
+APIServer2 is a high-performance, multi-reactor EPOLL based web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic. This is the 2nd generation of APIServer, hence the name. It was written 100% with AI.
 
 ```
                              Client Connections
@@ -72,7 +72,8 @@ APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analy
 * `-fsanitize=thread`: Thread-safe, no data races.
 * `-fsanitize=address`: Memory safety.
 * `-fsanitize=leak`: No memory leaks.
-* Top "A" qualification with SonarCloud for the Main branch, no issues at all.
+* Top "A" [qualification](https://sonarcloud.io/summary/overall?id=cppservergit_apiserver2&branch=main) with SonarCloud for the Main branch, no issues , no code duplication, so security hotspots.
+* C++ Core Guidelines compliant, double-checked with SonarCloud and Gemini Pro assessments.
 
 ## **Building the Server**
 
@@ -89,9 +90,9 @@ cd apiserver2
 ### **Install dependencies**
 ```
 sudo apt-get update
- 
-sudo apt-get install -y \
-    g++-14 \
+
+sudo apt-get install -y \  
+    g++-14 \ 
     make \ 
     libssl-dev \
     libjson-c-dev \
@@ -111,10 +112,10 @@ This will create a stripped, optimized executable named server_app.
 
 ### **Run the server**
 
-The server is configured via environment variables. Use the provided `run ` bash script:
+The server is configured via environment variables. Use the provided `run.sh` bash script:
 
 ```
-chmod +x run.sh  
+chmod +x run  
 ./run.sh
 ```
 
@@ -127,6 +128,12 @@ You should see output similar to this:
 ```
 
 Use CTRL-C to stop the server
+```
+INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shutting down.
+[  INFO  ] [Thread: 126044113238656] [--------] Application shutting down gracefully.
+```
+
+Upon receiving the usual shutdown signals from the user, operating system or a container manager like Kubernetes or Docker, the server will release all its resources, including memory, threads, sockets, database connections, etc.
 
 ### **Debug Build**
 
