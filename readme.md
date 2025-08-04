@@ -295,3 +295,132 @@ You can test this whole setup on a single Windows 10 Pro PC using Canonical's Mu
 +-------------------------------------------------------------------------------+
 ```
 
+## **Hello World**
+
+Make sure the server is not running (CTRL-C).
+Edit main.cpp, this is how it looks now:
+```
+#include "server.hpp"
+#include "logger.hpp"
+#include "webapi_path.hpp"
+#include "sql.hpp"
+#include "input_validator.hpp"
+#include "util.hpp"
+#include "json_parser.hpp"
+#include "jwt.hpp"
+#include "http_client.hpp"
+#include <functional>
+#include <algorithm> 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <cctype>
+#include <string_view> 
+#include <ranges>      
+
+using enum http::status;
+using enum http::method;
+
+
+int main() {
+    try {
+        util::log::info("Application starting...");
+        server s;
+        s.start();
+        util::log::info("Application shutting down gracefully.");
+
+    // FIX (Issue #16): Catch the more specific, dedicated exception.
+    } catch (const server_error& e) {
+        util::log::critical("A critical server error occurred: {}", e.what());
+        return 1;
+    } catch (const std::exception& e) {
+        util::log::critical("An unexpected error occurred: {}", e.what());
+        return 1;
+    } catch (...) {
+        util::log::critical("An unknown error occurred.");
+        return 1;
+    }
+
+    return 0;
+}
+
+```
+
+Above `main()` you will create a function that implements your Web API:
+```
+void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
+    res.set_body(ok, R"({"message":"Hello, World!"})");
+}
+```
+
+Right after the declaration of the server variable `server s;` you will register your API:
+```
+s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
+```
+
+We are using some `enums` so we can write abbreviations like `ok` for `http::status::ok` and `get` for `http::method::get`.
+
+Your main.cpp should look like this:
+```
+#include "server.hpp"
+#include "logger.hpp"
+#include "webapi_path.hpp"
+#include "sql.hpp"
+#include "input_validator.hpp"
+#include "util.hpp"
+#include "json_parser.hpp"
+#include "jwt.hpp"
+#include "http_client.hpp"
+#include <functional>
+#include <algorithm> 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <cctype>
+#include <string_view> 
+#include <ranges>      
+
+using enum http::status;
+using enum http::method;
+
+//your API implementation
+void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
+    res.set_body(ok, R"({"message":"Hello, World!"})");
+}
+
+int main() {
+    try {
+        util::log::info("Application starting...");
+        
+        server s;
+        
+        //register your API endpoints here
+        s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
+        
+        s.start();
+        
+        util::log::info("Application shutting down gracefully.");
+    } catch (const server_error& e) {
+        util::log::critical("A critical server error occurred: {}", e.what());
+        return 1;
+    } catch (const std::exception& e) {
+        util::log::critical("An unexpected error occurred: {}", e.what());
+        return 1;
+    } catch (...) {
+        util::log::critical("An unknown error occurred.");
+        return 1;
+    }
+
+    return 0;
+}
+```
+
+Now open another terminal window on your VM and run:
+```
+curl localhost:8080/hello
+```
+
+You should see:
+```
+{"message":"Hello, World!"}
+```
