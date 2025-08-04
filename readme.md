@@ -414,6 +414,7 @@ int main() {
     return 0;
 }
 ```
+Save and execute `make server` to compile and then `./run.sh`.
 
 Now open another terminal window on your VM and run:
 ```
