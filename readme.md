@@ -222,43 +222,36 @@ export JWT_TIMEOUT_SECONDS=300
 
 Use `IO_THREADS` to set the number of threads accepting connections and processing network events, `POOL_SIZE` is the number of worker threads used to run your Web APIs, doing the backend work like database access or invoking remote REST services. This pool is divided between the `IO_THREADS` threads, if you set `8`, then there will be 4 workers for each I/O thread, in a separate pool each group of workers' threads.
 
-Sensitive environment variables, like `JWT_SECRET` or database connection strings like `LOGINDB` can be encrypted using an RSA public key, then provide `private.pem` key by placing it in the same APIServer2 directory, and set the environment variable to the filename ending with `.enc`, then APIServer2 will know how to decrypt this value, something like this:
+Sensitive environment variables, like `JWT_SECRET` or database connection strings like `LOGINDB` can be encrypted using an RSA public key and stored in a .enc file, then provide `private.pem` key by placing it in the same APIServer2 directory, and set the environment variable to the filename ending with `.enc`, then APIServer2 will know how to decrypt this value, something like this:
 ```
 export LOGINDB="logindb.enc"
 ```
 
 This is a simple and effective method when running OnPrem, when running on Kubernetes or another container service, the orchestation platform will provide means for secure environment variables, which should be transparent to APIServer2.
 
-### **2\. Production Environment Setup**
+### **Production Environment Setup**
 
-This setup installs only the runtime shared libraries required to *run* a pre-compiled server executable. It does **not** include compilers or development headers, resulting in a smaller, more secure production environment.
-
-This is ideal for a Docker container or a production virtual machine where you will deploy the server\_app binary.
+This setup installs only the runtime shared libraries required to run a pre-compiled server executable. This instructions are for Ubuntu 24.04. This is intended for a production virtual machine where you will deploy the server_app binary.
 
 Execute the following commands in your terminal:
 
-\# First, update your package lists  
+First, update your package lists:
+```
 sudo apt-get update
+```
 
-\# Install only the runtime libraries  
-sudo apt-get install \-y \\  
-    libssl3 \\  
-    libjson-c5 \\  
-    unixodbc \\  
-    tdsodbc \\  
-    libuuid1 \\  
-    libbacktrace0 \\  
-    libcurl4 \\  
+Install the required libraries:
+```
+sudo apt-get install -y \  
+    libssl3 \  
+    libjson-c5 \
+    unixodbc \ 
+    tdsodbc \  
+    libuuid1 \
+    libbacktrace0 \
+    libcurl4 \
     liboath0
+```
 
-#### **Package Breakdown (Production):**
-
-* **libssl3**: The runtime shared library for OpenSSL.  
-* **libjson-c5**: The runtime shared library for json-c.  
-* **unixodbc**: The runtime components for the unixODBC driver manager.  
-* **tdsodbc**: The runtime FreeTDS ODBC driver used by unixODBC.  
-* **libuuid1**: The runtime shared library for UUID generation.  
-* **libbacktrace0**: The runtime shared library for libbacktrace.  
-* **libcurl4**: The runtime shared library for cURL.  
-* **liboath0**: The runtime shared library for the OATH toolkit.
+Copy into the same directory the files server_app and run.sh with any .enc files and private.pem if using encrypted environment variables and you are ready to go.
 
