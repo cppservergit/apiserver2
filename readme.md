@@ -120,7 +120,7 @@ sudo apt-get install -y \
 ```
 make server
 ```
-This will create a stripped, optimized executable named server_app.
+This will create a stripped, optimized executable named apiserver.
 
 ## **Run the server**
 
@@ -179,12 +179,12 @@ A bash script using CURL for testing your endpoints is provided in folder `unit-
 
 | make command | Executable program | Result
 |-----------------|-----------------|-----------------|
-| make server     | server_app     | Optimized executable for production
-| make server_debug     | server_debug_app     | Debug version, non-optimized, prints debug messages and stack traces in case of errors, may produce lots of logs
-| make server_perflog     | server_perflog_app     | Same as `server_app` but prints performance metrics in logs to identify performance problems
-| make server_sanitize_thead     | server_sanitizer_thread_app     | Detects data races
-| make server_sanitize_address     | server_sanitizer_address_app     | Detects memory problems
-| make server_sanitize_leak     | server_sanitizer_leak_app     | Same as above, plus memory leaks
+| make server     | apiserver     | Optimized executable for production
+| make server_debug     | apiserver_debug     | Debug version, non-optimized, prints debug messages and stack traces in case of errors, may produce lots of logs
+| make server_perflog     | apiserver_perflog     | Same as `server_app` but prints performance metrics in logs to identify performance problems
+| make server_sanitize_thead     | apiserver_sanitizer_thread     | Detects data races
+| make server_sanitize_address     | apiserver_sanitizer_address     | Detects memory problems
+| make server_sanitize_leak     | apiserver_sanitizer_leak     | Same as above, plus memory leaks
 
 Whenever you produce a new executable different from `make server` you should edit `run.sh` to invoke the new binary, its name changes depending on the `make` target used to compile. The sanitizer builds are not optimized and include debug symbols (-g). It could be a good idea to deploy in production server_app and server_perflog_app (also optimized for production), and switch between them in `run.sh` if the need arises to obtain performance metrics, a restart will take milliseconds only. Besides server and server_perflog, none of the other `make` targets are intended for production use.
 
@@ -217,7 +217,7 @@ export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
 
 # executable
-./server_app
+./apiserver
 ```
 
 Use `IO_THREADS` to set the number of threads accepting connections and processing network events, `POOL_SIZE` is the number of worker threads used to run your Web APIs, doing the backend work like database access or invoking remote REST services. This pool is divided between the `IO_THREADS` threads, if you set `8`, then there will be 4 workers for each I/O thread, in a separate pool each group of workers' threads.
@@ -255,3 +255,39 @@ sudo apt-get install -y \
 
 Copy into the same directory the files server_app and run.sh with any .enc files and private.pem if using encrypted environment variables and you are ready to go.
 
+#### **Suggested OnPrem deployment using a single VM and LXD**
+
+```
+                  +----------------------------------------+
+                  |           External Network             |
+                  |              (Internet)                |
+                  +----------------------------------------+
+                                     | (HTTPS/TLS Traffic)
+                                     |
++------------------------------------V-------------------------------------+
+|                                                                          |
+|  ========================= Host Virtual Machine =======================  |
+|                                                                          |
+|   +------------------------------------------------------------------+   |
+|   |  HAProxy Service                                                 |   |
+|   |  - Listens on public IP (e.g., 443)                              |   |
+|   |  - Performs TLS Termination (decrypts traffic)                   |   |
+|   |  - Load balances requests to internal LXD containers             |   |
+|   +------------------------------------------------------------------+   |
+|                                     | (Plain HTTP Traffic)                 |
+|              +----------------------+----------------------+               |
+|              |                      |                      |               |
+|  +-----------V-----------+  +-------V--------------+  +-----V------------+  |
+|  | LXD Container 1       |  | LXD Container 2      |  | LXD Container N  |  |
+|  |                       |  |                      |  |                  |  |
+|  | +-------------------+ |  | +------------------+ |  | +----------------+ |  |
+|  | | APIServer2        | |  | | APIServer2       | |  | | APIServer2     | |  |
+|  | | (Instance A)      | |  | | (Instance B)     | |  | | (Instance N)   | |  |
+|  | +-------------------+ |  | +------------------+ |  | +----------------+ |  |
+|  |                       |  |                      |  |                  |  |
+|  +-----------------------+  +----------------------+  +------------------+  |
+|                                                                          |
+|  ========================================================================  |
+|                                                                          |
++--------------------------------------------------------------------------+
+```
