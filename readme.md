@@ -64,6 +64,7 @@ APIServer2 is a high-performance, multi-reactor EPOLL based web server written i
 * **Contention-Free Worker Pools:** Each I/O thread has its own private pool of worker threads. Tasks are dispatched via dedicated Single-Producer, Single-Consumer (SPSC) queues, ensuring that a high load on one part of the system does not impact the performance of others.  
 * **Modern C++23:** Leverages the latest C++ features for safety, performance, and code clarity, including std::jthread, std::expected, and std::string\_view.  
 * **Built-in Observability:** Comes with out-of-the-box monitoring through a set of internal API endpoints, providing real-time insights into the server's health and performance.
+* **Powerful abstractions:** Very easy to use and efficient abstractions to create Web APIs that execute database stored procedures via ODBC API or invoke REST APIs via HTTPS with libcurl, with integrated JSON Web Token stateless security model.
 
 ## **Quality Control**
 
@@ -75,11 +76,9 @@ APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analy
 * Top "A" [qualification](https://sonarcloud.io/summary/overall?id=cppservergit_apiserver2&branch=main) with SonarCloud for the Main branch, no issues , no code duplication, so security hotspots.
 * C++ Core Guidelines compliant, double-checked with SonarCloud and Gemini Pro assessments.
 
-## **Building the Server**
+The recommended test and production environment is Ubuntu 24.04 with GCC 14.2.
 
-The test environment is Ubuntu 24.04 with GCC 14.2.
-
-### **Download Repo**
+## **Download Repo**
 
 In your projects or home directory, run:
 ```
@@ -87,7 +86,7 @@ git clone https://github.com/cppservergit/apiserver2.git
 cd apiserver2
 ```
 
-### **Install dependencies**
+## **Install dependencies**
 ```
 sudo apt-get update
 
@@ -104,13 +103,26 @@ sudo apt-get install -y \
     liboath-dev
 ```
 
-### **Release Build (Optimized)**
+### **Package dependencies breakdown:**
+
+* **g++-14**: The specific version of the GNU C++ compiler needed for C++23 features.  
+* **make**: The build automation tool used by your Makefile.  
+* **libssl-dev**: Provides the development headers for OpenSSL (-lcrypto), used by your JWT implementation.  
+* **libjson-c-dev**: Provides the development headers for the json-c library (-ljson-c), used for JSON parsing.  
+* **unixodbc-dev**: Provides the development headers for the unixODBC driver manager (-lodbc), which is the interface used for all database connectivity.  
+* **tdsodbc**: Installs the actual FreeTDS ODBC driver (libtdsodbc.so) that unixODBC uses to connect to SQL Server.  
+* **uuid-dev**: Provides the development headers for libuuid (-luuid), used for generating UUIDs.  
+* **libbacktrace-dev**: Provides the development headers for libbacktrace (-lbacktrace), used for generating stack traces in debug builds.  
+* **libcurl4-openssl-dev**: Provides development headers for the cURL library, used for making HTTP/HTTPS client requests from within the server.  
+* **liboath-dev**: Provides development headers for the OATH toolkit library, used for generating and validating one-time passwords (e.g., for 2FA).
+
+## **Building the server**
 ```
 make server
 ```
 This will create a stripped, optimized executable named server_app.
 
-### **Run the server**
+## **Run the server**
 
 The server is configured via environment variables. Use the provided `run.sh` bash script:
 
@@ -135,85 +147,87 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 Upon receiving the usual shutdown signals from the user, operating system or a container manager like Kubernetes or Docker, the server will release all its resources, including memory, threads, sockets, database connections, etc.
 
-### **Debug Build**
+## **Test the server**
 
-make server\_debug
+Run the server with `./run.sh` and then from another terminal session execute this:
+```
+curl localhost:8080/metrics
+```
 
-This will create a debug executable named server\_debug\_app with full symbols.
+The output will be something like this:
+```
+{
+  "pod_name": "cpp14",
+  "start_time": "2025-08-03T20:03:08",
+  "total_requests": 0,
+  "average_processing_time_seconds": 0.000000,
+  "current_connections": 1,
+  "current_active_threads": 0,
+  "pending_tasks": 0,
+  "thread_pool_size": 8,
+  "total_ram_kb": 4007228,
+  "memory_usage_kb": 12800,
+  "memory_usage_percentage": 0.32
+}
+```
 
-## **Running the Server**
+The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load. Other observability endpoints are `/ping` and `/version` if you want to test them with CURL. The `/ping` endpoint is for health-checking by load balancers, also called Ingress services in Cloud containers and Kubernetes.
+
+A bash script using CURL for testing your endpoints is provided in folder `unit-test` this script requires a `/login` and sends the resulting JWT token when invoking the secure endpoints, it is a simple and effective alternative to Postman.
+
+## **Build options**
+
+| make command | Executable program | Result
+|-----------------|-----------------|-----------------|
+| make server     | server_app     | Optimized executable for production
+| make server_debug     | server_debug_app     | Debug version, non-optimized, prints debug messages and stack traces in case of errors, may produce lots of logs
+| make server_perflog     | server_perflog_app     | Same as `server_app` but prints performance metrics in logs to identify performance problems
+| make server_sanitize_thead     | server_sanitizer_thread_app     | Detects data races
+| make server_sanitize_address     | server_sanitizer_address_app     | Detects memory problems
+| make server_sanitize_leak     | server_sanitizer_leak_app     | Same as above, plus memory leaks
+
+Whenever you produce a new executable different from `make server` you should edit `run.sh` to invoke the new binary, its name changes depending on the `make` target used to compile. The sanitizer builds are not optimized and include debug symbols (-g). It could be a good idea to deploy in production server_app and server_perflog_app (also optimized for production), and switch between them in `run.sh` if the need arises to obtain performance metrics, a restart will take milliseconds only. Besides server and server_perflog, none of the other `make` targets are intended for production use.
+
+Debug and Performance logs do not have any cost impact, unless you compile with their respective `make` targets, the way the `Makefile` and the C++ programming was done, the code to log these levels `debug` and `perf` won't be compiled if the targets were not used during `make`.
+
+## **Configuring the Server**
 
 The server is configured via environment variables. Create a run script (e.g., run.sh) to set the required variables before launching the application.
 
-\#\!/bin/bash
+```
+#!/bin/bash
 
-\# Server Configuration  
-export PORT=8080  
-export IO\_THREADS=4  
-export POOL\_SIZE=16 \# Total worker threads across all I/O workers  
-export CORS\_ORIGINS="http://localhost:3000,https://your-frontend.com"
+# server configuration
+export PORT=8080
+export POOL_SIZE=8
+export IO_THREADS=2
 
-\# JWT Configuration  
-export JWT\_SECRET="your-super-secret-key-that-is-long"  
-export JWT\_TIMEOUT\_SECONDS=3600
+# database configuration
+export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
+export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
 
-\# Database Connection Strings (example)  
-export DB1="Driver=FreeTDS;SERVER=db.example.com;DATABASE=maindb;..."
+# cors configuration
+export CORS_ORIGINS="null,file://"
 
-\# Run the server  
-./server\_app
+# blobs storage configuration
+export BLOB_PATH="/home/ubuntu/uploads"
 
-Make the script executable and run it:
+# json web token configuration
+export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
+export JWT_TIMEOUT_SECONDS=300
 
-chmod \+x run.sh  
-./run.sh
+# executable
+./server_app
+```
 
-## **Key API Endpoints**
+Use `IO_THREADS` to set the number of threads accepting connections and processing network events, `POOL_SIZE` is the number of worker threads used to run your Web APIs, doing the backend work like database access or invoking remote REST services. This pool is divided between the `IO_THREADS` threads, if you set `8`, then there will be 4 workers for each I/O thread, in a separate pool each group of workers' threads.
 
-The server provides several internal endpoints for monitoring and health checks:
+Sensitive environment variables, like `JWT_SECRET` or database connection strings like `LOGINDB` can be encrypted using an RSA public key, then provide `private.pem` key by placing it in the same APIServer2 directory, and set the environment variable to the filename ending with `.enc`, then APIServer2 will know how to decrypt this value, something like this:
+```
+export LOGINDB="logindb.enc"
+```
 
-* GET /metrics: Returns a JSON object with real-time performance metrics, including active connections, pending tasks, and average request latency.  
-* GET /ping: A simple health check endpoint that returns a {"status":"OK"} JSON response.  
-* GET /version: Returns the server's compiled version number.
-
-### **Ubuntu 24.04 Server Environment Setup**
-
-This document provides the necessary apt commands to configure an Ubuntu 24.04 system for both developing and running your C++ multi-reactor server. The dependencies are derived from the project's Makefile and source code.
-
-### **1\. Development Environment Setup**
-
-This setup installs everything required to compile, debug, and run the server. It includes the compiler, build tools, and the development versions of all required libraries (which include headers and static libraries).
-
-Execute the following commands in your terminal:
-
-\# First, update your package lists to ensure you get the latest versions  
-sudo apt-get update
-
-\# Install all required packages in a single command  
-sudo apt-get install \-y \\  
-    g++-14 \\  
-    make \\  
-    libssl-dev \\  
-    libjson-c-dev \\  
-    unixodbc-dev \\  
-    tdsodbc \\  
-    uuid-dev \\  
-    libbacktrace-dev \\  
-    libcurl4-openssl-dev \\  
-    liboath-dev
-
-#### **Package Breakdown (Development):**
-
-* **g++-14**: The specific version of the GNU C++ compiler needed for C++23 features.  
-* **make**: The build automation tool used by your Makefile.  
-* **libssl-dev**: Provides the development headers for OpenSSL (-lcrypto), used by your JWT implementation.  
-* **libjson-c-dev**: Provides the development headers for the json-c library (-ljson-c), used for JSON parsing.  
-* **unixodbc-dev**: Provides the development headers for the unixODBC driver manager (-lodbc), which is the interface used for all database connectivity.  
-* **tdsodbc**: Installs the actual FreeTDS ODBC driver (libtdsodbc.so) that unixODBC uses to connect to SQL Server.  
-* **uuid-dev**: Provides the development headers for libuuid (-luuid), used for generating UUIDs.  
-* **libbacktrace-dev**: Provides the development headers for libbacktrace (-lbacktrace), used for generating stack traces in debug builds.  
-* **libcurl4-openssl-dev**: Provides development headers for the cURL library, used for making HTTP/HTTPS client requests from within the server.  
-* **liboath-dev**: Provides development headers for the OATH toolkit library, used for generating and validating one-time passwords (e.g., for 2FA).
+This is a simple and effective method when running OnPrem, when running on Kubernetes or another container service, the orchestation platform will provide means for secure environment variables, which should be transparent to APIServer2.
 
 ### **2\. Production Environment Setup**
 
@@ -247,3 +261,4 @@ sudo apt-get install \-y \\
 * **libbacktrace0**: The runtime shared library for libbacktrace.  
 * **libcurl4**: The runtime shared library for cURL.  
 * **liboath0**: The runtime shared library for the OATH toolkit.
+
