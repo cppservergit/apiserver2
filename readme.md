@@ -83,13 +83,16 @@ The recommended test and production environment is Ubuntu 24.04 with GCC 14.2.
 In your projects or home directory, run:
 ```
 git clone https://github.com/cppservergit/apiserver2.git
+```
+```
 cd apiserver2
 ```
 
 ## **Install dependencies**
 ```
 sudo apt-get update
-
+```
+```
 sudo apt-get install -y \  
     g++-14 \ 
     make \ 
@@ -98,9 +101,12 @@ sudo apt-get install -y \
     unixodbc-dev \  
     tdsodbc \
     uuid-dev \  
-    libbacktrace-dev \
     libcurl4-openssl-dev \  
     liboath-dev
+```
+Make G++ 14.2 your default compiler:
+```
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 ```
 
 ### **Package dependencies breakdown:**
@@ -127,7 +133,7 @@ This will create a stripped, optimized executable named apiserver.
 The server is configured via environment variables. Use the provided `run.sh` bash script:
 
 ```
-chmod +x run  
+chmod +x run.sh  
 ./run.sh
 ```
 
@@ -231,7 +237,7 @@ This is a simple and effective method when running OnPrem, when running on Kuber
 
 ### **Production Environment Setup**
 
-This setup installs only the runtime shared libraries required to run a pre-compiled server executable. This instructions are for Ubuntu 24.04. This is intended for a production virtual machine where you will deploy the server_app binary.
+When installing for production purposes, you only need to install the runtime shared libraries required to run the pre-compiled `apiserver` executable. This instructions are for Ubuntu 24.04. This is intended for a production virtual machine where you will deploy the `apiserver` binary.
 
 Execute the following commands in your terminal:
 
@@ -248,7 +254,6 @@ sudo apt-get install -y \
     unixodbc \ 
     tdsodbc \  
     libuuid1 \
-    libbacktrace0 \
     libcurl4 \
     liboath0
 ```
