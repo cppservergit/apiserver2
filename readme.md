@@ -93,18 +93,8 @@ cd apiserver2
 sudo apt-get update
 ```
 ```
-sudo apt-get install -y \  
-    g++-14 \ 
-    make \ 
-    libssl-dev \
-    libjson-c-dev \
-    unixodbc-dev \  
-    tdsodbc \
-    uuid-dev \  
-    libcurl4-openssl-dev \  
-    liboath-dev
+sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc uuid-dev libcurl4-openssl-dev liboath-dev
 ```
-Make G++ 14.2 your default compiler:
 ```
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 ```
@@ -133,10 +123,11 @@ This will create a stripped, optimized executable named apiserver.
 The server is configured via environment variables. Use the provided `run.sh` bash script:
 
 ```
-chmod +x run.sh  
+chmod +x run.sh
+```
+```
 ./run.sh
 ```
-
 You should see output similar to this:
 ```
 [  INFO  ] [Thread: 128360869079680] [--------] Application starting...
