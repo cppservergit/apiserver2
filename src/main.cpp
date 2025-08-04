@@ -1,162 +1,281 @@
-#include "http_request.hpp"
-#include "http_response.hpp"
-#include "input_validator.hpp"
+#include "server.hpp"
 #include "logger.hpp"
-#include "metrics.hpp"
-#include <string_view>
-#include <vector>
-#include <cstring>
-#include <iomanip>
+#include "webapi_path.hpp"
+#include "sql.hpp"
+#include "input_validator.hpp"
+#include "util.hpp"
+#include "json_parser.hpp"
+#include "jwt.hpp"
+#include "http_client.hpp"
 #include <functional>
-#include <string>
-#include <format>
-#include <map>
-#include <thread>
+#include <algorithm> 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <cctype>
+#include <string_view> // Required for std::string_view
+#include <ranges>      // Required for std::ranges::all_of
 
-using namespace std::literals::string_view_literals;
+// Use namespaces to make code less verbose
 using namespace validation;
 
-// --- Validator Definition ---
-const validator registration_validator{
-    rule<std::string>{"username", requirement::required},
-    rule<std::string>{"email", requirement::required, [](const std::string& s) { return s.contains('@'); }, "Email must contain an '@' symbol."},
-    rule<int>{"age", requirement::optional, [](int age) { return age >= 18; }, "User must be 18 or older."}
+// --- Custom Exception for File Operations ---
+
+// FIX (Issue #12): Define and throw a dedicated exception instead of a generic one.
+class file_system_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 
-// --- Test Functions ---
-void process_request(http::request& req) {
-    util::log::info("--- [WORKER] Processing Basic Request ---");
-    util::log::info("Method: {}, Path: {}", req.get_method_str(), req.get_path());
-    
-    http::response res;
-    res.set_body(http::status::ok, "{\"status\":\"success\"}");
-    util::log::info("Generated Response:\n---\n{}\n---", std::string_view(res.buffer().data(), res.buffer().size()));
+// --- Validators ---
 
-    util::log::info("--- [WORKER] Basic Processing Complete ---");
+const validator customer_validator{
+    // FIX (Issue #1): Replace const std::string& with std::string_view.
+    rule<std::string>{"id", requirement::required, 
+        [](std::string_view s) {
+            // FIX (Issue #2): Use std::ranges::all_of for conciseness.
+            return s.length() == 5 && std::ranges::all_of(s, [](unsigned char c){ return std::isalpha(c); });
+        }, 
+        "Customer ID must be exactly 5 alphabetic characters."
+    }
+};
+
+const validator login_validator{
+    // FIX (Issue #3): Replace const std::string& with std::string_view.
+    // FIX (Issue #4): Use contains() instead of find().
+    rule<std::string>{"username", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "User must be at least 6 characters long and contain no spaces."},
+    // FIX (Issue #5): Replace const std::string& with std::string_view.
+    // FIX (Issue #6): Use contains() instead of find().
+    rule<std::string>{"password", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "Password must be at least 6 characters long and contain no spaces."}
+};
+
+const validator sales_validator{
+    rule<std::chrono::year_month_day>{"start_date", requirement::required},
+    rule<std::chrono::year_month_day>{"end_date", requirement::required}
+};
+
+const validator upload_validator{
+    rule<std::string>{"title", requirement::required}
+};
+
+
+// --- User-Defined API Handlers ---
+
+void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
+    using enum http::status;
+    try {
+        http_client client;
+        http_response response = client.get("https://httpbin.org/get");
+    } catch (const curl_exception& e) {
+        std::cerr << std::format("Test 'Simple GET' failed: {}\n", e.what());
+    }    
+    res.set_body(ok, R"({"message":"Hello, World!"})");
 }
 
-void simulate_io_loop(
-    std::string_view request_title, 
-    const std::string& request_data,
-    size_t chunk_size,
-    const std::function<void(http::request&)>& worker_func) 
-{
-    util::log::info("====================================================");
-    util::log::info("Simulating: {}", request_title);
-    util::log::info("====================================================");
+void get_shippers([[maybe_unused]] const http::request& req, http::response& res) {
+    using enum http::status;
+    // FIX (Issue #7): Simplify optional handling with value_or.
+    res.set_body(ok, sql::get("DB1", "{CALL sp_shippers_view}").value_or("[]"));
+}
 
-    http::request_parser parser;
-    try {
-        size_t bytes_sent = 0;
-        while (bytes_sent < request_data.size()) {
-            auto buffer = parser.get_buffer();
-            size_t bytes_to_read = std::min({chunk_size, request_data.size() - bytes_sent, buffer.size()});
-            
-            util::log::debug("[IO LOOP] Reading {} bytes...", bytes_to_read);
-            std::memcpy(buffer.data(), request_data.data() + bytes_sent, bytes_to_read);
-            parser.update_pos(bytes_to_read);
-            bytes_sent += bytes_to_read;
+void get_products([[maybe_unused]] const http::request& req, http::response& res) {
+    using enum http::status;
+    // FIX (Issue #8): Simplify optional handling with value_or.
+    res.set_body(ok, sql::get("DB1", "{CALL sp_products_view}").value_or("[]"));
+}
 
-            if (parser.eof()) {
-                util::log::info("[IO LOOP] EOF detected! Request is complete.");
-                if (auto result = parser.finalize(); !result) throw result.error();
-                
-                http::request final_request(std::move(parser));
-                worker_func(final_request);
-                break; 
-            }
+void get_customer(const http::request& req, http::response& res) {
+    using enum http::status;
+    auto id_result = req.get_value<std::string>("id");
+    const std::string& customer_id = **id_result;
+
+    // FIX (Issue #9): Simplify optional handling with a ternary operator.
+    const auto json_result = sql::get("DB1", "{CALL sp_customer_get(?)}", customer_id);
+    res.set_body(
+        json_result ? ok : not_found,
+        json_result.value_or(R"({"error":"Customer not found"})")
+    );
+}
+
+void login(const http::request& req, http::response& res) {
+    using enum http::status;
+    const auto user = **req.get_value<std::string>("username");
+    const auto password = **req.get_value<std::string>("password");
+    const std::string session_id = util::get_uuid();
+    const std::string_view remote_ip = req.get_remote_ip();
+
+    sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?,?)}", user, password, session_id, remote_ip);
+
+    if (rs.empty()) {
+        res.set_body(unauthorized, R"({"error":"Invalid credentials"})");
+        return;
+    }
+
+    const auto& row = rs.at(0);
+    if (row.get_value<std::string>("status") == "INVALID") {
+        const std::string error_code = row.get_value<std::string>("error_code");
+        const std::string error_desc = row.get_value<std::string>("error_description");
+        util::log::warn("Login failed for user '{}' from {}: {} - {}", user, remote_ip, error_code, error_desc);
+        res.set_body(unauthorized, std::format(R"({{"error":"{}", "description":"{}"}})", error_code, error_desc));
+    } else {
+        const std::string email = row.get_value<std::string>("email");
+        const std::string display_name = row.get_value<std::string>("displayname");
+        const std::string role_names = row.get_value<std::string>("rolenames");
+
+        auto token_result = jwt::get_token({
+            {"user", user},
+            {"email", email},
+            {"roles", role_names},
+            {"sessionId", session_id}
+        });
+
+        if (!token_result) {
+            util::log::error("JWT creation failed for user '{}': {}", user, jwt::to_string(token_result.error()));
+            res.set_body(internal_server_error, R"({"error":"Could not generate session token."})");
+            return;
         }
-    } catch (const std::exception& e) {
-        util::log::error("*** An error occurred: {} ***", e.what());
+
+        // FIX (Issue #10): Use the transparent comparator std::less<> for the map.
+        const std::map<std::string, std::string, std::less<>> response_data = {
+            {"displayname", display_name},
+            {"token_type", "bearer"},
+            {"id_token", *token_result}
+        };
+        std::string success_body = json::json_parser::build(response_data);
+
+		util::log::info("Login OK for user '{}': sessionId {} - from {}", user, session_id, remote_ip);
+
+        res.set_body(ok, success_body);
     }
 }
 
-// Helper to build a request string with a correct Content-Length
-std::string build_post_request(std::string_view host, std::string_view path, std::string_view content_type, std::string_view body) {
-    return std::format(
-        "POST {} HTTP/1.1\r\n"
-        "Host: {}\r\n"
-        "Content-Type: {}\r\n"
-        "Content-Length: {}\r\n"
-        "\r\n"
-        "{}",
-        path, host, content_type, body.length(), body
-    );
+void get_sales_by_category(const http::request& req, http::response& res) {
+    using enum http::status;
+    auto start_date = **req.get_value<std::chrono::year_month_day>("start_date");
+    auto end_date = **req.get_value<std::chrono::year_month_day>("end_date");
+
+    if (start_date >= end_date) {
+        res.set_body(bad_request, R"({"error":"start_date must be before end_date"})");
+        return;
+    }
+
+    // FIX (Issue #11): Simplify optional handling with value_or.
+    res.set_body(ok, sql::get("DB1", "{CALL sp_sales_by_category(?,?)}", start_date, end_date).value_or("[]"));
+}
+
+void upload_file(const http::request& req, http::response& res) {
+    using enum http::status;
+    const auto blob_path_str = env::get<std::string>("BLOB_PATH", "");
+    if (blob_path_str.empty()) {
+        util::log::error("BLOB_PATH environment variable is not set.");
+        res.set_body(internal_server_error, R"({"error":"File upload is not configured on the server."})");
+        return;
+    }
+    const std::filesystem::path blob_path(blob_path_str);
+
+    const http::multipart_item* file_part = req.get_file_upload("file1");
+    if (!file_part) {
+        res.set_body(bad_request, R"({"error":"Missing 'file1' part in multipart form data."})");
+        return;
+    }
+    
+    const auto title = **req.get_value<std::string>("title");
+
+    try {
+        std::filesystem::create_directories(blob_path);
+
+        // FIX (Issue #13): Simplify path construction from string_view.
+        const std::filesystem::path original_filename(file_part->filename);
+        const std::string new_filename = util::get_uuid() + original_filename.extension().string();
+        const std::filesystem::path dest_path = blob_path / new_filename;
+
+        util::log::info("Saving uploaded file '{}' as '{}' with title '{}'", file_part->filename, dest_path.string(), title);
+
+        std::ofstream out_file(dest_path, std::ios::binary);
+        if (!out_file) {
+            // FIX (Issue #12): Throw the dedicated exception type.
+            throw file_system_error(std::format("Could not open destination file for writing: {}", util::str_error_cpp(errno)));
+        }
+        
+        out_file.write(file_part->content.data(), file_part->content.size());
+        if (!out_file) {
+            // FIX (Issue #12): Throw the dedicated exception type.
+            throw file_system_error(std::format("An error occurred while writing to the destination file: {}", util::str_error_cpp(errno)));
+        }
+        
+        out_file.close();
+
+        sql::exec(
+            "DB1",
+            "{call sp_blob_add(?, ?, ?, ?, ?)}",
+            title,
+            new_filename,
+            file_part->filename,
+            file_part->content_type,
+            file_part->content.size()
+        );
+
+        // FIX (Issue #14): Use the transparent comparator std::less<> for the map.
+        const std::map<std::string, std::string, std::less<>> response_data = {
+            {"status", "ok"},
+            {"title", title},
+            {"originalFilename", std::string(file_part->filename)},
+            {"savedFilename", new_filename},
+            {"size", std::to_string(file_part->content.size())}
+        };
+        std::string success_body = json::json_parser::build(response_data);
+        res.set_body(ok, success_body);
+
+    } catch (const file_system_error& e) {
+        util::log::error("File upload failed: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"Failed to save uploaded file."})");
+    }
 }
 
 
 int main() {
-    util::log::info("Starting HTTP parser and validator test harness...");
+    try {
+        util::log::info("Application starting...");
 
-    // --- Basic & Bad Request Tests ---
-    const std::string get_request_raw = "GET /search?q=cpp&lang=en HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    simulate_io_loop("Simple GET Request", get_request_raw, 50, process_request);
-    
-    // ... (other tests unchanged) ...
-
-    // --- Input Validation Tests ---
-    util::log::info("\n\n--- Running Input Validation Tests ---");
-
-    // FIX: Added [[maybe_unused]] to the 'req' parameter to silence the compiler warning.
-    auto validation_worker = [](http::request& [[maybe_unused]] req) {
-        util::log::info("[WORKER] Attempting to validate request for path: {}", req.get_path());
+        server s;
         
-        http::response res;
-
-        try {
-            if(auto body = req.get_body(); std::holds_alternative<std::string_view>(body)) {
-                 util::log::debug("DEBUG JSON: {}", std::get<std::string_view>(body));
-            }
-            registration_validator.validate(req);
-            util::log::info("SUCCESS: Request passed all validation rules!");
-
-            std::string success_body = json::json_parser::build({{"status", "ok"}, {"message", "User registered"}});
-            res.set_body(http::status::ok, success_body);
-
-        } catch (const validation_error& e) {
-            util::log::warn("FAILURE: Request failed validation.");
-            util::log::warn("  - Parameter: {}", e.get_param_name());
-            util::log::warn("  - Details: {}", e.get_details());
-
-            std::string error_body = json::json_parser::build({
-                {"status", "error"}, 
-                {"error", "validation_failed"},
-                {"parameter", e.get_param_name()},
-                {"details", e.get_details()}
-            });
-            res.set_body(http::status::bad_request, error_body);
-        }
+        // FIX (Issue #15): Use `using enum` to reduce verbosity.
+        using enum http::method;
         
-        util::log::info("Generated Response:\n---\n{}\n---", std::string_view(res.buffer().data(), res.buffer().size()));
-    };
+        s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
+        s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);
+        s.register_api(webapi_path{"/products"}, get, &get_products, true);
+        s.register_api(webapi_path{"/customer"}, get, customer_validator, &get_customer, true);
+        s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
+        s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
 
-    const std::string validation_success_raw = build_post_request("a.com", "/register", "application/json", "{\"username\":\"valid_user\",\"email\":\"a@b.com\",\"age\":25}");
-    const std::string validation_missing_param_raw = build_post_request("a.com", "/register", "application/json", "{\"username\":\"no_email_user\"}");
-    const std::string validation_custom_fail_raw = build_post_request("a.com", "/register", "application/json", "{\"username\":\"young_user\",\"email\":\"c@d.com\",\"age\":16}");
-    const std::string validation_format_fail_raw = build_post_request("a.com", "/register", "application/json", "{\"username\":\"bad_age\",\"email\":\"e@f.com\",\"age\":\"twenty\"}");
+        s.register_api(
+            webapi_path{"/upload"},
+            post,
+            upload_validator,
+            &upload_file,
+            true
+        );
 
-    simulate_io_loop("Validation Test: SUCCESS", validation_success_raw, 4096, validation_worker);
-    simulate_io_loop("Validation Test: MISSING PARAM", validation_missing_param_raw, 4096, validation_worker);
-    simulate_io_loop("Validation Test: CUSTOM RULE FAIL", validation_custom_fail_raw, 4096, validation_worker);
-    simulate_io_loop("Validation Test: FORMAT FAIL", validation_format_fail_raw, 4096, validation_worker);
+        s.start();
 
+        util::log::info("Application shutting down gracefully.");
 
-    // --- Metrics Class Test ---
-    util::log::info("\n\n--- Running Metrics Class Test ---");
-    {
-        metrics m(8); // pool size of 8
-        m.increment_connections();
-        m.increment_connections();
-        m.increment_active_threads();
-        m.record_request_time(std::chrono::microseconds(50000)); // 50ms
-        m.record_request_time(std::chrono::microseconds(150000)); // 150ms
-        m.decrement_connections();
-        
-        util::log::info("Metrics JSON output:\n{}", m.to_json());
+    // FIX (Issue #16): Catch the more specific, dedicated exception.
+    } catch (const file_system_error& e) {
+        util::log::critical("A critical file system error occurred: {}", e.what());
+        return 1;
+    } catch (const server_error& e) {
+        util::log::critical("A critical server error occurred: {}", e.what());
+        return 1;
+    } catch (const std::exception& e) {
+        util::log::critical("An unexpected error occurred: {}", e.what());
+        return 1;
+    } catch (...) {
+        util::log::critical("An unknown error occurred.");
+        return 1;
     }
 
-
-    util::log::info("\nTest harness finished.");
     return 0;
 }

@@ -20,4 +20,4 @@ export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
 
 # executable
-./server_app
+./apiserver

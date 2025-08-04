@@ -3,3 +3,4 @@ obj/
 server_*
 .vscode/
 git_update.sh
+apiserver*
