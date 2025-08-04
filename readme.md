@@ -78,25 +78,28 @@ APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analy
 
 The recommended test and production environment is Ubuntu 24.04 with GCC 14.2.
 
-## **Download Repo**
+## **Download Repo and install dependencies**
 
 In your projects or home directory, run:
 ```
-git clone https://github.com/cppservergit/apiserver2.git
-```
-```
-cd apiserver2
+git clone https://github.com/cppservergit/apiserver2.git && \
+cd apiserver2 && \
+sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc uuid-dev libcurl4-openssl-dev liboath-dev && \
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 ```
 
-## **Install dependencies**
+This will make the current directory apiserver2, you are ready to compile and run, also G++ 14.2 is the default C++ compiler, test it:
 ```
-sudo apt-get update
+pwd && g++ --version
 ```
+
+You will output like this:
 ```
-sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc uuid-dev libcurl4-openssl-dev liboath-dev
-```
-```
-sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
+/home/ubuntu/apiserver2
+g++ (Ubuntu 14.2.0-4ubuntu2~24.04) 14.2.0
+Copyright (C) 2024 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 ```
 
 ### **Package dependencies breakdown:**
@@ -228,25 +231,15 @@ This is a simple and effective method when running OnPrem, when running on Kuber
 
 ### **Production Environment Setup**
 
-When installing for production purposes, you only need to install the runtime shared libraries required to run the pre-compiled `apiserver` executable. This instructions are for Ubuntu 24.04. This is intended for a production virtual machine where you will deploy the `apiserver` binary.
+When installing for production purposes, you only need to install the runtime shared libraries required to run the pre-compiled `apiserver` executable. This instructions are for Ubuntu 24.04. This is for informative purposes only, do not execute these steps for the tutorial.
 
-Execute the following commands in your terminal:
-
-First, update your package lists:
+Always update your package lists before installing:
 ```
 sudo apt-get update
 ```
-
 Install the required libraries:
 ```
-sudo apt-get install -y \  
-    libssl3 \  
-    libjson-c5 \
-    unixodbc \ 
-    tdsodbc \  
-    libuuid1 \
-    libcurl4 \
-    liboath0
+sudo apt install -y libssl3t64 libjson-c5 unixodbc tdsodbc libuuid1 libcurl4t64 liboath0t64
 ```
 
 Copy into the same directory the files server_app and run.sh with any .enc files and private.pem if using encrypted environment variables and you are ready to go.
