@@ -255,7 +255,10 @@ sudo apt-get install -y \
 
 Copy into the same directory the files server_app and run.sh with any .enc files and private.pem if using encrypted environment variables and you are ready to go.
 
-#### **Suggested OnPrem deployment using a single VM and LXD**
+#### **Suggested OnPrem deployment**
+
+Using a single Ubuntu 24.04 VM and LXD native Linux containers you can create a stateless cluster of APIServer2 nodes, each one running as a SystemD service, the native Linux logging service is used by the cluster, you can centralize each node's logs into the host VM and query all the cluster using `journalctl`, this setup is based on built-in Ubuntu's facilities, highly efficient and easy to install and manage.
+You can test this whole setup on a single Windows 10 Pro PC using Canonical's Multipass VMs.
 
 ```
                   +----------------------------------------+
@@ -264,30 +267,31 @@ Copy into the same directory the files server_app and run.sh with any .enc files
                   +----------------------------------------+
                                      | (HTTPS/TLS Traffic)
                                      |
-+------------------------------------V-------------------------------------+
-|                                                                          |
-|  ========================= Host Virtual Machine =======================  |
-|                                                                          |
-|   +------------------------------------------------------------------+   |
-|   |  HAProxy Service                                                 |   |
-|   |  - Listens on public IP (e.g., 443)                              |   |
-|   |  - Performs TLS Termination (decrypts traffic)                   |   |
-|   |  - Load balances requests to internal LXD containers             |   |
-|   +------------------------------------------------------------------+   |
-|                                     | (Plain HTTP Traffic)                 |
-|              +----------------------+----------------------+               |
-|              |                      |                      |               |
-|  +-----------V-----------+  +-------V--------------+  +-----V------------+  |
-|  | LXD Container 1       |  | LXD Container 2      |  | LXD Container N  |  |
-|  |                       |  |                      |  |                  |  |
-|  | +-------------------+ |  | +------------------+ |  | +----------------+ |  |
-|  | | APIServer2        | |  | | APIServer2       | |  | | APIServer2     | |  |
-|  | | (Instance A)      | |  | | (Instance B)     | |  | | (Instance N)   | |  |
-|  | +-------------------+ |  | +------------------+ |  | +----------------+ |  |
-|  |                       |  |                      |  |                  |  |
-|  +-----------------------+  +----------------------+  +------------------+  |
-|                                                                          |
-|  ========================================================================  |
-|                                                                          |
-+--------------------------------------------------------------------------+
++------------------------------------V------------------------------------------+
+|                                                                               |
+|  ========================= Host Virtual Machine =======================       |
+|                                                                               |
+|   +------------------------------------------------------------------+        |
+|   |  HAProxy Service                                                 |        |
+|   |  - Listens on public IP (e.g., 443)                              |        |
+|   |  - Performs TLS Termination (decrypts traffic)                   |        |
+|   |  - Load balances requests to internal LXD containers             |        |
+|   +------------------------------------------------------------------+        |
+|                                     | (Plain HTTP Traffic)                    |
+|              +----------------------+----------------------+                  |
+|              |                      |                      |                  |
+|  +-----------V-----------+  +-------V--------------+  +-----V------------+    |
+|  | LXD Container 1       |  | LXD Container 2      |  | LXD Container N  |    |
+|  |                       |  |                      |  |                  |    |
+|  | +-------------------+ |  | +------------------+ |  | +----------------+    |
+|  | | APIServer2        | |  | | APIServer2       | |  | | APIServer2     |    |
+|  | | (Instance A)      | |  | | (Instance B)     | |  | | (Instance N)   |    |
+|  | +-------------------+ |  | +------------------+ |  | +----------------+    |
+|  |                       |  |                      |  |                  |    |
+|  +-----------------------+  +----------------------+  +------------------+    |
+|                                                                               |
+|  ========================================================================     |
+|                                                                               |
++-------------------------------------------------------------------------------+
 ```
+
