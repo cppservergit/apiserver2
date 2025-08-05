@@ -167,9 +167,7 @@ A bash script using CURL for testing your endpoints is provided in folder `unit-
 | make server_sanitize_address     | apiserver_sanitizer_address     | Detects memory problems
 | make server_sanitize_leak     | apiserver_sanitizer_leak     | Same as above, plus memory leaks
 
-Whenever you produce a new executable different from `make server` you should edit `run.sh` to invoke the new binary, its name changes depending on the `make` target used to compile. The sanitizer builds are not optimized and include debug symbols (-g). It could be a good idea to deploy in production server_app and server_perflog_app (also optimized for production), and switch between them in `run.sh` if the need arises to obtain performance metrics, a restart will take milliseconds only. Besides server and server_perflog, none of the other `make` targets are intended for production use.
-
-Debug and Performance logs do not have any cost impact, unless you compile with their respective `make` targets, the way the `Makefile` and the C++ programming was done, the code to log these levels `debug` and `perf` won't be compiled if the targets were not used during `make`.
+Whenever you produce a new executable different from `make server` you should edit `run.sh` to invoke the new binary, its name changes depending on the `make` target used to compile. The sanitizer builds are not optimized and include debug symbols (-g). It could be a good idea to deploy in production apiserver and apiserver_perflog (also optimized for production), and switch between them in `run.sh` if the need arises to obtain performance metrics, a restart will take milliseconds only. Besides apiserver and apiserver_perflog, none of the other `make` targets are intended for production use.
 
 ## **Configuring the Server**
 
@@ -207,63 +205,7 @@ Sensitive environment variables, like `JWT_SECRET` or database connection string
 ```
 export LOGINDB="logindb.enc"
 ```
-
 This is a simple and effective method when running OnPrem, when running on Kubernetes or another container service, the orchestation platform will provide means for secure environment variables, which should be transparent to APIServer2.
-
-### **Production Environment Setup**
-
-When installing for production purposes, you only need to install the runtime shared libraries required to run the pre-compiled `apiserver` executable. This instructions are for Ubuntu 24.04. This is for informative purposes only, do not execute these steps for the tutorial.
-
-Always update your package lists before installing:
-```
-sudo apt-get update
-```
-Install the required libraries:
-```
-sudo apt install -y libssl3t64 libjson-c5 unixodbc tdsodbc libuuid1 libcurl4t64 liboath0t64
-```
-
-Copy into the same directory the files server_app and run.sh with any .enc files and private.pem if using encrypted environment variables and you are ready to go.
-
-#### **Suggested OnPrem deployment**
-
-Using a single Ubuntu 24.04 VM and LXD native Linux containers you can create a stateless cluster of APIServer2 nodes, each one running as a SystemD service, the native Linux logging service is used by the cluster, you can centralize each node's logs into the host VM and query all the cluster using `journalctl`, this setup is based on built-in Ubuntu's facilities, highly efficient and easy to install and manage.
-You can test this whole setup on a single Windows 10 Pro PC using Canonical's Multipass VMs.
-
-```
-                  +----------------------------------------+
-                  |           External Network             |
-                  |              (Internet)                |
-                  +----------------------------------------+
-                                     | (HTTPS/TLS Traffic)
-                                     |
-+------------------------------------V------------------------------------------+
-|                                                                               |
-|  ========================= Host Virtual Machine =======================       |
-|                                                                               |
-|   +------------------------------------------------------------------+        |
-|   |  HAProxy Service                                                 |        |
-|   |  - Listens on public IP (e.g., 443)                              |        |
-|   |  - Performs TLS Termination (decrypts traffic)                   |        |
-|   |  - Load balances requests to internal LXD containers             |        |
-|   +------------------------------------------------------------------+        |
-|                                     | (Plain HTTP Traffic)                    |
-|              +----------------------+----------------------+                  |
-|              |                      |                      |                  |
-|  +-----------V-----------+  +-------V--------------+  +-----V------------+    |
-|  | LXD Container 1       |  | LXD Container 2      |  | LXD Container N  |    |
-|  |                       |  |                      |  |                  |    |
-|  | +-------------------+ |  | +------------------+ |  | +----------------+    |
-|  | | APIServer2        | |  | | APIServer2       | |  | | APIServer2     |    |
-|  | | (Instance A)      | |  | | (Instance B)     | |  | | (Instance N)   |    |
-|  | +-------------------+ |  | +------------------+ |  | +----------------+    |
-|  |                       |  |                      |  |                  |    |
-|  +-----------------------+  +----------------------+  +------------------+    |
-|                                                                               |
-|  ========================================================================     |
-|                                                                               |
-+-------------------------------------------------------------------------------+
-```
 
 ## **Hello World**
 
