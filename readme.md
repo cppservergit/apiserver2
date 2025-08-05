@@ -223,6 +223,8 @@ Then in main(), you have to register your function in the Web APIs catalog, righ
 ```
 s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
 ```
+**Note**: We are using some `using enum` statements in main.cpp so we can write abbreviations like `ok` for `http::status::ok` and `get` for `http::method::get`.
+
 This is how your `main()` function looks now:
 ```
 int main() {
@@ -254,8 +256,6 @@ int main() {
 
 That's it. Compile with `make server` and your API is ready to be called. The last argument `false` indicates that this API does not require a previous login, otherwise, it will require a JWT token to be sent and it must be valid, this token is returned by the `/login` endpoint, we provide an example of this type of service, but you can implement your own.
 
-We are using some `using enum` statements in main.cpp so we can write abbreviations like `ok` for `http::status::ok` and `get` for `http::method::get`.
-
 Run your server with `./run.sh`, now open another terminal window on your VM and run:
 ```
 curl localhost:8080/hello
@@ -268,3 +268,90 @@ You should see:
 
 **TIP**: use `curl localhost:8080/hello -s | jq` to format the response.
 
+## **Beyond Hello World, the login API**
+
+**NOTE**: For the rest of the examples you will need to install an SQL Server 2019 on docker and restore a couple of databases, it is a very quick procedure following this [tutorial](https://github.com/cppservergit/apiserver-odbc/blob/main/sqlserver.md), if you are using Canonical's Multipass on Windows 10/11, we suggest using a separate VM to install the demo databases, the run.sh script that configures APIServer2 already contains the ODBC connection strings for these databases (testdb for securiity and demodb for business transactions).
+
+The `login` API requires 1) input validation because it receives the parameters `username` and `password` 2) the function that interacts with some database stored procedure to access a custom security schema and 3) the registration of the API, without security, because this is the API that authenticates and returns the JSON Web Token (JWT).
+
+Above `main() {...}` we will define the validator for login:
+```
+const validator login_validator{
+    rule<std::string>{"username", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "User must be at least 6 characters long and contain no spaces."},
+    rule<std::string>{"password", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "Password must be at least 6 characters long and contain no spaces."}
+};
+```
+A validator can contain many rules, one for each parameter, a rule specifies the C++ data type, the name, the `required` or `optional` flag, and an optional lambda function that represents a custom validation rule. You API won't be invoked if the validation fails, all rules must pass.
+
+Then the function that implements the API:
+```
+void login(const http::request& req, http::response& res) {
+    const auto user = **req.get_value<std::string>("username");
+    const auto password = **req.get_value<std::string>("password");
+    const std::string session_id = util::get_uuid();
+    const std::string_view remote_ip = req.get_remote_ip();
+
+    sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?,?)}", user, password, session_id, remote_ip);
+
+    if (rs.empty()) {
+        res.set_body(unauthorized, R"({"error":"Invalid credentials"})");
+        return;
+    }
+
+    const auto& row = rs.at(0);
+    if (row.get_value<std::string>("status") == "INVALID") {
+        const std::string error_code = row.get_value<std::string>("error_code");
+        const std::string error_desc = row.get_value<std::string>("error_description");
+        util::log::warn("Login failed for user '{}' from {}: {} - {}", user, remote_ip, error_code, error_desc);
+        res.set_body(unauthorized, std::format(R"({{"error":"{}", "description":"{}"}})", error_code, error_desc));
+    } else {
+        const std::string email = row.get_value<std::string>("email");
+        const std::string display_name = row.get_value<std::string>("displayname");
+        const std::string role_names = row.get_value<std::string>("rolenames");
+
+        auto token_result = jwt::get_token({
+            {"user", user},
+            {"email", email},
+            {"roles", role_names},
+            {"sessionId", session_id}
+        });
+
+        if (!token_result) {
+            util::log::error("JWT creation failed for user '{}': {}", user, jwt::to_string(token_result.error()));
+            res.set_body(internal_server_error, R"({"error":"Could not generate session token."})");
+            return;
+        }
+
+        const std::map<std::string, std::string, std::less<>> response_data = {
+            {"displayname", display_name},
+            {"token_type", "bearer"},
+            {"id_token", *token_result}
+        };
+        std::string success_body = json::json_parser::build(response_data);
+
+		util::log::info("Login OK for user '{}': sessionId {} - from {}", user, session_id, remote_ip);
+
+        res.set_body(ok, success_body);
+    }
+}
+```
+A very relevant note here, APIServer2 provides an efficient and easy to use ODBC abstraction, in this case we use a cached prepared statement to call a stored procedure with parameters bindings, which is the defacto technique to avoid SQL injection attacks, all APIServer2 SQL facilities use this technique of cached prepared statement, for maximun security and performance:
+```
+sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?,?)}", user, password, session_id, remote_ip);
+```
+Finally the registration in `main()`
+```
+s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
+```
+Now with the server running on one terminal, go to the second terminal and run this:
+```
+curl --json '{"username":"mcordova", "password":"basica"}' localhost:8080/login -s | jq
+```
+You should receive a response like this:
+```
+{
+  "displayname": "Martín Córdova",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQzNjE0NTciLCJpYXQiOiIxNzU0MzYxMTU3Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjY5NTgyZTVlLTE4OTUtNGE0MS1hMGViLTVmN2VjMGI1MjVmNSIsInVzZXIiOiJtY29yZG92YSJ9.wAjwQDfKx1vpZ3JoPyZGotLvDGfEyJeKZ5tTyyd5jB4",
+  "token_type": "bearer"
+}
+```

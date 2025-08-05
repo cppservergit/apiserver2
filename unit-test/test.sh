@@ -59,7 +59,7 @@ endpoints=(
 for entry in "${endpoints[@]}"; do
   IFS=' ' read -r method uri rest <<< "$entry"
   payload=""
-
+  CURL_UUID="$(echo -n $(uuid))"
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \

@@ -74,6 +74,9 @@ void get_customer(const http::request& req, http::response& res) {
         json_result ? ok : not_found,
         json_result.value_or(R"({"error":"Customer not found"})")
     );
+    if (auto claims = jwt::get_claims(req.get_bearer_token().value_or("")); claims.has_value()) {
+        util::log::info("Information requested by user '{}' for customer: '{}'", claims->at("user"), customer_id);
+    }
 }
 
 void login(const http::request& req, http::response& res) {
