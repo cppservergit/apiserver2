@@ -339,7 +339,7 @@ A very relevant note here, APIServer2 provides an efficient and easy to use ODBC
 ```
 sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?,?)}", user, password, session_id, remote_ip);
 ```
-Finally the registration in `main()`
+Finally the registration in `main()`, notice this time we pass the validator and the function that implements the API, if there is no validator (like with `/hello`) we use a shorter overload of this `register_api(...)` function.
 ```
 s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
 ```
@@ -355,3 +355,62 @@ You should receive a response like this:
   "token_type": "bearer"
 }
 ```
+
+## **Simple database access**
+
+APIServer2 has a specific SQL API to call a stored procedure that returns JSON, this is very efficient, many databases support returning JSON from a query result, it is convenient to use this method whenever possible.
+
+Here is a simple API implementation that has no validator constraints, just execute the Stored Procedure and retrieve the JSON response, using Modern C++:
+```
+void get_shippers([[maybe_unused]] const http::request& req, http::response& res) {
+    res.set_body(ok, sql::get("DB1", "{CALL sp_shippers_view}").value_or("[]"));
+}
+```
+The we register `/shippers` in `main(){...}` using the shorter version because we have no validator:
+```
+s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);
+```
+This is a secure method, if you call this API `localhost:8080/shippers` with CURL without passing a header with the JWT security token then the response will be `401 Unauthorized` with a JSON body in the response containing a more specific detail:
+```
+{"error":"Invalid or missing token"}
+```
+You need to `/login`, then copy the token from the response and execute CURL like this (use your current token):
+```
+curl localhost:8080/shippers -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ"
+```
+The response will be something like this:
+```
+[
+  {
+    "shipperid": 1,
+    "companyname": "Speedy Express",
+    "phone": "(503) 555-9831"
+  },
+  {
+    "shipperid": 2,
+    "companyname": "United Package",
+    "phone": "(505) 555-3199"
+  },
+  {
+    "shipperid": 3,
+    "companyname": "Federal Shipping",
+    "phone": "(503) 555-9931"
+  },
+  {
+    "shipperid": 13,
+    "companyname": "Federal Courier Venezuela",
+    "phone": "555-6728"
+  },
+  {
+    "shipperid": 501,
+    "companyname": "UPS",
+    "phone": "500-CALLME"
+  },
+  {
+    "shipperid": 503,
+    "companyname": "Century 22 Courier",
+    "phone": "800-WE-CHARGE"
+  }
+]
+```
+Please note that this JSON is returned straight from the database Stored Procedure, if you are curious about how to write SQL that returns JSON, feel free to examine the provided demo databases, we recommend using DBeaver SQL Client to navigate into the database objects.
