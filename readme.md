@@ -414,3 +414,6 @@ The response will be something like this:
 ]
 ```
 Please note that this JSON is returned straight from the database Stored Procedure, if you are curious about how to write SQL that returns JSON, feel free to examine the provided demo databases, we recommend using DBeaver SQL Client to navigate into the database objects.
+
+Execute the same exercise with `/products`, it is a very similar implementation. Please note that JWT tokens can expire after a few minutes, you may need a fresh token.
+
