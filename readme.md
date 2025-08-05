@@ -209,97 +209,22 @@ This is a simple and effective method when running OnPrem, when running on Kuber
 
 ## **Hello World**
 
-Make sure the server is not running (CTRL-C).
-Edit main.cpp, this is how it looks now:
-```
-#include "server.hpp"
-#include "logger.hpp"
-#include "webapi_path.hpp"
-#include "sql.hpp"
-#include "input_validator.hpp"
-#include "util.hpp"
-#include "json_parser.hpp"
-#include "jwt.hpp"
-#include "http_client.hpp"
-#include <functional>
-#include <algorithm> 
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <cctype>
-#include <string_view> 
-#include <ranges>      
+The file `main.cpp` already contains several Web API examples, in this section you are going to learn how to create different types of APIs, from "Hello World" to database and REST access, with stateless JWT security controls.
 
-using enum http::status;
-using enum http::method;
-
-
-int main() {
-    try {
-        util::log::info("Application starting...");
-        server s;
-        s.start();
-        util::log::info("Application shutting down gracefully.");
-
-    // FIX (Issue #16): Catch the more specific, dedicated exception.
-    } catch (const server_error& e) {
-        util::log::critical("A critical server error occurred: {}", e.what());
-        return 1;
-    } catch (const std::exception& e) {
-        util::log::critical("An unexpected error occurred: {}", e.what());
-        return 1;
-    } catch (...) {
-        util::log::critical("An unknown error occurred.");
-        return 1;
-    }
-
-    return 0;
-}
-
-```
-
-Above `main()` you will create a function that implements your Web API:
+### **The basics**
+To create a Web API is a 2-step process, first you define a function above `main() {...}` in `main.cpp`, this function implements your Web API logic and must produce a response, which will be JSON most of the time:
 ```
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
     res.set_body(ok, R"({"message":"Hello, World!"})");
 }
 ```
 
-Right after the declaration of the server variable `server s;` you will register your API:
+Then in main(), you have to register your function in the Web APIs catalog, right after the `server s;` variable:
 ```
 s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
 ```
-
-We are using some `enums` so we can write abbreviations like `ok` for `http::status::ok` and `get` for `http::method::get`.
-
-Your main.cpp should look like this:
+This is how your `main()` function looks now:
 ```
-#include "server.hpp"
-#include "logger.hpp"
-#include "webapi_path.hpp"
-#include "sql.hpp"
-#include "input_validator.hpp"
-#include "util.hpp"
-#include "json_parser.hpp"
-#include "jwt.hpp"
-#include "http_client.hpp"
-#include <functional>
-#include <algorithm> 
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <cctype>
-#include <string_view> 
-#include <ranges>      
-
-using enum http::status;
-using enum http::method;
-
-//your API implementation
-void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
-    res.set_body(ok, R"({"message":"Hello, World!"})");
-}
-
 int main() {
     try {
         util::log::info("Application starting...");
@@ -326,9 +251,12 @@ int main() {
     return 0;
 }
 ```
-Save and execute `make server` to compile and then `./run.sh`.
 
-Now open another terminal window on your VM and run:
+That's it. Compile with `make server` and your API is ready to be called. The last argument `false` indicates that this API does not require a previous login, otherwise, it will require a JWT token to be sent and it must be valid, this token is returned by the `/login` endpoint, we provide an example of this type of service, but you can implement your own.
+
+We are using some `using enum` statements in main.cpp so we can write abbreviations like `ok` for `http::status::ok` and `get` for `http::method::get`.
+
+Run your server with `./run.sh`, now open another terminal window on your VM and run:
 ```
 curl localhost:8080/hello
 ```
@@ -337,3 +265,6 @@ You should see:
 ```
 {"message":"Hello, World!"}
 ```
+
+**TIP**: use `curl localhost:8080/hello -s | jq` to format the response.
+
