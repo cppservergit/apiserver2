@@ -86,6 +86,7 @@ git clone https://github.com/cppservergit/apiserver2.git && \
 cd apiserver2 && \
 sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc uuid-dev libcurl4-openssl-dev liboath-dev && \
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
+chmod +x run.sh
 ```
 
 This will make the current directory apiserver2, you are ready to compile and run, also G++ 14.2 is the default C++ compiler, test it:
@@ -102,19 +103,6 @@ This is free software; see the source for copying conditions.  There is NO
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 ```
 
-### **Package dependencies breakdown:**
-
-* **g++-14**: The specific version of the GNU C++ compiler needed for C++23 features.  
-* **make**: The build automation tool used by your Makefile.  
-* **libssl-dev**: Provides the development headers for OpenSSL (-lcrypto), used by your JWT implementation.  
-* **libjson-c-dev**: Provides the development headers for the json-c library (-ljson-c), used for JSON parsing.  
-* **unixodbc-dev**: Provides the development headers for the unixODBC driver manager (-lodbc), which is the interface used for all database connectivity.  
-* **tdsodbc**: Installs the actual FreeTDS ODBC driver (libtdsodbc.so) that unixODBC uses to connect to SQL Server.  
-* **uuid-dev**: Provides the development headers for libuuid (-luuid), used for generating UUIDs.  
-* **libbacktrace-dev**: Provides the development headers for libbacktrace (-lbacktrace), used for generating stack traces in debug builds.  
-* **libcurl4-openssl-dev**: Provides development headers for the cURL library, used for making HTTP/HTTPS client requests from within the server.  
-* **liboath-dev**: Provides development headers for the OATH toolkit library, used for generating and validating one-time passwords (e.g., for 2FA).
-
 ## **Building the server**
 ```
 make server
@@ -124,10 +112,6 @@ This will create a stripped, optimized executable named apiserver.
 ## **Run the server**
 
 The server is configured via environment variables. Use the provided `run.sh` bash script:
-
-```
-chmod +x run.sh
-```
 ```
 ./run.sh
 ```
@@ -138,14 +122,11 @@ You should see output similar to this:
 [  INFO  ] [Thread: 128360869079680] [--------] APIServer2 version 1.0.0 starting on port 8080 with 2 I/O threads and 8 total worker threads.
 [  INFO  ] [Thread: 128360869079680] [--------] Assigning 4 worker threads per I/O worker.
 ```
-
 Use CTRL-C to stop the server
 ```
 INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shutting down.
 [  INFO  ] [Thread: 126044113238656] [--------] Application shutting down gracefully.
 ```
-
-Upon receiving the usual shutdown signals from the user, operating system or a container manager like Kubernetes or Docker, the server will release all its resources, including memory, threads, sockets, database connections, etc.
 
 ## **Test the server**
 
