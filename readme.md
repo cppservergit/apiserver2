@@ -545,7 +545,7 @@ The same for missing required input parameters.
 
 ## **A quick BASH utility for testing APIs**
 
-By now you may be tired of copying and pasting that JWT token after login just to test every API, here is a quick solution using `bash` and `curl`, this scripts sends a UUID to simulate the trace-id that Load Balancers would send to APIServer2, so please install `uuid` before using this script: `sudo apt install uuid -y`.
+By now you may be tired of copying and pasting that JWT token after login just to test every API, here is a quick solution using `bash` and `curl`, this script sends a UUID to simulate the trace-id that Load Balancers would send to APIServer2, so please install `uuid` before using this script: `sudo apt install uuid -y`.
 
 Create the file:
 ```
