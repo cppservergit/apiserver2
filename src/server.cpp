@@ -96,9 +96,8 @@ bool server::io_worker::validate_token(const http::request& req) const {
                       req.get_remote_ip());
         return false;
     }
-    
-    auto validation_result = jwt::is_valid(*token_opt);
-    if (!validation_result) {
+        
+    if (auto validation_result = jwt::is_valid(*token_opt); !validation_result) {
         util::log::warn("JWT validation failed for user '{}' on request {} from {}: {}",
                       req.get_user(),
                       req.get_path(),
