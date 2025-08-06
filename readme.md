@@ -458,3 +458,87 @@ Test it calling `/customer?id=ANATR` with CURL, it is a secure API, you need to 
 curl localhost:8080/customer?id=ANATR -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ" -s | jq
 ```
 The stored procedure invoked by this API is an interesting example of using more complex SQL logic to efficiently produce a compact JSON response.
+
+## **Parameterized SQL queries with dates**
+
+Very similar to the previous example, but in this `/sales` API we accept HTTP POST only and 2 YYYY-MM-DD parameters.
+This is the validator:
+```
+const validator sales_validator{
+    rule<std::chrono::year_month_day>{"start_date", requirement::required},
+    rule<std::chrono::year_month_day>{"end_date", requirement::required}
+};
+```
+
+APIServer2 uses C++ data types to indicate the expected value of each parameter, in this case there is an additional rule that cannot be defined with the validator, but it will be enforced inside the API itself, `start_date < end_date`:
+```
+void get_sales_by_category(const http::request& req, http::response& res) {
+    auto start_date = **req.get_value<std::chrono::year_month_day>("start_date");
+    auto end_date = **req.get_value<std::chrono::year_month_day>("end_date");
+
+    if (start_date >= end_date) {
+        res.set_body(bad_request, R"({"error":"start_date must be before end_date"})");
+        return;
+    }
+
+    res.set_body(ok, sql::get("DB1", "{CALL sp_sales_by_category(?,?)}", start_date, end_date).value_or("[]"));
+}
+```
+If the inputs do not comply with the custom rule then a `400 BAD REQUEST` will be returned with a JSON body describing the validation error. APIServer2 will also return a `400` if the inputs do not pass the validator rules, that is part of the contract.
+
+To test this `/sales` API you need a valid token, then you can call it like:
+```
+curl --json '{"start_date":"1994-01-01","end_date":"1996-12-31"}' localhost:8080/sales -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0NTAxODYiLCJpYXQiOiIxNzU0NDQ5ODg2Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6ImIxYzZiYzhlLTIyYjEtNDI0Ni05NmMwLTc1NWI4ZmJiODI3ZSIsInVzZXIiOiJtY29yZG92YSJ9.uDhrmaIBic6oiDY6R6Y2AGNn7V0Nl6fk46CLQbo-Rzo" -s | jq
+```
+The expected response:
+```
+[
+  {
+    "id": 1,
+    "item": "Beverages",
+    "subtotal": 267868.1800000
+  },
+  {
+    "id": 4,
+    "item": "Dairy Products",
+    "subtotal": 234507.2850000
+  },
+  {
+    "id": 3,
+    "item": "Confections",
+    "subtotal": 167357.2250000
+  },
+  {
+    "id": 6,
+    "item": "Meat/Poultry",
+    "subtotal": 163022.3595000
+  },
+  {
+    "id": 8,
+    "item": "Seafood",
+    "subtotal": 131261.7375000
+  },
+  {
+    "id": 2,
+    "item": "Condiments",
+    "subtotal": 106047.0850000
+  },
+  {
+    "id": 7,
+    "item": "Produce",
+    "subtotal": 99984.5800000
+  },
+  {
+    "id": 5,
+    "item": "Grains/Cereals",
+    "subtotal": 95744.5875000
+  }
+]
+```
+If you try passing an invalid date the server responds with `400 bad request` and a JSON body with the details:
+```
+{
+  "error": "Validation failed for parameter 'start_date': Invalid value: '1994-01-01x'"
+}
+```
+The same for missing required input parameters.
