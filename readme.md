@@ -417,3 +417,44 @@ Please note that this JSON is returned straight from the database Stored Procedu
 
 Execute the same exercise with `/products`, it is a very similar implementation. Please note that JWT tokens can expire after a few minutes, you may need a fresh token.
 
+## **Parameterized SQL queries**
+
+This is very similar to the previous example, but this `/customer` API will return a more complex JSON response from the database and will have its own validator constraints, it will receive a Customer ID parameter and pass it to the stored procedure that executes the query and returns the master/detail JSON output.
+The API validator:
+```
+const validator customer_validator{
+    rule<std::string>{"id", requirement::required, 
+        [](std::string_view s) {
+            return s.length() == 5 && std::ranges::all_of(s, [](unsigned char c){ return std::isalpha(c); });
+        }, 
+        "Customer ID must be exactly 5 alphabetic characters."
+    }
+};
+```
+A validator will contain one rule for each input parameter, regardless if it comes as a GET or a POST HTTP request.
+
+Now the API implementation:
+```
+void get_customer(const http::request& req, http::response& res) {
+    auto id_result = req.get_value<std::string>("id");
+    const std::string& customer_id = **id_result;
+    const auto json_result = sql::get("DB1", "{CALL sp_customer_get(?)}", customer_id);
+    res.set_body(
+        json_result ? ok : not_found,
+        json_result.value_or(R"({"error":"Customer not found"})")
+    );
+}
+```
+The APIServer2 validator contract guarantees that the API function won't be called if the validator does not pass, this way we do not need to check if the `id` field is empty, there is no chance for that. Modern C++ again, simple and elegant logic, it will be `OK (200)` with the resulting JSON response from the database Stored Procedure or `NOT FOUND (404)` with a custom JSON output. In the case of a database error, APIServer2 catches the exception and returns 500 with an error description, leaving a detailed system log record with all the exception details, no application crash.
+
+The API must be registered in `main()`:
+```
+s.register_api(webapi_path{"/customer"}, get, customer_validator, &get_customer, true);
+```
+We are using the full overload of the `register_api()` function, we pass the validator and the function address. In this example we accept an HTTP GET, we will receive the inputs via URI request parameters, if we pass `post` the data must be sent via multipart-form-data or JSON only. An API will only accept a request with the HTTP VERB indicated in the `register_api()` call, another clause of the APIServer2 contract.
+
+Test it calling `/customer?id=ANATR` with CURL, it is a secure API, you need to `/login`, then copy the token from the response and execute CURL like this (use your current token):
+```
+curl localhost:8080/customer?id=ANATR -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ" -s | jq
+```
+The stored procedure invoked by this API is an interesting example of using more complex SQL logic to efficiently produce a compact JSON response.
