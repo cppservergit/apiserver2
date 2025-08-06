@@ -542,3 +542,31 @@ If you try passing an invalid date the server responds with `400 bad request` an
 }
 ```
 The same for missing required input parameters.
+
+## **A quick BASH utility for testing APIs**
+
+By now you may be tired of copying and pasting that JWT token after login just to test every API, here is a quick solution using `bash` and `curl`, this scripts sends a UUID to simulate the trace-id that Load Balancers would send to APIServer2, so please install `uuid` before using this script: `sudo apt install uuid -y`.
+
+Create the file:
+```
+nano qtest.sh
+```
+Add this code, change the BASE_URL and the curl call at the end to meet your requirements:
+```
+# test server
+BASE_URL="http://localhost:8080"
+# call login and extract token
+login_response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
+  -H "X-Request-ID: $(echo -n $(uuid))" -d '{"username":"mcordova", "password":"basica"}' "${BASE_URL}/login")
+login_body="${login_response::-3}"
+login_status="${login_response: -3}"
+TOKEN=$(echo "$login_body" | jq -r '.id_token')
+# call secure API
+curl ${BASE_URL}/sales --json '{"start_date":"1994-01-01","end_date":"1996-12-31"}' -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+```
+CTRL-X to save it, then `chmod +x qtest.sh`
+Your quick test is ready, it will login, extract the token and invoke the API you want to test passing the token in the `Authorization` header:
+```
+./qtest.sh
+```
+You should see the output of the requested API, this is an effective way to test your secure APIs.
