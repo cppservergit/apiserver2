@@ -363,7 +363,8 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         return true;
     }
     if (req.get_path() == "/version") {
-        res.set_body(ok, std::format(R"({{"version":"{}"}})", g_version)); // Assuming a version, replace if needed
+        auto constexpr json_tpl = R"({{"pod_name":"{}","version":"{}"}})";
+        res.set_body(ok, std::format(json_tpl, m_metrics->get_pod_name(), g_version));
         return true;
     }
     return false;

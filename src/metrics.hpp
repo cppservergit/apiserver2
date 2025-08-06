@@ -83,6 +83,10 @@ public:
         );
     }
 
+    [[nodiscard]] std::string get_pod_name() const {
+        return m_pod_name;
+    }
+
 private:
     const std::string m_pod_name;
     const std::chrono::system_clock::time_point m_start_time;
