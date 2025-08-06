@@ -1,4 +1,5 @@
 #include "http_request.hpp"
+#include "jwt.hpp"
 #include <utility>
 #include <format>
 #include <locale> 
@@ -480,6 +481,15 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
             return make_error();
         }
     }
+}
+
+auto request::get_user() const noexcept -> std::string {
+    if (auto claims = jwt::get_claims(get_bearer_token().value_or("")); claims.has_value()) {
+        if (auto it = claims->find("user"); it != claims->end()) {
+            return it->second;
+        }
+    }
+    return "not available";
 }
 
 // --- Explicit template instantiations ---

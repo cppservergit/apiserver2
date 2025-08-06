@@ -26,7 +26,7 @@
 #include <thread>
 #include <cstdint>
 
-inline constexpr auto g_version = "1.0.0";
+inline constexpr auto g_version = "1.0.1";
 
 using dispatch_task = std::function<void()>;
 
@@ -105,6 +105,7 @@ private:
         bool handle_internal_api(const http::request& req, http::response& res) const;
         
         void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint) const;
+        [[nodiscard]] bool validate_token(const http::request& req) const;
 
         int m_listening_fd{-1};
         uint16_t m_port;

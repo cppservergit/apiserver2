@@ -87,6 +87,29 @@ void server::io_worker::run() {
     util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
+// FIX: Implement the new private helper function for token validation.
+bool server::io_worker::validate_token(const http::request& req) const {
+    auto token_opt = req.get_bearer_token();
+    if (!token_opt) {
+        util::log::warn("Missing JWT token on request {} from {}",
+                      req.get_path(),
+                      req.get_remote_ip());
+        return false;
+    }
+    
+    auto validation_result = jwt::is_valid(*token_opt);
+    if (!validation_result) {
+        util::log::warn("JWT validation failed for user '{}' on request {} from {}: {}",
+                      req.get_user(),
+                      req.get_path(),
+                      req.get_remote_ip(),
+                      jwt::to_string(validation_result.error()));
+        return false;
+    }
+
+    return true;
+}
+
 void server::io_worker::execute_handler(const http::request& request_ref, http::response& res, const api_endpoint* endpoint) const {
     using enum http::status;
     try {
@@ -95,11 +118,9 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
             return;
         }
 
-        if (endpoint->is_secure) {
-            if (auto token_opt = request_ref.get_bearer_token(); !token_opt || !jwt::is_valid(*token_opt)) {
-                res.set_body(unauthorized, R"({"error":"Invalid or missing token"})");
-                return;
-            }
+        if (endpoint->is_secure && !validate_token(request_ref)) {
+            res.set_body(http::status::unauthorized, R"({"error":"Invalid or missing token"})");
+            return;
         }
 
         endpoint->validator(request_ref);

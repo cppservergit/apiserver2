@@ -570,3 +570,114 @@ Your quick test is ready, it will login, extract the token and invoke the API yo
 ./qtest.sh
 ```
 You should see the output of the requested API, this is an effective way to test your secure APIs.
+
+## **Uploads with database access**
+
+This example accepts a `multpart-form-data POST` request with a file named `file1` and a `title` field, uploaded files require special treatment, different from regular request parameters.
+For visualization purposes only, this would be an HTML representation of a frontend for this API, :
+```
+<form id="form1">
+    <input type="text" name="title" size="30" required/>
+    <input type="file" name="file1" required>
+    <input type="submit">
+</form>
+```
+
+The validator:
+```
+const validator upload_validator{
+    rule<std::string>{"title", requirement::required}
+};
+```
+
+The uploaded field will be processed and validated inside the API implementation. This function checks if the path to store blobs had been configured, then proceeds to check if the upload `file1` is present, if not a `400 bad request` will be returned. If all the prerequisites are in order, the uploaded file will be stored with a unique name (UUID based) in the configured location and a stored procedure will be invoked to store the blob's metadata. File I/O errors will be detected by this function and properly logged, and a `500 server error` will be returned, this is different from the rest of the example APIs, we choose to handle this exception inside this API, it won't escalate to APIServer2 handlers. 
+```
+void upload_file(const http::request& req, http::response& res) {
+    using enum http::status;
+    const auto blob_path_str = env::get<std::string>("BLOB_PATH", "");
+    if (blob_path_str.empty()) {
+        util::log::error("BLOB_PATH environment variable is not set.");
+        res.set_body(internal_server_error, R"({"error":"File upload is not configured on the server."})");
+        return;
+    }
+    const std::filesystem::path blob_path(blob_path_str);
+
+    const http::multipart_item* file_part = req.get_file_upload("file1");
+    if (!file_part) {
+        res.set_body(bad_request, R"({"error":"Missing 'file1' part in multipart form data."})");
+        return;
+    }
+    
+    const auto title = **req.get_value<std::string>("title");
+
+    try {
+        std::filesystem::create_directories(blob_path);
+        const std::filesystem::path original_filename(file_part->filename);
+        const std::string new_filename = util::get_uuid() + original_filename.extension().string();
+        const std::filesystem::path dest_path = blob_path / new_filename;
+
+        util::log::info("Saving uploaded file '{}' as '{}' with title '{}'", file_part->filename, dest_path.string(), title);
+
+        std::ofstream out_file(dest_path, std::ios::binary);
+        if (!out_file) {
+            throw file_system_error(std::format("Could not open destination file for writing: {}", util::str_error_cpp(errno)));
+        }
+        
+        out_file.write(file_part->content.data(), file_part->content.size());
+        if (!out_file) {
+            throw file_system_error(std::format("An error occurred while writing to the destination file: {}", util::str_error_cpp(errno)));
+        }
+        
+        out_file.close();
+
+        sql::exec(
+            "DB1",
+            "{call sp_blob_add(?, ?, ?, ?, ?)}",
+            title,
+            new_filename,
+            file_part->filename,
+            file_part->content_type,
+            file_part->content.size()
+        );
+
+        const std::map<std::string, std::string, std::less<>> response_data = {
+            {"title", title},
+            {"originalFilename", std::string(file_part->filename)},
+            {"savedFilename", new_filename},
+            {"size", std::to_string(file_part->content.size())}
+        };
+        std::string success_body = json::json_parser::build(response_data);
+        res.set_body(ok, success_body);
+
+    } catch (const file_system_error& e) {
+        util::log::error("File upload failed: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"Failed to save uploaded file."})");
+    }
+}
+```
+For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
+```
+curl ${BASE_URL}/upload -F "file1=@qtest.sh" -F "title=My little BASH script" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+```
+You should see a response similar to this:
+```
+{
+  "originalFilename": "test.sh",
+  "savedFilename": "8e603bf2-384c-4bc4-971e-26b94ad6d8a1.sh",
+  "size": "853",
+  "title": "My little BASH script"
+}
+```
+In your `run.sh` script you configure the location to store the blobs, if you run several times the test you will see several files like these:
+```
+uploads
+├── 8e603bf2-384c-4bc4-971e-26b94ad6d8a1.sh
+├── e305a715-297f-419e-913c-3edf5a468724.sh
+├── e6a25496-664b-4b59-9e1a-769b4d46ce18.sh
+└── f70868e0-8df1-46be-a066-90569af50751.sh
+```
+On your server's terminal you will see a log entry for the upload activity:
+```
+[  INFO  ] [Thread: 125085813827264] [d048eb44-72de-11f0-87d2-525400c57898] Saving uploaded file 'test.sh' as '/home/ubuntu/uploads/243c7fc3-fbdb-43e6-afc0-d3852cd2dd40.sh' with title 'My little BASH script'
+```
+The storage location defined in run.sh is just a path, in our case is a local storage, but it could be mapped to a centralized NFS storage, or another cluster or cloud storage service, in these cases additional configuration is required to map the path to the storage service, that must be transparent to APIServer2, it only sees a local path just like when using local storage. Kubernetes, Docker and Cloud services provide the facilities to define paths that look like local storage to the containers.

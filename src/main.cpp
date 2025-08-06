@@ -74,9 +74,7 @@ void get_customer(const http::request& req, http::response& res) {
         json_result ? ok : not_found,
         json_result.value_or(R"({"error":"Customer not found"})")
     );
-    if (auto claims = jwt::get_claims(req.get_bearer_token().value_or("")); claims.has_value()) {
-        util::log::info("Information requested by user '{}' for customer: '{}'", claims->at("user"), customer_id);
-    }
+    util::log::info("Information requested by user '{}' for customer: '{}'", req.get_user(), customer_id);
 }
 
 void login(const http::request& req, http::response& res) {
@@ -193,7 +191,6 @@ void upload_file(const http::request& req, http::response& res) {
         );
 
         const std::map<std::string, std::string, std::less<>> response_data = {
-            {"status", "ok"},
             {"title", title},
             {"originalFilename", std::string(file_part->filename)},
             {"savedFilename", new_filename},

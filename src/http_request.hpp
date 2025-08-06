@@ -103,6 +103,8 @@ public:
     template <typename t>
     [[nodiscard]] auto get_value(std::string_view param_name) const noexcept -> std::expected<std::optional<t>, param_error>;
 
+    [[nodiscard]] auto get_user() const noexcept -> std::string;
+    
 private:
     std::unique_ptr<socket_buffer> m_buffer;
     std::unique_ptr<json::json_parser> m_jsonPayload;

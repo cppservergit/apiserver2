@@ -69,6 +69,26 @@ namespace { // Anonymous namespace for private helpers
     bool constant_time_compare(std::string_view a, std::string_view b) {
         return a.length() == b.length() && CRYPTO_memcmp(a.data(), b.data(), a.length()) == 0;
     }
+
+    // FIX: New helper to purely decode the claims without any validation.
+    std::expected<claims_map, error_code> decode_claims_unvalidated(std::string_view token) {
+        using enum jwt::error_code;
+        const auto first_dot = token.find('.');
+        if (first_dot == std::string_view::npos) return std::unexpected(invalid_format);
+        const auto second_dot = token.rfind('.');
+        if (second_dot == first_dot) return std::unexpected(invalid_format);
+
+        const std::string_view payload_b64 = token.substr(first_dot + 1, second_dot - first_dot - 1);
+        auto payload_decoded = base64url_decode(payload_b64);
+        if (!payload_decoded) return std::unexpected(invalid_format);
+        
+        try {
+            return json_parser(*payload_decoded).get_map();
+        } catch (const parsing_error&) {
+            return std::unexpected(invalid_json);
+        }
+    }
+
 } // anonymous namespace
 
 service::service(std::string secret, std::chrono::seconds timeout)
@@ -109,21 +129,28 @@ std::expected<claims_map, error_code> service::is_valid(std::string_view token) 
     return validate_and_decode(token, true);
 }
 
+// FIX: get_claims now only decodes, it does not validate.
 std::expected<claims_map, error_code> service::get_claims(std::string_view token) const {
-    return validate_and_decode(token, false);
+    return decode_claims_unvalidated(token);
 }
 
 std::expected<claims_map, error_code> service::validate_and_decode(std::string_view token, bool verify_signature) const {
     using enum jwt::error_code;
-    const auto first_dot = token.find('.');
-    if (first_dot == std::string_view::npos) return std::unexpected(invalid_format);
-    const auto second_dot = token.rfind('.');
-    if (second_dot == first_dot) return std::unexpected(invalid_format);
-
-    const std::string_view signing_input = token.substr(0, second_dot);
-    const std::string_view signature_b64 = token.substr(second_dot + 1);
     
+    // FIX: Start by decoding the claims without validation.
+    auto claims_result = decode_claims_unvalidated(token);
+    if (!claims_result) {
+        return std::unexpected(claims_result.error());
+    }
+    auto claims = *claims_result;
+
     if (verify_signature) {
+        // FIX: Remove unused variable 'first_dot'.
+        const auto second_dot = token.rfind('.');
+        // Note: format has already been checked by decode_claims_unvalidated
+        const std::string_view signing_input = token.substr(0, second_dot);
+        const std::string_view signature_b64 = token.substr(second_dot + 1);
+
         auto received_signature_decoded = base64url_decode(signature_b64);
         if (!received_signature_decoded) return std::unexpected(invalid_format);
 
@@ -133,17 +160,6 @@ std::expected<claims_map, error_code> service::validate_and_decode(std::string_v
         }
     }
     
-    const std::string_view payload_b64 = token.substr(first_dot + 1, second_dot - first_dot - 1);
-    auto payload_decoded = base64url_decode(payload_b64);
-    if (!payload_decoded) return std::unexpected(invalid_format);
-    
-    claims_map claims;
-    try {
-        claims = json_parser(*payload_decoded).get_map();
-    } catch (const parsing_error&) {
-        return std::unexpected(invalid_json);
-    }
-
     const auto it = claims.find("exp");
     if (it == claims.end()) return std::unexpected(missing_expiration_claim);
     
@@ -193,8 +209,6 @@ std::expected<claims_map, error_code> get_claims(std::string_view token) {
 }
 
 std::string to_string(const error_code err) {
-    // *** SONARCLOUD FIX ***
-    // Use 'using enum' to reduce verbosity.
     using enum jwt::error_code;
     switch (err) {
         case token_expired: return "token has expired.";
