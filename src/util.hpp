@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <new> // For std::bad_alloc
+#include <memory>
 
 // Includes for POSIX/networking functions
 #include <unistd.h>
@@ -19,6 +20,11 @@
 #include <arpa/inet.h>
 #include <climits> // For HOST_NAME_MAX
 #include <uuid/uuid.h> // For UUID generation
+
+// OpenSSL headers for Base64 decoding
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/evp.h>
 
 namespace util {
 
@@ -42,6 +48,53 @@ struct string_equal {
     }
 };
 
+
+/**
+ * @brief Decodes a standard Base64 encoded string into a binary string.
+ *
+ * This function is optimized for performance, using OpenSSL's BIO library
+ * to decode the input string with minimal memory allocations. It correctly
+ * handles padding and returns a binary string.
+ *
+ * @param data The Base64 encoded string_view.
+ * @return A std::string containing the raw decoded binary data, or an empty string on failure.
+ */
+[[nodiscard]] inline std::string base64_decode(std::string_view data) noexcept {
+    if (data.empty()) {
+        return "";
+    }
+
+    // Use RAII for BIO objects to ensure they are always freed.
+    auto bio_deleter = [](BIO* b) { BIO_free_all(b); };
+    using unique_bio = std::unique_ptr<BIO, decltype(bio_deleter)>;
+
+    // Create a memory buffer BIO with the input data.
+    unique_bio b64(BIO_new(BIO_f_base64()));
+    if (!b64) {
+        return "";
+    }
+    BIO_set_flags(b64.get(), BIO_FLAGS_BASE64_NO_NL);
+
+    // Chain the memory BIO to the Base64 BIO. The b64 BIO takes ownership.
+    BIO* source = BIO_new_mem_buf(data.data(), static_cast<int>(data.size()));
+    if (!source) {
+        return "";
+    }
+    unique_bio bio_chain(BIO_push(b64.release(), source));
+
+
+    // The decoded size is at most 3/4 of the input size.
+    std::string decoded_data;
+    decoded_data.resize(data.size());
+
+    int decoded_len = BIO_read(bio_chain.get(), decoded_data.data(), decoded_data.size());
+    if (decoded_len < 0) {
+        return ""; // Decoding error
+    }
+
+    decoded_data.resize(decoded_len);
+    return decoded_data;
+}
 
 /**
  * @brief Gets the hostname of the current machine (e.g., the pod name in k8s).
