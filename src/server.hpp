@@ -26,7 +26,7 @@
 #include <thread>
 #include <cstdint>
 
-inline constexpr auto g_version = "1.0.1";
+inline constexpr auto g_version = "1.0.2";
 
 using dispatch_task = std::function<void()>;
 
@@ -122,9 +122,9 @@ private:
         std::unordered_map<int, connection_state> m_connections;
     };
 
-    static inline constexpr int MAX_EVENTS = 4096;
-    static inline constexpr int LISTEN_BACKLOG = 8192;
-	static inline constexpr int EPOLL_WAIT_MS = 10;
+    static inline constexpr int MAX_EVENTS = 8192;
+    static inline constexpr int LISTEN_BACKLOG = 65536;
+	static inline constexpr int EPOLL_WAIT_MS = 5;
 
     uint16_t m_port;
     int m_io_threads;

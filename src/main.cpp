@@ -74,7 +74,6 @@ void get_customer(const http::request& req, http::response& res) {
         json_result ? ok : not_found,
         json_result.value_or(R"({"error":"Customer not found"})")
     );
-    util::log::info("Information requested by user '{}' for customer: '{}'", req.get_user(), customer_id);
 }
 
 void login(const http::request& req, http::response& res) {

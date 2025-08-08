@@ -67,7 +67,6 @@ void server::io_worker::run() {
             util::log::error("epoll_wait failed in worker {}: {}", std::this_thread::get_id(), util::str_error_cpp(errno));
             return;
         }
-
         for (int i = 0; i < num_events; ++i) {
             const auto& event = events[i];
             const int fd = event.data.fd;
