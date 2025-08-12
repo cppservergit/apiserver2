@@ -26,7 +26,7 @@
 #include <thread>
 #include <cstdint>
 
-inline constexpr auto g_version = "1.0.2";
+inline constexpr auto g_version = "1.0.3";
 
 using dispatch_task = std::function<void()>;
 
@@ -41,6 +41,16 @@ struct connection_state {
     http::request_parser parser;
     std::optional<http::response> response;
     std::string remote_ip;
+    void reset() {
+        // This creates a new, default request_parser and move-assigns it.
+        // The old parser and its internal socket_buffer are destroyed.
+        parser = http::request_parser{};
+
+        // This calls std::optional::reset(), which destroys the contained
+        // http::response object and leaves the 'response' optional empty
+        // and ready for the next request-response cycle.
+        response.reset();
+    }    
 };
 
 struct response_item {
@@ -96,7 +106,7 @@ private:
         void on_connect();
         void on_read(int fd);
         void on_write(int fd);
-        void close_connection(int fd, uint32_t events = 0);
+        void close_connection(int fd);
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);

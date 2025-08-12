@@ -1,5 +1,6 @@
 #include "sql.hpp"
 #include <vector>
+#include <mutex>
 
 namespace sql {
 
@@ -153,13 +154,12 @@ StmtHandle::StmtHandle(const DbcHandle& dbc) {
 
 // --- Connection Implementation ---
 
-Connection::Connection(std::string_view conn_str) : m_dbc(m_env) {
+Connection::Connection(std::string_view conn_str) : m_dbc(SharedEnvHandle::get()) {
     std::vector<SQLCHAR> connection_string_buffer(conn_str.begin(), conn_str.end());
     connection_string_buffer.push_back('\0');
-
-    check_odbc_error(SQLDriverConnect(m_dbc.get(), nullptr, connection_string_buffer.data(),
-                                      SQL_NTS, nullptr, 0, nullptr, SQL_DRIVER_NOPROMPT),
-                     m_dbc.get(), SQL_HANDLE_DBC, "SQLDriverConnect");
+    SQLRETURN retcode = SQLDriverConnect(m_dbc.get(), nullptr, connection_string_buffer.data(),
+                                             SQL_NTS, nullptr, 0, nullptr, SQL_DRIVER_NOPROMPT);
+    check_odbc_error(retcode, m_dbc.get(), SQL_HANDLE_DBC, "SQLDriverConnect");
 }
 
 StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {

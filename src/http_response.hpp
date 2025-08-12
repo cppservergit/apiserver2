@@ -69,7 +69,6 @@ inline void response::set_body(status s, std::string_view body, std::string_view
     if (m_finalized) return;
     constexpr std::string_view format_template =
         "HTTP/1.1 {} {}\r\n"
-        "Server: cpp-rest-server/1.0\r\n"
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
         "{}"
         "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n"
@@ -77,7 +76,7 @@ inline void response::set_body(status s, std::string_view body, std::string_view
         "X-Content-Type-Options: nosniff\r\n"
         "Referrer-Policy: no-referrer\r\n"
         "Cache-Control: no-store\r\n"
-        "Connection: close\r\n"
+        "Connection: keep-alive\r\n"
         "Content-Type: {}\r\n"
         "Content-Length: {}\r\n"
         "\r\n"
@@ -101,7 +100,6 @@ inline void response::set_blob(std::string_view blob_data, std::string_view cont
     if (m_finalized) return;
     constexpr std::string_view format_template =
         "HTTP/1.1 200 OK\r\n"
-        "Server: cpp-rest-server/1.0\r\n"
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
         "{}"
         "Access-Control-Expose-Headers: Content-Disposition\r\n"
@@ -110,7 +108,7 @@ inline void response::set_blob(std::string_view blob_data, std::string_view cont
         "X-Content-Type-Options: nosniff\r\n"
         "Referrer-Policy: no-referrer\r\n"
         "Cache-Control: no-store\r\n"
-        "Connection: close\r\n"
+        "Connection: keep-alive\r\n"
         "Content-Type: {}\r\n"
         "Content-Disposition: {}\r\n"
         "Content-Length: {}\r\n"
@@ -133,13 +131,12 @@ inline void response::set_options() {
     if (m_finalized) return;
     constexpr std::string_view format_template =
         "HTTP/1.1 204 No Content\r\n"
-        "Server: cpp-rest-server/1.0\r\n"
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
         "{}"
         "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
         "Access-Control-Max-Age: 86400\r\n"
-        "Connection: close\r\n"
+        "Connection: keep-alive\r\n"
         "Content-Length: 0\r\n"
         "\r\n";
     const auto cors_header = m_origin ? std::format("Access-Control-Allow-Origin: {}\r\n", *m_origin) : "";

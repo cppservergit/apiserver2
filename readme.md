@@ -65,6 +65,7 @@ APIServer2 is a high-performance, multi-reactor EPOLL based web server written i
 * **Modern C++23:** Leverages the latest C++ features for safety, performance, and code clarity, including std::jthread, std::expected, and std::string\_view.  
 * **Built-in Observability:** Comes with out-of-the-box monitoring through a set of internal API endpoints, providing real-time insights into the server's health and performance.
 * **Powerful abstractions:** Very easy to use and efficient abstractions to create Web APIs that execute database stored procedures via ODBC API or invoke REST APIs via HTTPS with libcurl, with integrated JSON Web Token stateless security model.
+* **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides up to 97% of connection reuse with HAProxy 2.8.x saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Docker, Kubernetes and Cloud container services.
 
 ## **Quality Control**
 
@@ -77,6 +78,11 @@ APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analy
 * C++ Core Guidelines compliant, double-checked with SonarCloud and Gemini Pro assessments.
 
 The recommended test and production environment is Ubuntu 24.04 with GCC 14.2.
+
+**Note**: To run the thread-sanitizer version you need to run this command, before running APIServer2:
+```
+sudo sysctl vm.mmap_rnd_bits=30
+```
 
 ## **Download Repo and install dependencies**
 
@@ -94,7 +100,7 @@ This will make the current directory apiserver2, you are ready to compile and ru
 pwd && g++ --version
 ```
 
-You will output like this:
+You should see output like this:
 ```
 /home/ubuntu/apiserver2
 g++ (Ubuntu 14.2.0-4ubuntu2~24.04) 14.2.0

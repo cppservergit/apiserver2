@@ -140,6 +140,18 @@ private:
     static row fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, const std::vector<std::string>& col_names);
 };
 
+// --- Shared Environment Handle to avoid data race in multithreading mode ---
+class SharedEnvHandle {
+public:
+    static EnvHandle& get() {
+        // C++ guarantees this line is thread-safe.
+        // The s_env_handle is created only once, the first
+        // time any thread calls this function.
+        static EnvHandle s_env_handle;
+        return s_env_handle;
+    }
+};
+
 
 // --- Error Handling ---
 void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_type, std::string_view context);
@@ -157,11 +169,10 @@ public:
     StmtHandle& get_or_create_statement(std::string_view sql_query);
 
 private:
-    EnvHandle m_env;
     DbcHandle m_dbc;
     std::unordered_map<std::string, std::unique_ptr<StmtHandle>, util::string_hash, util::string_equal> m_statement_cache;
+    std::mutex m_creation_mutex;
 };
-
 
 // --- Thread-Local Connection Manager ---
 class ConnectionManager {

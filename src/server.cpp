@@ -74,7 +74,7 @@ void server::io_worker::run() {
             if (fd == m_listening_fd) {
                 on_connect();
             } else if (event.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
-                close_connection(fd, event.events);
+                close_connection(fd);
             } else if (event.events & EPOLLIN) {
                 on_read(fd);
             } else if (event.events & EPOLLOUT) {
@@ -266,25 +266,18 @@ void server::io_worker::on_write(int fd) {
     }
 
     if (res.available_size() == 0) {
-        util::log::debug("Response fully sent on fd {}, closing connection.", fd);
-        close_connection(fd);
+        it->second.reset();
+        modify_epoll(fd, EPOLLIN);
+        util::log::debug("Response fully sent on fd {}, waiting for close event.", fd);
     }
 }
 
-void server::io_worker::close_connection(int fd, uint32_t events) {
-    if (events & EPOLLERR) {
-        util::log::warn("Closing connection on fd {} due to socket error: {}", fd, util::get_socket_error(fd));
-    } else if (events & (EPOLLHUP | EPOLLRDHUP)) {
-        util::log::debug("Closing connection on fd {} (peer hung up).", fd);
-    } else {
-        util::log::debug("Closing connection on fd {}.", fd);
-    }
-    
-    remove_from_epoll(fd);
+void server::io_worker::close_connection(int fd) {
+    util::log::debug("Closing connection on fd {}.", fd);
+    close(fd);
     if (m_connections.erase(fd) > 0) {
         m_metrics->decrement_connections();
     }
-    close(fd);
 }
 
 bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
@@ -315,6 +308,7 @@ void server::io_worker::process_request(int fd) {
     auto it = m_connections.find(fd);
     if (it == m_connections.end()) return;
     
+    remove_from_epoll(fd);
     connection_state& conn = it->second;
 
     if (auto res = conn.parser.finalize(); !res.has_value()) {
@@ -326,14 +320,16 @@ void server::io_worker::process_request(int fd) {
     }
 
     http::request req(std::move(conn.parser), conn.remote_ip);
-    http::response res(req.get_header_value("Origin"));
-
+    
     if (!cors::is_origin_allowed(req.get_header_value("Origin"), m_allowed_origins)) {
         util::log::warn("CORS check failed for origin: {}", req.get_header_value("Origin").value_or("N/A"));
-        res.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
-        m_response_queue->push({fd, std::move(res)});
+        http::response err_res;
+        err_res.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
+        m_response_queue->push({fd, std::move(err_res)});
         return;
     }
+
+    http::response res(req.get_header_value("Origin"));
 
     if (req.get_method() == http::method::options) {
         res.set_options();
@@ -378,7 +374,7 @@ void server::io_worker::process_response_queue() {
     for (auto& item : response_batch) {
         if (auto it = m_connections.find(item.client_fd); it != m_connections.end()) {
             it->second.response = std::move(item.res);
-            modify_epoll(it->first, EPOLLOUT);
+           add_to_epoll(it->first, EPOLLOUT);
         }
     }
 }

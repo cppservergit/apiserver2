@@ -2,8 +2,8 @@
 
 # server configuration
 export PORT=8080
-export POOL_SIZE=8
-export IO_THREADS=2
+export POOL_SIZE=24
+export IO_THREADS=4
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
@@ -20,4 +20,4 @@ export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
 
 # executable
-./apiserver
+./apiserver_sanitizer_leak
