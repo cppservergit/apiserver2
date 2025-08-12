@@ -143,13 +143,16 @@ private:
 // --- Shared Environment Handle to avoid data race in multithreading mode ---
 class SharedEnvHandle {
 public:
+    // The get() method now simply returns a reference to the inline member.
     static EnvHandle& get() {
-        // C++ guarantees this line is thread-safe.
-        // The s_env_handle is created only once, the first
-        // time any thread calls this function.
-        static EnvHandle s_env_handle;
         return s_env_handle;
     }
+
+private:
+    // By declaring the static member 'inline', you can define it directly
+    // in the header. The C++ linker guarantees there will be only one
+    // instance of s_env_handle across your entire program.
+    static inline EnvHandle s_env_handle;
 };
 
 
