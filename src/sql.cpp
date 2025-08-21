@@ -105,7 +105,6 @@ resultset StmtHandle::fetch_all() const {
 
 
 // --- Error Handling Implementation ---
-
 void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_type, std::string_view context) {
     if (retcode == SQL_SUCCESS || retcode == SQL_SUCCESS_WITH_INFO) {
         return;
@@ -115,22 +114,24 @@ void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_ty
     SQLINTEGER native_error;
     std::vector<SQLCHAR> message_text(SQL_MAX_MESSAGE_LENGTH);
     SQLSMALLINT text_length = 0;
-    std::string error_msg = std::format("ODBC Error on '{}': ", context);
+    std::string full_error_msg;
+    std::string first_sqlstate;
 
-    SQLSMALLINT i = 1;
-    while (SQLGetDiagRec(handle_type, handle, i, sql_state.data(), &native_error, message_text.data(), message_text.size(), &text_length) == SQL_SUCCESS) {
-        error_msg += std::format("[SQLState: {}] [Native Error: {}] {}",
-                                 reinterpret_cast<char*>(sql_state.data()),
-                                 native_error,
-                                 reinterpret_cast<char*>(message_text.data()));
-        i++;
+    // Get the first diagnostic record to identify the primary error
+    if (SQLGetDiagRec(handle_type, handle, 1, sql_state.data(), &native_error, message_text.data(), message_text.size(), &text_length) == SQL_SUCCESS) {
+        first_sqlstate = reinterpret_cast<char*>(sql_state.data());
+        full_error_msg = std::format("[SQLState: {}] [Native Error: {}] {}",
+                                     first_sqlstate,
+                                     native_error,
+                                     reinterpret_cast<char*>(message_text.data()));
     }
 
     if (retcode == SQL_NO_DATA) {
         return;
     }
-    
-    throw sql::error(error_msg);
+
+    // Throw the enhanced exception, providing both the message and the state
+    throw sql::error(std::format("ODBC Error on '{}': {}", context, full_error_msg), first_sqlstate);
 }
 
 // --- RAII Handle Implementation ---
@@ -194,6 +195,12 @@ Connection& ConnectionManager::get_connection(std::string_view db_key) {
     
     util::log::debug("Created new ODBC connection for '{}' on thread {}", db_key, std::this_thread::get_id());
     return conn_ref;
+}
+
+void ConnectionManager::invalidate_connection(std::string_view db_key) {
+    if (m_connections.erase(std::string(db_key)) > 0) {
+        util::log::warn("Invalidated and removed broken ODBC connection for key '{}' from thread-local cache.", db_key);
+    }
 }
 
 } // namespace sql::detail

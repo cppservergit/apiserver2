@@ -26,7 +26,7 @@
 #include <thread>
 #include <cstdint>
 
-inline constexpr auto g_version = "1.0.3";
+inline constexpr auto g_version = "1.0.4";
 
 using dispatch_task = std::function<void()>;
 

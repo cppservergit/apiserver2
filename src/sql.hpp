@@ -30,7 +30,15 @@ namespace detail {
 /// @brief Exception thrown for ODBC-related errors.
 class error : public std::runtime_error {
 public:
+    // Keep the existing constructor for backward compatibility
     using std::runtime_error::runtime_error;
+
+    // Add a new constructor that takes the SQLSTATE
+    error(std::string_view message, std::string state)
+        : std::runtime_error(std::string(message)), sqlstate(std::move(state)) {}
+
+    // Public member to access the SQLSTATE
+    std::string sqlstate;
 };
 
 /// @class row
@@ -181,6 +189,7 @@ private:
 class ConnectionManager {
 public:
     static Connection& get_connection(std::string_view db_key);
+    static void invalidate_connection(std::string_view db_key);
 private:
     static inline thread_local std::unordered_map<std::string, std::unique_ptr<Connection>, util::string_hash, util::string_equal> m_connections;
 };

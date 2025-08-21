@@ -125,112 +125,142 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
 
 
 // --- Public `get` Function Implementation (Restored Behavior) ---
-
 template<typename... Args>
 [[nodiscard]] std::optional<std::string> get(std::string_view db_key, std::string_view sql_query, Args&&... args) {
-    try {
-        detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
-        detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
+    // Add a retry loop that will run at most twice.
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        try {
+            detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
+            detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-        auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
-        std::array<SQLLEN, sizeof...(args)> indicators;
+            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            std::array<SQLLEN, sizeof...(args)> indicators;
+            if constexpr (sizeof...(args) > 0) {
+                SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
+                detail::bind_all_params(stmt, params_tuple, indicators);
+            }
 
-        if constexpr (sizeof...(args) > 0) {
-            SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
-            detail::bind_all_params(stmt, params_tuple, indicators);
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            
+            SQLRETURN ret = SQLExecute(stmt.get());
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+            util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+            detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
+
+            // Use the helper function to fetch the single-column result.
+            auto result = detail::fetch_json_result(stmt);
+            SQLFreeStmt(stmt.get(), SQL_CLOSE);
+            return result; // Success, exit the loop and return.
+
+        } catch (const sql::error& e) {
+            // Check if this is a retryable connection error and it's the first attempt.
+            if (attempt == 1 && (e.sqlstate == "HY000" || e.sqlstate == "01000" || e.sqlstate == "08S01")) {
+                util::log::warn("SQL connection error on '{}' (SQLSTATE: {}). Attempting reconnect. Error: {}", db_key, e.sqlstate, e.what());
+                detail::ConnectionManager::invalidate_connection(db_key);
+                continue; // Go to the next loop iteration to retry.
+            } else {
+                // Not a retryable error or we already failed a retry, so re-throw.
+                throw;
+            }
+        } catch (const std::exception& e) {
+            throw sql::error(std::format("Generic exception in sql::get: {}", e.what()));
         }
-
-        const auto start_time = std::chrono::high_resolution_clock::now();
-        
-        SQLRETURN ret = SQLExecute(stmt.get());
-        
-        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
-        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
-        
-        detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
-
-        // Use the refactored helper function to fetch the result
-        auto result = detail::fetch_json_result(stmt);
-        
-        SQLFreeStmt(stmt.get(), SQL_CLOSE);
-        return result;
-
-    } catch (const sql::error& e) {
-        throw;
-    } catch (const std::exception& e) {
-        throw sql::error(std::format("Generic exception in sql::get: {}", e.what()));
     }
+    // This line should not be reachable, but it prevents compiler warnings.
+    throw sql::error("SQL get failed after multiple attempts.");
 }
 
-// --- Public `query` Function Implementation ---
 
+// --- Public `query` Function Implementation ---
 template<typename... Args>
 [[nodiscard]] resultset query(std::string_view db_key, std::string_view sql_query, Args&&... args) {
-    try {
-        detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
-        detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
+    // Add a retry loop that will run at most twice.
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        try {
+            detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
+            detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-        auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
-        std::array<SQLLEN, sizeof...(args)> indicators;
+            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            std::array<SQLLEN, sizeof...(args)> indicators;
+            if constexpr (sizeof...(args) > 0) {
+                SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
+                detail::bind_all_params(stmt, params_tuple, indicators);
+            }
+            
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            SQLRETURN ret = SQLExecute(stmt.get());
 
-        if constexpr (sizeof...(args) > 0) {
-            SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
-            detail::bind_all_params(stmt, params_tuple, indicators);
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+            util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+
+            detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
+            
+            resultset rs = stmt.fetch_all();
+            SQLFreeStmt(stmt.get(), SQL_CLOSE);
+            return rs; // Success, exit the loop and return.
+
+        } catch (const sql::error& e) {
+            // Check if this is a retryable connection error and it's the first attempt.
+            if (attempt == 1 && (e.sqlstate == "HY000" || e.sqlstate == "01000" || e.sqlstate == "08S01")) {
+                util::log::warn("SQL connection error on '{}' (SQLSTATE: {}). Attempting reconnect. Error: {}", db_key, e.sqlstate, e.what());
+                detail::ConnectionManager::invalidate_connection(db_key);
+                continue; // Go to the next loop iteration to retry.
+            } else {
+                // Not a retryable error or we already failed a retry, so re-throw.
+                throw;
+            }
+        } catch (const std::exception& e) {
+            throw sql::error(std::format("Generic exception in sql::query: {}", e.what()));
         }
-        
-        const auto start_time = std::chrono::high_resolution_clock::now();
-
-        SQLRETURN ret = SQLExecute(stmt.get());
-
-        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
-        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
-
-        detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
-        
-        resultset rs = stmt.fetch_all();
-        SQLFreeStmt(stmt.get(), SQL_CLOSE);
-        return rs;
-
-    } catch (const sql::error& e) {
-        throw;
-    } catch (const std::exception& e) {
-        throw sql::error(std::format("Generic exception in sql::query: {}", e.what()));
     }
+    // This line should not be reachable, but it prevents compiler warnings.
+    throw sql::error("SQL query failed after multiple attempts.");
 }
 
 // --- Public `exec` Function Implementation ---
-
 template<typename... Args>
 void exec(std::string_view db_key, std::string_view sql_query, Args&&... args) {
-    try {
-        detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
-        detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
+    // Add a retry loop that will run at most twice.
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        try {
+            detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
+            detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-        auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
-        std::array<SQLLEN, sizeof...(args)> indicators;
+            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            std::array<SQLLEN, sizeof...(args)> indicators;
+            if constexpr (sizeof...(args) > 0) {
+                SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
+                detail::bind_all_params(stmt, params_tuple, indicators);
+            }
+            
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            SQLRETURN ret = SQLExecute(stmt.get());
+            
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+            util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
 
-        if constexpr (sizeof...(args) > 0) {
-            SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
-            detail::bind_all_params(stmt, params_tuple, indicators);
+            detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
+            
+            SQLFreeStmt(stmt.get(), SQL_CLOSE);
+            return; // Success, exit the function.
+
+        } catch (const sql::error& e) {
+            // Check if this is a retryable connection error and it's the first attempt.
+            if (attempt == 1 && (e.sqlstate == "HY000" || e.sqlstate == "01000" || e.sqlstate == "08S01")) {
+                util::log::warn("SQL connection error on '{}' (SQLSTATE: {}). Attempting reconnect. Error: {}", db_key, e.sqlstate, e.what());
+                detail::ConnectionManager::invalidate_connection(db_key);
+                continue; // Go to the next loop iteration to retry.
+            } else {
+                // Not a retryable error or we already failed a retry, so re-throw.
+                throw;
+            }
+        } catch (const std::exception& e) {
+            throw sql::error(std::format("Generic exception in sql::exec: {}", e.what()));
         }
-        
-        const auto start_time = std::chrono::high_resolution_clock::now();
-
-        SQLRETURN ret = SQLExecute(stmt.get());
-        
-        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
-        util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
-
-        detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
-        
-        SQLFreeStmt(stmt.get(), SQL_CLOSE);
-    } catch (const sql::error& e) {
-        throw;
-    } catch (const std::exception& e) {
-        throw sql::error(std::format("Generic exception in sql::exec: {}", e.what()));
     }
+    // This line should not be reachable, but it prevents compiler warnings.
+    throw sql::error("SQL exec failed after multiple attempts.");
 }
-
 
 } // namespace sql
 
