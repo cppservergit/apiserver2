@@ -687,3 +687,89 @@ On your server's terminal you will see a log entry for the upload activity:
 [  INFO  ] [Thread: 125085813827264] [d048eb44-72de-11f0-87d2-525400c57898] Saving uploaded file 'test.sh' as '/home/ubuntu/uploads/243c7fc3-fbdb-43e6-afc0-d3852cd2dd40.sh' with title 'My little BASH script'
 ```
 The storage location defined in run.sh is just a path, in our case is a local storage, but it could be mapped to a centralized NFS storage, or another cluster or cloud storage service, in these cases additional configuration is required to map the path to the storage service, that must be transparent to APIServer2, it only sees a local path just like when using local storage. Kubernetes, Docker and Cloud services provide the facilities to define paths that look like local storage to the containers.
+
+## **Deployment for production**
+
+APIServer2 was designed to be run behind a load balancer that serves the HTTPS traffic to the clients, APIServer2 only supports plain HTTP 1.1 keep-alive, the most simple and recommended setup is in a single VM using HAProxy as the load balancer and LXD native Linux containers, this is for high-performance and low management complexity. It can also be run as a container in Docker, Kubernetes or any container service on the Cloud.
+
+```
++------------------------------------------------------------------+
+|                          Ubuntu 24.04 VM                         |
+|                                                                  |
+|   Incoming HTTP Request                                          |
+|          |                                                       |
+|          v                                                       |
+|   +--------------+                                               |
+|   |   HAProxy    |                                               |
+|   +------+-------+                                               |
+|          |                                                       |
+|          +------------[ Load balances HTTP traffic to ]-----------+
+|          |                                                       |
+|    +-----+--------------------+                                  |
+|    |                          |                                  |
+|    v                          v                                  |
+| +---------------------+    +---------------------+               |
+| |   LXD Container 1   |    |   LXD Container 2   |               |
+| |       (node1)       |    |       (node2)       |               |
+| |    [APIServer2]     |    |    [APIServer2]     |               |
+| +---------------------+    +---------------------+               |
+|                                                                  |
++------------------------------------------------------------------+
+```
+
+We provide an installation script `setup.sh` that runs on a clean Ubuntu 24.04 VM and installs and configures all the required software, including HAProxy, LXD, two containers running APIServer as a SystemD service, even the DNS configuration to provide name resolution for LXD containers is performed by this script. It will install a pre-compiled APIServer2 binary with all the examples shown above. You can edit `test.sh` to provide your own configuration for database connections, secrets, etc.
+
+If you are using Multipass we suggest creating a VM like this:
+```
+multipass launch -n ha3 -c 4 -m 4G -d 8G
+```
+You will need at least 8GB of disk space for your VM, if you want to use more than 2 containers please note that each LXD container can take about 1.5G of disk space.
+
+### **Step 1 - download script**
+```
+curl https://cppserver.com/files/apiserver/v2/setup.sh -O && chmod +x setup.sh
+```
+
+### **Step 2 - configure script if necessary**
+```
+nano test.sh
+```
+You may want to edit this section in particular:
+```
+# create run.sh script for apiserver2
+tee "run.sh" > /dev/null <<'EOF'
+#!/bin/bash
+
+# server configuration
+export PORT=8080
+export POOL_SIZE=24
+export IO_THREADS=4
+
+# database configuration
+export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
+export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
+
+# cors configuration
+export CORS_ORIGINS="null,file://"
+
+# blobs storage configuration
+export BLOB_PATH="/uploads"
+
+# json web token configuration
+export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
+export JWT_TIMEOUT_SECONDS=300
+
+# executable
+./apiserver
+EOF
+```
+
+### **Step 3 - execute**
+```
+./test.sh
+```
+It may take about 5 minutes for the process to finish, reasons that can make it fail:
+* the VM is not brand-new and it already has HAProxy or LXD installed
+* the VM has no connection to the internet thus it cannot download packages
+
+We are using plain http with HAProxy on port 80, but it is easy to configure HTTPS for HAProxy, for simplicity's sake with this deployment script we are not using HTTPS.
