@@ -773,3 +773,38 @@ It may take about 5 minutes for the process to finish, reasons that can make it 
 * the VM has no connection to the internet thus it cannot download packages
 
 We are using plain http with HAProxy on port 80, but it is easy to configure HTTPS for HAProxy, for simplicity's sake with this deployment script we are not using HTTPS.
+
+### **Step 4 - test it**
+
+Open a terminal on the same VM an execute several times to hit the different containers:
+```
+curl localhost/version -s | jq
+```
+```
+curl localhost/metrics -s | jq
+```
+You should see output like this:
+for `/version`: 
+```
+{
+  "pod_name": "node1",
+  "version": "1.0.4"
+}
+```
+for `/metrics`: 
+```
+{
+  "pod_name": "node2",
+  "start_time": "2025-08-26T12:37:41",
+  "total_requests": 35,
+  "average_processing_time_seconds": 0.003105,
+  "current_connections": 1,
+  "current_active_threads": 0,
+  "pending_tasks": 0,
+  "thread_pool_size": 24,
+  "total_ram_kb": 4008636,
+  "memory_usage_kb": 16512,
+  "memory_usage_percentage": 0.41
+}
+```
+This `setup.sh` script can be taylored for more real-life production setups, with encrypted environment values, a private key and HTTPS/certificate setup for HAProxy.
