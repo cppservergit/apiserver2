@@ -732,7 +732,7 @@ curl https://cppserver.com/files/apiserver/v2/setup.sh -O && chmod +x setup.sh
 
 ### **Step 2 - configure script if necessary**
 ```
-nano test.sh
+nano setup.sh
 ```
 You may want to edit this section in particular:
 ```
@@ -766,7 +766,7 @@ EOF
 
 ### **Step 3 - execute**
 ```
-./test.sh
+./setup.sh
 ```
 It may take about 5 minutes for the process to finish, reasons that can make it fail:
 * the VM is not brand-new and it already has HAProxy or LXD installed
