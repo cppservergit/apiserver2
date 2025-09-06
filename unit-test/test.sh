@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_URL="http://ha3.mshome.net:80"
+BASE_URL="http://ha2.mshome.net:80"
 LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
 
 amber="\e[38;5;214m"

@@ -808,3 +808,13 @@ for `/metrics`:
 }
 ```
 This `setup.sh` script can be taylored for more real-life production setups, with encrypted environment values, a private key and HTTPS/certificate setup for HAProxy.
+
+### **Additional notes**
+
+If you already have `setup.sh` pre-configured for your deployment environment, you can run a command that will download, execute and then delete the installation script, like this:
+```
+curl https://cppserver.com/files/apiserver/v2/setup.sh -O && chmod +x setup.sh && ./setup.sh && rm setup.sh
+```
+You would be using your own local server to provide the files of course, so the URL in the command above should change.
+
+You can configure this script to download encrypted environment values as .enc files and the corresponding private key `private.pem` required to decrypt, as well as a server certificate `PEM` file for HAProxy, this server certificate should contain all the necessary parts: the private key, the certificate, and the intermediate certificate, referred as the certificate chain by your certificate provider, they shound be stored in a single PEM file in that order.
