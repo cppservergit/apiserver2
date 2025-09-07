@@ -168,7 +168,7 @@ A bash script using CURL for testing your endpoints is provided in folder `unit-
 |-----------------|-----------------|-----------------|
 | make server     | apiserver     | Optimized executable for production
 | make server_debug     | apiserver_debug     | Debug version, non-optimized, prints debug messages and stack traces in case of errors, may produce lots of logs
-| make server_perflog     | apiserver_perflog     | Same as `server_app` but prints performance metrics in logs to identify performance problems
+| make server_perflog     | apiserver_perflog     | Same as `make server` but prints performance metrics in logs to identify performance problems
 | make server_sanitize_thead     | apiserver_sanitizer_thread     | Detects data races
 | make server_sanitize_address     | apiserver_sanitizer_address     | Detects memory problems
 | make server_sanitize_leak     | apiserver_sanitizer_leak     | Same as above, plus memory leaks
