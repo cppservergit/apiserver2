@@ -803,6 +803,17 @@ s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_c
 ```
 We are reusing the same `customer_validator` from the previous example of the `/customer` API because this remote caller is merely a wrapper of that service, it has the same input definitions.
 
+For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
+```
+curl "${BASE_URL}/rcustomer?id=ANATR" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+```
+### **About using self-signed certificates**
+The `http_client` wrapper module makes safe use if libcurl, it means it among other things that it won't accept invalid certificates, otherwise APIServer2 would not pass the strict rules of SonarCloud static analysis. If you want to use a self-signed certificate the you must change `http_client.cpp` the function `http_client::impl::configure_common_options` and add these lines:
+```
+curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+```
+
 ## **Deployment for production**
 
 APIServer2 was designed to be run behind a load balancer that serves the HTTPS traffic to the clients, APIServer2 only supports plain HTTP 1.1 keep-alive, the most simple and recommended setup is in a single VM using HAProxy as the load balancer and LXD native Linux containers, this is for high-performance and low management complexity. It can also be run as a container in Docker, Kubernetes or any container service on the Cloud.
