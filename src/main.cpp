@@ -21,6 +21,81 @@ using namespace validation;
 using enum http::status;
 using enum http::method;
 
+/**
+ * @brief Custom exception for errors originating from the RemoteCustomerService.
+ */
+class RemoteServiceError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+/**
+ * @class RemoteCustomerService
+ * @brief A stateless service class to interact with a remote customer API.
+ */
+class RemoteCustomerService {
+public:
+    /**
+     * @brief Fetches customer information from the remote API.
+     */
+    static http_response get_customer_info(std::string_view customer_id) {
+        const std::string token = login_and_get_token();
+
+        const std::string customer_info_url = std::format("{}/customer?id={}", get_url(), customer_id);
+        const std::map<std::string, std::string, std::less<>> auth_header = {
+            {"Authorization", std::format("Bearer {}", token)}
+        };
+
+        util::log::debug("Fetching remote customer info from {}", customer_info_url);
+        
+        // Create a transient http_client for this specific request.
+        http_client client;
+        auto response = client.get(customer_info_url, auth_header);
+        if (response.status_code != 200) {
+            util::log::error("Remote API failed with status {}: {}", response.status_code, response.body);
+            throw RemoteServiceError("Remote service invocation failed.");
+        }
+        return response;
+    }
+
+private:
+    /**
+     * @brief Authenticates with the remote API and returns a JWT.
+     */
+    static std::string login_and_get_token() {
+        const std::map<std::string, std::string, std::less<>> login_payload = {
+            {"username", get_user()},
+            {"password", get_pass()}
+        };
+        const std::string login_body = json::json_parser::build(login_payload);
+
+        util::log::debug("Logging into remote API at {}", get_url());
+
+        // Create a transient http_client for the login request.
+        http_client client;
+        const http_response login_response = client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
+
+        if (login_response.status_code != 200) {
+            util::log::error("Remote API login failed with status {}: {}", login_response.status_code, login_response.body);
+            throw RemoteServiceError("Failed to authenticate with remote service.");
+        }
+
+        json::json_parser token_parser(login_response.body);
+        const std::string id_token(token_parser.get_string("id_token"));
+
+        if (id_token.empty()) {
+            util::log::error("Remote API login response did not contain an id_token.");
+            throw RemoteServiceError("Invalid response from remote authentication service.");
+        }
+        return id_token;
+    }
+
+    // --- Configuration Getters using thread-safe function-local statics ---
+    static const std::string& get_url()  { static const std::string url = env::get<std::string>("REMOTE_API_URL"); return url; }
+    static const std::string& get_user() { static const std::string user = env::get<std::string>("REMOTE_API_USER"); return user; }
+    static const std::string& get_pass() { static const std::string pass = env::get<std::string>("REMOTE_API_PASS"); return pass; }
+};
+
 // --- Custom Exception for File Operations ---
 class file_system_error : public std::runtime_error {
 public:
@@ -204,6 +279,29 @@ void upload_file(const http::request& req, http::response& res) {
     }
 }
 
+//invokes remote REST API to get customer info
+void get_remote_customer(const http::request& req, http::response& res) {
+    const auto customer_id = **req.get_value<std::string>("id");
+
+    try {
+        // No instance is needed; call the static method directly on the class.
+        const http_response customer_response = RemoteCustomerService::get_customer_info(customer_id);
+        res.set_body(ok, customer_response.body);
+
+    } catch (const env::error& e) {
+        util::log::critical("Missing environment variables for remote API: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"Remote API is not configured on the server."})");
+    } catch (const curl_exception& e) {
+        util::log::error("HTTP client error while calling remote API: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"A communication error occurred with a remote service."})");
+    } catch (const json::parsing_error& e) {
+        util::log::error("Failed to parse JSON response from remote API: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"Received an invalid response from a remote service."})");
+    } catch (const RemoteServiceError& e) {
+        util::log::error("A remote service logic error occurred: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"A logic error occurred while communicating with a remote service."})");
+    }
+}
 
 int main() {
     try {
@@ -219,6 +317,7 @@ int main() {
         s.register_api(webapi_path{"/customer"}, get, customer_validator, &get_customer, true);
         s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
+        s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_customer, true);
 
         s.start();
 
