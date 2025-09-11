@@ -803,6 +803,15 @@ s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_c
 ```
 We are reusing the same `customer_validator` from the previous example of the `/customer` API because this remote caller is merely a wrapper of that service, it has the same input definitions.
 
+We need to configure `run.sh` to add server location and login credentials:
+```
+# remote api configuration
+export REMOTE_API_URL="http://localhost:8080"
+export REMOTE_API_USER="mcordova"
+export REMOTE_API_PASS="basica"
+```
+Remember that these security-sensitive environment variables can be managed with public/private key pair encryption.
+
 For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
 ```
 curl "${BASE_URL}/rcustomer?id=ANATR" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq

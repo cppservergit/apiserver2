@@ -19,6 +19,7 @@ export BLOB_PATH="/home/ubuntu/uploads"
 export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
 
+# remote api configuration
 export REMOTE_API_URL="http://localhost:8080"
 export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
