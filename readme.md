@@ -211,7 +211,7 @@ Sensitive environment variables, like `JWT_SECRET` or database connection string
 ```
 export LOGINDB="logindb.enc"
 ```
-This is a simple and effective method when running OnPrem, when running on Kubernetes or another container service, the orchestation platform will provide means for secure environment variables, which should be transparent to APIServer2.
+This is a simple and effective method when running OnPrem, when running on Kubernetes or another container service, the orchestation platform will provide means for secure environment variables, which should be transparent to APIServer2. A [tutorial](https://github.com/cppservergit/apiserver2/blob/main/docs/encrypt.md) is provided for encryption of these environment variables using `openssl`.
 
 ## **Hello World**
 
