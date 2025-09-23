@@ -276,7 +276,7 @@ You should see:
 
 ## **Beyond Hello World, the login API**
 
-**NOTE**: For the rest of the examples you will need to install an SQL Server 2019 on docker and restore a couple of databases, it is a very quick procedure following this [tutorial](https://github.com/cppservergit/apiserver-odbc/blob/main/sqlserver.md), if you are using Canonical's Multipass on Windows 10/11, we suggest using a separate VM to install the demo databases, the run.sh script that configures APIServer2 already contains the ODBC connection strings for these databases (testdb for securiity and demodb for business transactions).
+**NOTE**: For the rest of the examples you will need to install an SQL Server 2019 on docker and restore a couple of databases, it is a very quick procedure following this [tutorial](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md), if you are using Canonical's Multipass on Windows 10/11, we suggest using a separate VM to install the demo databases, the run.sh script that configures APIServer2 already contains the ODBC connection strings for these databases (testdb for securiity and demodb for business transactions).
 
 The `login` API requires 1) input validation because it receives the parameters `username` and `password` 2) the function that interacts with some database stored procedure to access a custom security schema and 3) the registration of the API, without security, because this is the API that authenticates and returns the JSON Web Token (JWT).
 
