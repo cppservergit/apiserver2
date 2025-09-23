@@ -59,16 +59,16 @@ Save the file and restart the APIServer++ service.
 
 Save the connection string to a text file without a CRLF at the end.
 ```
-echo -n 'Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8' > auditdb.txt
+echo -n 'Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8' > logindb.txt
 ```
 
 Encrypt the text file.
 ```
-openssl pkeyutl -encrypt -pubin -inkey public.pem -in auditdb.txt -out auditdb.enc
+openssl pkeyutl -encrypt -pubin -inkey public.pem -in logindb.txt -out logindb.enc
 ```
 
 Apply the new encrypted value. Copy the `.enc` file to the installation directory of APIServer2, then edit the `run.sh` script to change the value of the corresponding environment variable, like this:
 ```
-export LOGINDB="auditdb.enc"
+export LOGINDB="logindb.enc"
 ```
 Save and restart the service.
