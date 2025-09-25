@@ -18,7 +18,8 @@ The public key should be kept in a safe place, separate from the APIServer2 inst
 
 ## 3. Generate RSA Key Pair
 ```
-openssl genrsa -out private.pem 2048openssl rsa -in private.pem -outform PEM -pubout -out public.pem
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -outform PEM -pubout -out public.pem
 ```
 
 ## 4. Encrypt the SHA26 Secret for the JSON Web Token (JWT)
