@@ -88,6 +88,11 @@ template<typename... Args>
 template<typename... Args>
 void exec(std::string_view db_key, std::string_view sql_query, Args&&... args);
 
+/**
+ * @brief Executes a SQL query and builds a JSON array of objects directly from the result set.
+ */
+template<typename... Args>
+[[nodiscard]] std::optional<std::string> get_json(std::string_view db_key, std::string_view sql_query, Args&&... args);
 
 // --- Internal Implementation Details ---
 namespace detail {

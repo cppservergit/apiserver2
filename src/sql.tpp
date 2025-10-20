@@ -262,6 +262,157 @@ void exec(std::string_view db_key, std::string_view sql_query, Args&&... args) {
     throw sql::error("SQL exec failed after multiple attempts.");
 }
 
+namespace detail {
+    // Helper to escape characters for a JSON string literal.
+    inline void append_escaped_json_string(std::string& builder, std::string_view sv) {
+        builder.push_back('"');
+        for (char c : sv) {
+            switch (c) {
+                case '"':  builder.append("\\\""); break;
+                case '\\': builder.append("\\\\"); break;
+                case '\b': builder.append("\\b"); break;
+                case '\f': builder.append("\\f"); break;
+                case '\n': builder.append("\\n"); break;
+                case '\r': builder.append("\\r"); break;
+                case '\t': builder.append("\\t"); break;
+                default:
+                    if ('\x00' <= c && c <= '\x1f') {
+                        // Append control characters as unicode escapes, though this is rare.
+                        builder.append(std::format("\\u{:04x}", static_cast<unsigned char>(c)));
+                    } else {
+                        builder.push_back(c);
+                    }
+                    break;
+            }
+        }
+        builder.push_back('"');
+    }
+
+    [[nodiscard]] inline std::optional<std::string> fetch_and_build_json(StmtHandle& stmt) {
+        SQLSMALLINT num_cols = 0;
+        check_odbc_error(SQLNumResultCols(stmt.get(), &num_cols), stmt.get(), SQL_HANDLE_STMT, "SQLNumResultCols");
+
+        if (num_cols == 0) {
+            return std::optional{std::string("[]")};
+        }
+
+        // 1. Get column metadata once
+        std::vector<std::string> col_names;
+        std::vector<SQLSMALLINT> col_types;
+        col_names.reserve(num_cols);
+        col_types.reserve(num_cols);
+
+        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+            std::vector<SQLCHAR> col_name_buffer(256);
+            SQLSMALLINT name_len = 0, data_type = 0;
+            check_odbc_error(SQLDescribeCol(stmt.get(), i, col_name_buffer.data(), col_name_buffer.size(), &name_len, &data_type, nullptr, nullptr, nullptr),
+                            stmt.get(), SQL_HANDLE_STMT, "SQLDescribeCol");
+            col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
+            col_types.push_back(data_type);
+        }
+
+        // 2. Build the JSON string
+        std::string json_builder;
+        json_builder.reserve(4096);
+        json_builder.push_back('[');
+
+        bool first_row = true;
+        while (SQLFetch(stmt.get()) == SQL_SUCCESS) {
+            if (!first_row) {
+                json_builder.push_back(',');
+            }
+            first_row = false;
+            
+            json_builder.push_back('{');
+
+            for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+                SQLLEN indicator;
+                std::vector<char> buffer(4096);
+                SQLGetData(stmt.get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+                
+                // Append key: "column_name":
+                append_escaped_json_string(json_builder, col_names[i - 1]);
+                json_builder.push_back(':');
+
+                if (indicator == SQL_NULL_DATA) {
+                    json_builder.append("null");
+                } else {
+                    std::string_view value_sv(buffer.data());
+                    // Check the SQL data type to decide on quoting
+                    switch (col_types[i - 1]) {
+                        case SQL_BIT:
+                        case SQL_TINYINT:
+                        case SQL_SMALLINT:
+                        case SQL_INTEGER:
+                        case SQL_BIGINT:
+                        case SQL_REAL:
+                        case SQL_FLOAT:
+                        case SQL_DOUBLE:
+                        case SQL_DECIMAL:
+                        case SQL_NUMERIC:
+                            json_builder.append(value_sv); // Numeric types are not quoted
+                            break;
+                        default:
+                            // String, date, time, and other types are quoted
+                            append_escaped_json_string(json_builder, value_sv);
+                            break;
+                    }
+                }
+
+                if (i < num_cols) {
+                    json_builder.push_back(',');
+                }
+            }
+            json_builder.push_back('}');
+        }
+
+        json_builder.push_back(']');
+        return std::optional{json_builder};
+    }
+
+}
+
+template<typename... Args>
+[[nodiscard]] std::optional<std::string> get_json(std::string_view db_key, std::string_view sql_query, Args&&... args) {
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        try {
+            detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
+            detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
+
+            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            std::array<SQLLEN, sizeof...(args)> indicators;
+            if constexpr (sizeof...(args) > 0) {
+                SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
+                detail::bind_all_params(stmt, params_tuple, indicators);
+            }
+            
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            SQLRETURN ret = SQLExecute(stmt.get());
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+            util::log::perf("SQL on '{}' took {} microseconds. Query: {}", db_key, duration.count(), sql_query);
+            detail::check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLExecute");
+            
+            // The only change is here: call the new JSON builder
+            auto result = detail::fetch_and_build_json(stmt);
+            
+            SQLFreeStmt(stmt.get(), SQL_CLOSE);
+            return result;
+
+        } catch (const sql::error& e) {
+            if (attempt == 1 && (e.sqlstate == "HY000" || e.sqlstate == "01000" || e.sqlstate == "08S01")) {
+                util::log::warn("SQL connection error on '{}' (SQLSTATE: {}). Attempting reconnect. Error: {}", db_key, e.sqlstate, e.what());
+                detail::ConnectionManager::invalidate_connection(db_key);
+                continue;
+            } else {
+                throw;
+            }
+        } catch (const std::exception& e) {
+            throw sql::error(std::format("Generic exception in sql::get_json: {}", e.what()));
+        }
+    }
+    throw sql::error("SQL get_json failed after multiple attempts.");
+}
+
 } // namespace sql
 
 #endif // SQL_TPP

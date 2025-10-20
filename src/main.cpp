@@ -318,7 +318,7 @@ int main() {
         s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
         s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_customer, true);
-
+        
         s.start();
 
         util::log::info("Application shutting down gracefully.");
