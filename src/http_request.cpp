@@ -7,6 +7,33 @@
 
 using namespace std::literals::string_view_literals;
 
+namespace {
+
+// Per RFC 7230 (and 9112), a 'token' is 1*tchar
+// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+//       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+//       / DIGIT / ALPHA
+inline bool is_valid_header_key(std::string_view key) {
+    if (key.empty()) {
+        return false;
+    }
+    constexpr std::string_view valid_tchars =
+        "!#$%&'*+-.^_`|~"
+        "0123456789"
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    return key.find_first_not_of(valid_tchars) == std::string_view::npos;
+}
+
+// Per RFC 7230, field-value can be complex, but for security,
+// we *must* prohibit bare CR and LF to prevent response splitting.
+inline bool is_valid_header_value(std::string_view value) {
+    // Finding either \r or \n is sufficient to reject.
+    return value.find_first_of("\r\n"sv) == std::string_view::npos;
+}
+
+} // namespace
+
 namespace http {
 
 // ===================================================================
@@ -292,13 +319,45 @@ void request_parser::parse_uri(std::string_view uri) {
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
+        if (header_line.empty()) {
+            continue; // Ignore empty lines
+        }
+
         auto pos = header_line.find(':');
         if (pos == std::string_view::npos) {
-            continue;
+            // A non-empty line with no colon is a malformed header.
+            return request_parse_error(std::format("Malformed header line: {}", header_line));
         }
+
         auto key = header_line.substr(0, pos);
+        
+        // --- FIX 1: Validate header key characters ---
+        if (!is_valid_header_key(key)) {
+            return request_parse_error(std::format("Invalid header key: {}", key));
+        }
+        
         auto value = header_line.substr(pos + 1);
         value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
+
+        // --- FIX 2 (CRLF Injection): Validate header value ---
+        if (!is_valid_header_value(value)) {
+            return request_parse_error(std::format("Invalid characters in header value for key: {}", key));
+        }
+
+        // --- FIX 3 (HSR): Reject Transfer-Encoding ---
+        // This must be case-insensitive, so we use sv_ci_equal.
+        if (sv_ci_equal{}(key, "Transfer-Encoding")) {
+            return request_parse_error("Transfer-Encoding is not supported.");
+        }
+        
+        // --- FIX 4 (Host Ambiguity): Reject duplicate Host headers ---
+        // This must be case-insensitive.
+        if (sv_ci_equal{}(key, "Host")) {
+            if (m_headers.contains("Host")) { // Check if 'Host' was already emplaced.
+                return request_parse_error("Duplicate Host header detected.");
+            }
+        }
+        
         m_headers.try_emplace(std::string(key), value);
     }
     return std::nullopt;
