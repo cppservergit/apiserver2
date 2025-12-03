@@ -39,20 +39,24 @@ public:
      * @brief Fetches customer information from the remote API.
      */
     static http_response get_customer_info(std::string_view customer_id) {
+        const std::string uri = "/customer";
         const std::string token = login_and_get_token();
-
-        const std::string customer_info_url = std::format("{}/customer?id={}", get_url(), customer_id);
-        const std::map<std::string, std::string, std::less<>> auth_header = {
-            {"Authorization", std::format("Bearer {}", token)}
+        const std::map<std::string, std::string, std::less<>> payload = {
+            {"id", std::string(customer_id)}
+        };
+        const std::string body = json::json_parser::build(payload);
+        const std::map<std::string, std::string, std::less<>> headers = {
+            {"Authorization", std::format("Bearer {}", token)},
+            {"Content-Type", "application/json"}
         };
 
-        util::log::debug("Fetching remote customer info from {}", customer_info_url);
+        util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
         
         // Create a transient http_client for this specific request.
         http_client client;
-        auto response = client.get(customer_info_url, auth_header);
+        const auto response = client.post(get_url() + uri, body, headers);
         if (response.status_code != 200) {
-            util::log::error("Remote API failed with status {}: {}", response.status_code, response.body);
+            util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
             throw RemoteServiceError("Remote service invocation failed.");
         }
         return response;
@@ -314,10 +318,10 @@ int main() {
         s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
         s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);
         s.register_api(webapi_path{"/products"}, get, &get_products, true);
-        s.register_api(webapi_path{"/customer"}, get, customer_validator, &get_customer, true);
+        s.register_api(webapi_path{"/customer"}, post, customer_validator, &get_customer, true);
         s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
-        s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_customer, true);
+        s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
         
         s.start();
 

@@ -7,4 +7,4 @@ login_body="${login_response::-3}"
 login_status="${login_response: -3}"
 TOKEN=$(echo "$login_body" | jq -r '.id_token')
 # call secure API
-curl "${BASE_URL}/rcustomer?id=ANATR" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+curl "${BASE_URL}/customer" -s -d '{"id":"ANATR"}' -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq

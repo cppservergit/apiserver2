@@ -145,7 +145,12 @@ private:
     auto parse_and_store_content_length() -> bool;
     auto parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error>;
     auto parse_request_line(std::string_view request_line) -> std::optional<request_parse_error>;
-    void parse_uri(std::string_view uri);
+    
+    // --- MODIFIED SIGNATURE ---
+    // This function can now fail and return an error.
+    auto parse_uri(std::string_view uri) -> std::optional<request_parse_error>;
+    // --- END MODIFICATION ---
+
     auto parse_body() -> std::optional<request_parse_error>;
     auto parse_multipart_form_data(std::string_view boundary) -> std::optional<request_parse_error>;
     void process_multipart_part(std::string_view part_sv);

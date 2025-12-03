@@ -32,6 +32,33 @@ inline bool is_valid_header_value(std::string_view value) {
     return value.find_first_of("\r\n"sv) == std::string_view::npos;
 }
 
+// --- NEW HELPERS for Path Validation ---
+constexpr size_t MAX_PATH_LENGTH = 2048;
+
+// Validates against path traversal and other bad characters.
+// We are explicitly disallowing URL-encoded characters ('%') in the path
+// to block a class of obfuscation attacks.
+inline bool is_valid_path(std::string_view path) {
+    if (path.empty() || path[0] != '/') {
+        return false; // Must be an absolute path starting with '/'
+    }
+
+    // Check for invalid characters. We disallow '%' to stop URL-encoded attacks.
+    // We also block null bytes, CR, LF, and backslashes (for Windows-based attacks).
+    constexpr std::string_view invalid_chars = "%\0\r\n\\"sv;
+    if (path.find_first_of(invalid_chars) != std::string_view::npos) {
+        return false;
+    }
+
+    // Check for path traversal ".."
+    if (path.find(".."sv) != std::string_view::npos) {
+        return false;
+    }
+
+    return true;
+}
+// --- END NEW HELPERS ---
+
 } // namespace
 
 namespace http {
@@ -285,6 +312,7 @@ auto request_parser::parse_and_store_content_length() -> bool {
     return false; // Content-Length header not found
 }
 
+// --- MODIFIED FUNCTION ---
 auto request_parser::parse_request_line(std::string_view request_line) -> std::optional<request_parse_error> {
     auto parts = request_line | std::views::split(' ') | std::views::common;
     auto it = parts.begin();
@@ -297,23 +325,35 @@ auto request_parser::parse_request_line(std::string_view request_line) -> std::o
     }
     
     const std::string_view uri_sv(std::to_address((*it).begin()), std::ranges::distance(*it));
-    parse_uri(uri_sv);
+    
+    // We must now check for an error from parse_uri
+    if (auto err = parse_uri(uri_sv); err.has_value()) {
+        return err;
+    }
     return std::nullopt;
 }
 
-void request_parser::parse_uri(std::string_view uri) {
-    auto query_pos = uri.find('?');
-    m_path = uri.substr(0, query_pos);
-    if (query_pos == std::string_view::npos) {
-        return;
+// This function now validates the path and REJECTS ANY QUERY STRING.
+auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_parse_error> {
+    // 1. Strict Requirement: Fail if any query parameters are present.
+    if (uri.find('?') != std::string_view::npos) {
+        return request_parse_error(std::format("URI query parameters are not allowed. URI: '{}'", uri));
     }
 
-    std::string_view query_string = uri.substr(query_pos + 1);
-    for (const auto param_range : query_string | std::views::split('&')) {
-        std::string_view param_sv(param_range.begin(), param_range.end());
-        auto eq_pos = param_sv.find('=');
-        m_params.try_emplace(param_sv.substr(0, eq_pos), eq_pos == std::string_view::npos ? ""sv : param_sv.substr(eq_pos + 1));
+    // 2. Check for max length
+    if (uri.length() > MAX_PATH_LENGTH) {
+        return request_parse_error(std::format("URI exceeds maximum length of {}. URI: '{}'", MAX_PATH_LENGTH, uri));
     }
+
+    // 3. Set path (entire URI is path since no '?')
+    m_path = uri;
+
+    // 4. Validate the path characters
+    if (!is_valid_path(m_path)) {
+        return request_parse_error(std::format("Invalid URI path: contains forbidden characters or traversal sequences. URI: '{}'", uri));
+    }
+
+    return std::nullopt;
 }
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
@@ -352,10 +392,8 @@ auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional
         
         // --- FIX 4 (Host Ambiguity): Reject duplicate Host headers ---
         // This must be case-insensitive.
-        if (sv_ci_equal{}(key, "Host")) {
-            if (m_headers.contains("Host")) { // Check if 'Host' was already emplaced.
-                return request_parse_error("Duplicate Host header detected.");
-            }
+        if (sv_ci_equal{}(key, "Host") && m_headers.contains("Host")) {
+            return request_parse_error("Duplicate Host header detected.");
         }
         
         m_headers.try_emplace(std::string(key), value);
