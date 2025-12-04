@@ -45,13 +45,12 @@ inline bool is_valid_path(std::string_view path) {
 
     // Check for invalid characters. We disallow '%' to stop URL-encoded attacks.
     // We also block null bytes, CR, LF, and backslashes (for Windows-based attacks).
-    constexpr std::string_view invalid_chars = "%\0\r\n\\"sv;
-    if (path.find_first_of(invalid_chars) != std::string_view::npos) {
+    if (constexpr std::string_view invalid_chars = "%\0\r\n\\"sv; path.find_first_of(invalid_chars) != std::string_view::npos) {
         return false;
     }
 
     // Check for path traversal ".."
-    if (path.find(".."sv) != std::string_view::npos) {
+    if (path.contains(".."sv)) {
         return false;
     }
 
@@ -333,10 +332,11 @@ auto request_parser::parse_request_line(std::string_view request_line) -> std::o
     return std::nullopt;
 }
 
+// --- REPLACED FUNCTION ---
 // This function now validates the path and REJECTS ANY QUERY STRING.
 auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_parse_error> {
     // 1. Strict Requirement: Fail if any query parameters are present.
-    if (uri.find('?') != std::string_view::npos) {
+    if (uri.contains('?')) {
         return request_parse_error(std::format("URI query parameters are not allowed. URI: '{}'", uri));
     }
 
@@ -355,6 +355,8 @@ auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_pa
 
     return std::nullopt;
 }
+// --- END REPLACED FUNCTION ---
+
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
