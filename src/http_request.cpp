@@ -4,6 +4,7 @@
 #include <format>
 #include <locale> 
 #include <memory> 
+#include <algorithm> // for search
 
 using namespace std::literals::string_view_literals;
 
@@ -56,7 +57,16 @@ inline bool is_valid_path(std::string_view path) {
 
     return true;
 }
-// --- END NEW HELPERS ---
+
+// Helper to trim whitespace from string_view
+inline std::string_view trim_sv(std::string_view sv) {
+    sv.remove_prefix(std::min(sv.find_first_not_of(" \t"sv), sv.size()));
+    const auto last = sv.find_last_not_of(" \t"sv);
+    if (last != std::string_view::npos) {
+        sv = sv.substr(0, last + 1);
+    }
+    return sv;
+}
 
 } // namespace
 
@@ -67,65 +77,86 @@ namespace http {
 // ===================================================================
 request_parser::request_parser() = default;
 
-// FIX: Use = default for the destructor
 request_parser::~request_parser() noexcept = default;
 
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
 
-// Helper function to parse headers from a multipart form part.
+// REPLACED: Robust parser that splits by ';' to prevent confusion attacks
 auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> request_parser::multipart_part_headers {
     multipart_part_headers headers;
 
     for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
         std::string_view line(line_range.begin(), line_range.end());
-        if (line.empty()) {
-            continue;
-        }
-        
-        auto parse_param = [&](std::string_view param_name) -> std::optional<std::string_view> {
-            auto param_pos = line.find(param_name);
-            if (param_pos == std::string_view::npos) {
-                return std::nullopt;
-            }
-            auto value_start = line.find('"', param_pos);
-            if (value_start == std::string_view::npos) {
-                return std::nullopt;
-            }
-            value_start++; // Move past the quote
-            auto value_end = line.find('"', value_start);
-            if (value_end == std::string_view::npos) {
-                return std::nullopt;
-            }
-            return line.substr(value_start, value_end - value_start);
-        };
+        if (line.empty()) continue;
 
-        if (line.starts_with("Content-Disposition:"sv)) {
-            headers.field_name = parse_param("name="sv);
-            headers.filename = parse_param("filename="sv);
-        } else if (line.starts_with("Content-Type:"sv)) {
-            auto value = line.substr(line.find(':') + 1);
-            value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
-            headers.content_type = value;
+        auto colon_pos = line.find(':');
+        if (colon_pos == std::string_view::npos) continue;
+
+        std::string_view key = line.substr(0, colon_pos);
+        std::string_view value = line.substr(colon_pos + 1);
+
+        // FIX: Case-insensitive header check
+        if (sv_ci_equal{}(key, "Content-Disposition")) {
+            // Split by ';' to handle parameters securely
+            for (const auto param_range : value | std::views::split(';')) {
+                std::string_view param(param_range.begin(), param_range.end());
+                param = trim_sv(param);
+
+                auto eq_pos = param.find('=');
+                if (eq_pos == std::string_view::npos) continue;
+
+                std::string_view p_key = param.substr(0, eq_pos);
+                std::string_view p_val = param.substr(eq_pos + 1);
+
+                // Handle quotes
+                if (p_val.size() >= 2 && p_val.front() == '"' && p_val.back() == '"') {
+                    p_val.remove_prefix(1);
+                    p_val.remove_suffix(1);
+                }
+
+                if (p_key == "name"sv) {
+                    headers.field_name = p_val;
+                } else if (p_key == "filename"sv) {
+                    headers.filename = p_val;
+                }
+            }
+        } else if (sv_ci_equal{}(key, "Content-Type")) {
+            headers.content_type = trim_sv(value);
         }
     }
     return headers;
 }
 
-// Helper function to process a single part of a multipart form.
+// REPLACED: Safe boundary handling
 void request_parser::process_multipart_part(std::string_view part_sv) {
-    if (part_sv.starts_with("--"sv)) return; // End boundary
-    if (part_sv.starts_with("\r\n"sv)) part_sv.remove_prefix(2);
-    if (part_sv.ends_with("\r\n"sv)) part_sv.remove_suffix(2);
+    // 1. Safe cleanup of the boundary CRLFs.
+    if (part_sv.starts_with("\r\n"sv)) {
+        part_sv.remove_prefix(2);
+    }
     
-    const auto headers_end_pos = part_sv.find("\r\n\r\n"sv);
+    // For safety against the specific "binary corruption" bug:
+    if (part_sv.ends_with("\r\n"sv)) { 
+         part_sv.remove_suffix(2); 
+    }
+
+    // FIX: Handle LFLF (double newline) attack for header termination
+    size_t headers_end_pos = part_sv.find("\r\n\r\n"sv);
+    size_t delimiter_len = 4;
+
     if (headers_end_pos == std::string_view::npos) {
-        return;
+        // Fallback for non-compliant clients (or attacks) using just \n\n
+        headers_end_pos = part_sv.find("\n\n"sv);
+        delimiter_len = 2;
+    }
+
+    if (headers_end_pos == std::string_view::npos) {
+        return; // No headers found, skip part
     }
 
     const auto part_headers_sv = part_sv.substr(0, headers_end_pos);
-    const auto part_content_sv = part_sv.substr(headers_end_pos + 4);
+    const auto part_content_sv = part_sv.substr(headers_end_pos + delimiter_len);
     
     const multipart_part_headers headers = parse_part_headers(part_headers_sv);
     
@@ -154,7 +185,6 @@ void request_parser::update_pos(ssize_t bytes_read) {
 auto request_parser::eof() -> bool {
     using enum http::method;
 
-    // REFACTOR: Use guard clauses to simplify logic.
     if (!find_and_store_header_end()) return false;
     if (!parse_and_store_method()) return false;
     
@@ -201,7 +231,6 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     }
     m_headerSize = *m_identifiedHeaderSize;
 
-    // REFACTOR: Flattened logic for handling POST requests.
     if (m_parsedMethod == post) {
         if (!m_identifiedContentLength.has_value()) {
              return std::unexpected(request_parse_error("POST request without Content-Length header."));
