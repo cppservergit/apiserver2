@@ -65,7 +65,7 @@ APIServer2 is a high-performance, multi-reactor EPOLL based web server written i
 * **Modern C++23:** Leverages the latest C++ features for safety, performance, and code clarity, including std::jthread, std::expected, and std::string\_view.  
 * **Built-in Observability:** Comes with out-of-the-box monitoring through a set of internal API endpoints, providing real-time insights into the server's health and performance.
 * **Powerful abstractions:** Very easy to use and efficient abstractions to create Web APIs that execute database stored procedures via ODBC API or invoke REST APIs via HTTPS with libcurl, with integrated JSON Web Token stateless security model.
-* **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides up to 97% of connection reuse with HAProxy 2.8.x saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Docker, Kubernetes and Cloud container services.
+* **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides up to 97% of connection reuse with HAProxy 2.8.x saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Docker, Kubernetes and Cloud container services. The only HTTP verbs supported are GET, POST and OPTIONS, query parameters are not supported, all data must be sent via POST with JSON or multipart-form-data, nothing else is accepted.
 
 ## **Quality Control**
 
@@ -455,15 +455,15 @@ The APIServer2 validator contract guarantees that the API function won't be call
 
 The API must be registered in `main()`:
 ```
-s.register_api(webapi_path{"/customer"}, get, customer_validator, &get_customer, true);
+s.register_api(webapi_path{"/customer"}, post, customer_validator, &get_customer, true);
 ```
-We are using the full overload of the `register_api()` function, we pass the validator and the function address. In this example we accept an HTTP GET, we will receive the inputs via URI request parameters, if we pass `post` the data must be sent via multipart-form-data or JSON only. An API will only accept a request with the HTTP VERB indicated in the `register_api()` call, another clause of the APIServer2 contract.
+We are using the full overload of the `register_api()` function, we pass the validator and the function address. In this example we accept a parameter, so `post` is only verb we can use for this API, the data must be sent using multipart-form-data or JSON. An API will only accept a request with the HTTP VERB indicated in the `register_api()` call, that is another security clause of the APIServer2 contract, a violation will trigger an exception `400 BAD REQUEST`.
 
-Test it calling `/customer?id=ANATR` with CURL, it is a secure API, you need to `/login`, then copy the token from the response and execute CURL like this (use your current token):
+Test it calling `/customer` with CURL, this is a secure API, you need to `/login`, then copy the token from the response and execute CURL like this to send JSON using a POST verb (use your current token):
 ```
-curl localhost:8080/customer?id=ANATR -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ" -s | jq
+curl localhost:8080/customer --json '{"id":"anatr"}' -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ" -s | jq
 ```
-The stored procedure invoked by this API is an interesting example of using more complex SQL logic to efficiently produce a compact JSON response.
+The stored procedure invoked by this API is an interesting example of using more complex SQL logic to efficiently produce a compact nested JSON response (customer with all its purchase orders).
 
 ## **Parameterized SQL queries with dates**
 

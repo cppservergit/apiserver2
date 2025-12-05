@@ -71,13 +71,62 @@
       { path: '/products', method: 'GET' },
       { path: '/metrics', method: 'GET' },
       { path: '/ping', method: 'GET' },
-      { path: '/customer?id=anatr', method: 'GET' },
-      { path: '/customer?id=quick', method: 'GET' },
-      { path: '/customer?id=bergs', method: 'GET' },
-      { path: '/customer?id=ernsh', method: 'GET' },
-      { path: '/customer?id=fissa', method: 'GET' },
-      { path: '/customer?id=dracd', method: 'GET' },
-      { path: '/customer?id=savea', method: 'GET' },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({ id: "anatr" }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({ id: "quick" }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({ id: "bergs" }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({ id: "ernsh" }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({
+          id: "ernsh"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({
+          id: "fissa"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({
+          id: "dracd"
+        }),
+        contentType: 'application/json'
+      },
+      {
+        path: '/customer',
+        method: 'POST',
+        body: JSON.stringify({
+          id: "savea"
+        }),
+        contentType: 'application/json'
+      },
       {
         path: '/sales',
         method: 'POST',
