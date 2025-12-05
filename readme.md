@@ -709,20 +709,24 @@ public:
      * @brief Fetches customer information from the remote API.
      */
     static http_response get_customer_info(std::string_view customer_id) {
+        const std::string uri = "/customer";
         const std::string token = login_and_get_token();
-
-        const std::string customer_info_url = std::format("{}/customer?id={}", get_url(), customer_id);
-        const std::map<std::string, std::string, std::less<>> auth_header = {
-            {"Authorization", std::format("Bearer {}", token)}
+        const std::map<std::string, std::string, std::less<>> payload = {
+            {"id", std::string(customer_id)}
+        };
+        const std::string body = json::json_parser::build(payload);
+        const std::map<std::string, std::string, std::less<>> headers = {
+            {"Authorization", std::format("Bearer {}", token)},
+            {"Content-Type", "application/json"}
         };
 
-        util::log::debug("Fetching remote customer info from {}", customer_info_url);
+        util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
         
         // Create a transient http_client for this specific request.
         http_client client;
-        auto response = client.get(customer_info_url, auth_header);
+        const auto response = client.post(get_url() + uri, body, headers);
         if (response.status_code != 200) {
-            util::log::error("Remote API failed with status {}: {}", response.status_code, response.body);
+            util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
             throw RemoteServiceError("Remote service invocation failed.");
         }
         return response;
@@ -799,7 +803,7 @@ For certain exceptions, like `env::error` you may want to log it as `critical` a
 
 Now we have to register this API in `main()`:
 ```
-s.register_api(webapi_path{"/rcustomer"}, get, customer_validator, &get_remote_customer, true);
+s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
 ```
 We are reusing the same `customer_validator` from the previous example of the `/customer` API because this remote caller is merely a wrapper of that service, it has the same input definitions.
 
@@ -814,7 +818,7 @@ Remember that these security-sensitive environment variables can be managed with
 
 For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
 ```
-curl "${BASE_URL}/rcustomer?id=ANATR" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+curl "${BASE_URL}/rcustomer" -s -d '{"id":"ANATR"}' -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
 ```
 ### **About using self-signed certificates**
 The `http_client` wrapper module makes safe use if libcurl, it means it among other things that it won't accept invalid certificates, otherwise APIServer2 would not pass the strict rules of SonarCloud static analysis. If you want to use a self-signed certificate the you must change `http_client.cpp` the function `http_client::impl::configure_common_options` and add these lines:
