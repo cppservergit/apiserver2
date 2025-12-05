@@ -61,8 +61,7 @@ inline bool is_valid_path(std::string_view path) {
 // Helper to trim whitespace from string_view
 inline std::string_view trim_sv(std::string_view sv) {
     sv.remove_prefix(std::min(sv.find_first_not_of(" \t"sv), sv.size()));
-    const auto last = sv.find_last_not_of(" \t"sv);
-    if (last != std::string_view::npos) {
+    if (const auto last = sv.find_last_not_of(" \t"sv); last != std::string_view::npos) {
         sv = sv.substr(0, last + 1);
     }
     return sv;
@@ -84,8 +83,34 @@ request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
 
 // REPLACED: Robust parser that splits by ';' to prevent confusion attacks
-auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> request_parser::multipart_part_headers {
+// REFACTORED: Extracted inner loop to lambda to reduce nesting depth.
+auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> multipart_part_headers {
     multipart_part_headers headers;
+
+    auto extract_params = [&](std::string_view content) {
+        for (const auto param_range : content | std::views::split(';')) {
+            std::string_view param(param_range.begin(), param_range.end());
+            param = trim_sv(param);
+
+            auto eq_pos = param.find('=');
+            if (eq_pos == std::string_view::npos) continue;
+
+            std::string_view p_key = param.substr(0, eq_pos);
+            std::string_view p_val = param.substr(eq_pos + 1);
+
+            // Handle quotes
+            if (p_val.size() >= 2 && p_val.front() == '"' && p_val.back() == '"') {
+                p_val.remove_prefix(1);
+                p_val.remove_suffix(1);
+            }
+
+            if (p_key == "name"sv) {
+                headers.field_name = p_val;
+            } else if (p_key == "filename"sv) {
+                headers.filename = p_val;
+            }
+        }
+    };
 
     for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
         std::string_view line(line_range.begin(), line_range.end());
@@ -99,29 +124,7 @@ auto request_parser::parse_part_headers(std::string_view part_headers_sv) const 
 
         // FIX: Case-insensitive header check
         if (sv_ci_equal{}(key, "Content-Disposition")) {
-            // Split by ';' to handle parameters securely
-            for (const auto param_range : value | std::views::split(';')) {
-                std::string_view param(param_range.begin(), param_range.end());
-                param = trim_sv(param);
-
-                auto eq_pos = param.find('=');
-                if (eq_pos == std::string_view::npos) continue;
-
-                std::string_view p_key = param.substr(0, eq_pos);
-                std::string_view p_val = param.substr(eq_pos + 1);
-
-                // Handle quotes
-                if (p_val.size() >= 2 && p_val.front() == '"' && p_val.back() == '"') {
-                    p_val.remove_prefix(1);
-                    p_val.remove_suffix(1);
-                }
-
-                if (p_key == "name"sv) {
-                    headers.field_name = p_val;
-                } else if (p_key == "filename"sv) {
-                    headers.filename = p_val;
-                }
-            }
+            extract_params(value);
         } else if (sv_ci_equal{}(key, "Content-Type")) {
             headers.content_type = trim_sv(value);
         }
