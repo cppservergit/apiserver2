@@ -23,14 +23,21 @@ inline bool is_valid_header_key(std::string_view key) {
         "0123456789"
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    return key.find_first_not_of(valid_tchars) == std::string_view::npos;
+    
+    // Scoped initializer for SonarCloud compliance
+    if (auto pos = key.find_first_not_of(valid_tchars); pos != std::string_view::npos) {
+        return false;
+    }
+    return true;
 }
 
 // Per RFC 7230, field-value can be complex, but for security,
 // we *must* prohibit bare CR and LF to prevent response splitting.
 inline bool is_valid_header_value(std::string_view value) {
-    // Finding either \r or \n is sufficient to reject.
-    return value.find_first_of("\r\n"sv) == std::string_view::npos;
+    if (auto pos = value.find_first_of("\r\n"sv); pos != std::string_view::npos) {
+        return false;
+    }
+    return true;
 }
 
 // --- NEW HELPERS for Path Validation ---
@@ -40,17 +47,20 @@ constexpr size_t MAX_PATH_LENGTH = 2048;
 // We are explicitly disallowing URL-encoded characters ('%') in the path
 // to block a class of obfuscation attacks.
 inline bool is_valid_path(std::string_view path) {
-    if (path.empty() || path[0] != '/') {
+    if (path.empty()) {
+        return false;
+    } 
+    
+    if (path[0] != '/') {
         return false; // Must be an absolute path starting with '/'
     }
 
-    // Check for invalid characters. We disallow '%' to stop URL-encoded attacks.
-    // We also block null bytes, CR, LF, and backslashes (for Windows-based attacks).
+    // Check for invalid characters using init-statement
     if (constexpr std::string_view invalid_chars = "%\0\r\n\\"sv; path.find_first_of(invalid_chars) != std::string_view::npos) {
         return false;
     }
 
-    // Check for path traversal ".."
+    // Check for path traversal ".." using C++23 contains
     if (path.contains(".."sv)) {
         return false;
     }
@@ -65,6 +75,14 @@ inline std::string_view trim_sv(std::string_view sv) {
         sv = sv.substr(0, last + 1);
     }
     return sv;
+}
+
+// Helper to sanitize filenames (keep only basename) to prevent directory traversal
+inline std::string_view sanitize_filename(std::string_view filename) {
+    if (auto last_sep = filename.find_last_of("/\\"); last_sep != std::string_view::npos) {
+        filename.remove_prefix(last_sep + 1);
+    }
+    return filename;
 }
 
 } // namespace
@@ -82,51 +100,72 @@ request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
 
-// REPLACED: Robust parser that splits by ';' to prevent confusion attacks
-// REFACTORED: Extracted inner loop to lambda to reduce nesting depth.
+// REPLACED: Robust parser that respects quotes and sanitizes filenames
 auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> multipart_part_headers {
     multipart_part_headers headers;
 
+    // Lambda to extract parameters like 'name' and 'filename' from Content-Disposition.
+    // Handles quoted strings correctly (ignoring semicolons inside quotes).
     auto extract_params = [&](std::string_view content) {
-        for (const auto param_range : content | std::views::split(';')) {
-            std::string_view param(param_range.begin(), param_range.end());
-            param = trim_sv(param);
+        size_t start = 0;
+        bool in_quotes = false;
+        
+        for (size_t i = 0; i <= content.size(); ++i) {
+            const bool is_end = (i == content.size());
+            const bool is_separator = !is_end && (content[i] == ';' && !in_quotes);
 
-            auto eq_pos = param.find('=');
-            if (eq_pos == std::string_view::npos) continue;
-
-            std::string_view p_key = param.substr(0, eq_pos);
-            std::string_view p_val = param.substr(eq_pos + 1);
-
-            // Handle quotes
-            if (p_val.size() >= 2 && p_val.front() == '"' && p_val.back() == '"') {
-                p_val.remove_prefix(1);
-                p_val.remove_suffix(1);
+            if (!is_end && !is_separator) {
+                if (content[i] == '"') {
+                    in_quotes = !in_quotes;
+                }
+                continue;
             }
 
-            if (p_key == "name"sv) {
-                headers.field_name = p_val;
-            } else if (p_key == "filename"sv) {
-                headers.filename = p_val;
+            // We hit a separator or end; process the token.
+            std::string_view param = content.substr(start, i - start);
+            start = i + 1; 
+
+            param = trim_sv(param);
+            if (param.empty()) {
+                continue;
+            }
+
+            if (auto eq_pos = param.find('='); eq_pos != std::string_view::npos) {
+                std::string_view p_key = param.substr(0, eq_pos);
+                std::string_view p_val = param.substr(eq_pos + 1);
+
+                // Strip surrounding quotes
+                if (p_val.size() >= 2 && p_val.front() == '"') {
+                    p_val.remove_prefix(1);
+                    if (p_val.back() == '"') {
+                        p_val.remove_suffix(1);
+                    }
+                }
+
+                if (p_key == "name"sv) {
+                    headers.field_name = p_val;
+                } else if (p_key == "filename"sv) {
+                    headers.filename = sanitize_filename(p_val);
+                }
             }
         }
     };
 
     for (const auto line_range : part_headers_sv | std::views::split("\r\n"sv)) {
         std::string_view line(line_range.begin(), line_range.end());
-        if (line.empty()) continue;
+        if (line.empty()) {
+            continue;
+        }
 
-        auto colon_pos = line.find(':');
-        if (colon_pos == std::string_view::npos) continue;
+        if (auto colon_pos = line.find(':'); colon_pos != std::string_view::npos) {
+            std::string_view key = line.substr(0, colon_pos);
+            std::string_view value = line.substr(colon_pos + 1);
 
-        std::string_view key = line.substr(0, colon_pos);
-        std::string_view value = line.substr(colon_pos + 1);
-
-        // FIX: Case-insensitive header check
-        if (sv_ci_equal{}(key, "Content-Disposition")) {
-            extract_params(value);
-        } else if (sv_ci_equal{}(key, "Content-Type")) {
-            headers.content_type = trim_sv(value);
+            if (sv_ci_equal{}(key, "Content-Disposition")) {
+                extract_params(value);
+            } else if (sv_ci_equal{}(key, "Content-Type")) {
+                headers.content_type = trim_sv(value);
+            }
         }
     }
     return headers;
@@ -134,12 +173,9 @@ auto request_parser::parse_part_headers(std::string_view part_headers_sv) const 
 
 // REPLACED: Safe boundary handling
 void request_parser::process_multipart_part(std::string_view part_sv) {
-    // 1. Safe cleanup of the boundary CRLFs.
     if (part_sv.starts_with("\r\n"sv)) {
         part_sv.remove_prefix(2);
     }
-    
-    // For safety against the specific "binary corruption" bug:
     if (part_sv.ends_with("\r\n"sv)) { 
          part_sv.remove_suffix(2); 
     }
@@ -149,13 +185,12 @@ void request_parser::process_multipart_part(std::string_view part_sv) {
     size_t delimiter_len = 4;
 
     if (headers_end_pos == std::string_view::npos) {
-        // Fallback for non-compliant clients (or attacks) using just \n\n
         headers_end_pos = part_sv.find("\n\n"sv);
         delimiter_len = 2;
     }
 
     if (headers_end_pos == std::string_view::npos) {
-        return; // No headers found, skip part
+        return; 
     }
 
     const auto part_headers_sv = part_sv.substr(0, headers_end_pos);
@@ -188,8 +223,12 @@ void request_parser::update_pos(ssize_t bytes_read) {
 auto request_parser::eof() -> bool {
     using enum http::method;
 
-    if (!find_and_store_header_end()) return false;
-    if (!parse_and_store_method()) return false;
+    if (!find_and_store_header_end()) {
+        return false;
+    }
+    if (!parse_and_store_method()) {
+        return false;
+    }
     
     if (m_identifiedMethod == get || m_identifiedMethod == options) {
         return true;
@@ -217,21 +256,23 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     }
 
     const auto request_sv = m_buffer->view();
-    const auto first_line_end_pos = request_sv.find("\r\n"sv);
-    if (first_line_end_pos == std::string_view::npos) {
+    
+    if (const auto first_line_end_pos = request_sv.find("\r\n"sv); first_line_end_pos == std::string_view::npos) {
         return std::unexpected(request_parse_error("Malformed request: request line not found."));
-    }
+    } else {
+        if (auto err = parse_request_line(request_sv.substr(0, first_line_end_pos))) {
+            return std::unexpected(*err);
+        }
+        
+        m_parsedMethod = m_identifiedMethod.value_or(unknown);
 
-    if (auto err = parse_request_line(request_sv.substr(0, first_line_end_pos))) {
-        return std::unexpected(*err);
+        const auto headers_end_pos_marker = *m_identifiedHeaderSize - 4;
+        const auto headers_sv = request_sv.substr(first_line_end_pos + 2, headers_end_pos_marker - (first_line_end_pos + 2));
+        if (auto err = parse_headers(headers_sv)) {
+            return std::unexpected(*err);
+        }
     }
-    m_parsedMethod = m_identifiedMethod.value_or(unknown);
-
-    const auto headers_end_pos_marker = *m_identifiedHeaderSize - 4;
-    const auto headers_sv = request_sv.substr(first_line_end_pos + 2, headers_end_pos_marker - (first_line_end_pos + 2));
-    if (auto err = parse_headers(headers_sv)) {
-        return std::unexpected(*err);
-    }
+    
     m_headerSize = *m_identifiedHeaderSize;
 
     if (m_parsedMethod == post) {
@@ -268,82 +309,98 @@ auto request_parser::find_and_store_header_end() -> bool {
         return true;
     }
     const auto current_buffer_view = m_buffer->view();
-    const auto headers_end_pos = current_buffer_view.find("\r\n\r\n"sv);
-    if (headers_end_pos == std::string_view::npos) {
-        return false;
+    
+    if (const auto headers_end_pos = current_buffer_view.find("\r\n\r\n"sv); headers_end_pos != std::string_view::npos) {
+        m_identifiedHeaderSize = headers_end_pos + 4;
+        return true;
     }
-    m_identifiedHeaderSize = headers_end_pos + 4;
-    return true;
+    
+    return false;
 }
 
 auto request_parser::parse_and_store_method() -> bool {
     using enum http::method;
 
-    if (m_identifiedMethod.has_value()) return true;
-    if (!m_identifiedHeaderSize.has_value()) return false;
+    if (m_identifiedMethod.has_value()) {
+        return true;
+    }
+    if (!m_identifiedHeaderSize.has_value()) {
+        return false;
+    }
 
     const auto current_buffer_view = m_buffer->view();
-    if (current_buffer_view.empty() || current_buffer_view.size() < *m_identifiedHeaderSize) return false;
-
-    const auto request_line_end = current_buffer_view.find("\r\n"sv);
-    if (request_line_end == std::string_view::npos || request_line_end == 0 || request_line_end >= (*m_identifiedHeaderSize - 4)) {
+    if (current_buffer_view.empty() || current_buffer_view.size() < *m_identifiedHeaderSize) {
         return false;
     }
 
-    const std::string_view request_line_sv = current_buffer_view.substr(0, request_line_end);
-    const auto method_space_pos = request_line_sv.find(' ');
-    if (method_space_pos == std::string_view::npos) {
-        m_identifiedMethod = unknown;
+    if (const auto request_line_end = current_buffer_view.find("\r\n"sv); request_line_end == std::string_view::npos || request_line_end == 0 || request_line_end >= (*m_identifiedHeaderSize - 4)) {
         return false;
+    } else {
+        const std::string_view request_line_sv = current_buffer_view.substr(0, request_line_end);
+        
+        if (const auto method_space_pos = request_line_sv.find(' '); method_space_pos == std::string_view::npos) {
+            m_identifiedMethod = unknown;
+            return false;
+        } else {
+            if (const std::string_view method_sv = request_line_sv.substr(0, method_space_pos); method_sv == "GET"sv) {
+                m_identifiedMethod = get;
+            } else if (method_sv == "POST"sv) {
+                m_identifiedMethod = post;
+            } else if (method_sv == "OPTIONS"sv) {
+                m_identifiedMethod = options;
+            } else {
+                m_identifiedMethod = unknown;
+            }
+        }
     }
     
-    if (const std::string_view method_sv = request_line_sv.substr(0, method_space_pos); method_sv == "GET"sv) m_identifiedMethod = get;
-    else if (method_sv == "POST"sv)    m_identifiedMethod = post;
-    else if (method_sv == "OPTIONS"sv) m_identifiedMethod = options;
-    else m_identifiedMethod = unknown;
     return m_identifiedMethod != unknown;
 }
 
 auto request_parser::parse_and_store_content_length() -> bool {
-    if (m_identifiedMethod != method::post) return true;
-    if (m_identifiedContentLength.has_value()) return true;
-    if (!m_identifiedHeaderSize.has_value()) return false;
-
-    const auto current_buffer_view = m_buffer->view();
-    const auto request_line_end = current_buffer_view.find("\r\n"sv);
-    const size_t headers_part_start = request_line_end + 2;
-    const size_t headers_part_length = (*m_identifiedHeaderSize - 4) - headers_part_start;
-
-    if (headers_part_start >= *m_identifiedHeaderSize || headers_part_start + headers_part_length > current_buffer_view.size()) {
+    if (m_identifiedMethod != method::post) {
+        return true;
+    }
+    if (m_identifiedContentLength.has_value()) {
+        return true;
+    }
+    if (!m_identifiedHeaderSize.has_value()) {
         return false;
     }
 
-    std::string_view headers_part = current_buffer_view.substr(headers_part_start, headers_part_length);
+    const auto current_buffer_view = m_buffer->view();
+    
+    if (const auto request_line_end = current_buffer_view.find("\r\n"sv); request_line_end != std::string_view::npos) {
+        const size_t headers_part_start = request_line_end + 2;
+        const size_t headers_part_length = (*m_identifiedHeaderSize - 4) - headers_part_start;
 
-    for (const auto line_range : headers_part | std::views::split("\r\n"sv)) {
-        std::string_view header_line(line_range.begin(), line_range.end());
-        
-        auto colon_pos = header_line.find(':');
-        if (colon_pos == std::string_view::npos || !sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
-            continue;
+        if (headers_part_start >= *m_identifiedHeaderSize || headers_part_start + headers_part_length > current_buffer_view.size()) {
+            return false;
         }
 
-        std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
-        cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
-        
-        size_t temp_cl = 0;
-        auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
-        
-        if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
-            m_identifiedContentLength = temp_cl;
-            return true;
+        std::string_view headers_part = current_buffer_view.substr(headers_part_start, headers_part_length);
+
+        for (const auto line_range : headers_part | std::views::split("\r\n"sv)) {
+            std::string_view header_line(line_range.begin(), line_range.end());
+            
+            if (auto colon_pos = header_line.find(':'); colon_pos != std::string_view::npos && sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
+                std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
+                cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
+                
+                size_t temp_cl = 0;
+                auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
+                
+                if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
+                    m_identifiedContentLength = temp_cl;
+                    return true;
+                }
+                return false; 
+            }
         }
-        return false; // Malformed Content-Length value
     }
-    return false; // Content-Length header not found
+    return false; 
 }
 
-// --- MODIFIED FUNCTION ---
 auto request_parser::parse_request_line(std::string_view request_line) -> std::optional<request_parse_error> {
     auto parts = request_line | std::views::split(' ') | std::views::common;
     auto it = parts.begin();
@@ -357,15 +414,13 @@ auto request_parser::parse_request_line(std::string_view request_line) -> std::o
     
     const std::string_view uri_sv(std::to_address((*it).begin()), std::ranges::distance(*it));
     
-    // We must now check for an error from parse_uri
     if (auto err = parse_uri(uri_sv); err.has_value()) {
         return err;
     }
     return std::nullopt;
 }
 
-// --- REPLACED FUNCTION ---
-// This function now validates the path and REJECTS ANY QUERY STRING.
+// Security: Strict URI validation using C++23 contains and zero-query policy
 auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_parse_error> {
     // 1. Strict Requirement: Fail if any query parameters are present.
     if (uri.contains('?')) {
@@ -387,50 +442,42 @@ auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_pa
 
     return std::nullopt;
 }
-// --- END REPLACED FUNCTION ---
-
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
         if (header_line.empty()) {
-            continue; // Ignore empty lines
+            continue;
         }
 
-        auto pos = header_line.find(':');
-        if (pos == std::string_view::npos) {
-            // A non-empty line with no colon is a malformed header.
+        if (auto pos = header_line.find(':'); pos != std::string_view::npos) {
+            auto key = header_line.substr(0, pos);
+            
+            if (!is_valid_header_key(key)) {
+                return request_parse_error(std::format("Invalid header key: {}", key));
+            }
+            
+            auto value = header_line.substr(pos + 1);
+            value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
+
+            if (!is_valid_header_value(value)) {
+                return request_parse_error(std::format("Invalid characters in header value for key: {}", key));
+            }
+
+            // Security: Reject Transfer-Encoding (HSR protection)
+            if (sv_ci_equal{}(key, "Transfer-Encoding")) {
+                return request_parse_error("Transfer-Encoding is not supported.");
+            }
+            
+            // Security: Reject duplicate Host headers
+            if (sv_ci_equal{}(key, "Host") && m_headers.contains("Host")) {
+                return request_parse_error("Duplicate Host header detected.");
+            }
+            
+            m_headers.try_emplace(std::string(key), value);
+        } else {
             return request_parse_error(std::format("Malformed header line: {}", header_line));
         }
-
-        auto key = header_line.substr(0, pos);
-        
-        // --- FIX 1: Validate header key characters ---
-        if (!is_valid_header_key(key)) {
-            return request_parse_error(std::format("Invalid header key: {}", key));
-        }
-        
-        auto value = header_line.substr(pos + 1);
-        value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
-
-        // --- FIX 2 (CRLF Injection): Validate header value ---
-        if (!is_valid_header_value(value)) {
-            return request_parse_error(std::format("Invalid characters in header value for key: {}", key));
-        }
-
-        // --- FIX 3 (HSR): Reject Transfer-Encoding ---
-        // This must be case-insensitive, so we use sv_ci_equal.
-        if (sv_ci_equal{}(key, "Transfer-Encoding")) {
-            return request_parse_error("Transfer-Encoding is not supported.");
-        }
-        
-        // --- FIX 4 (Host Ambiguity): Reject duplicate Host headers ---
-        // This must be case-insensitive.
-        if (sv_ci_equal{}(key, "Host") && m_headers.contains("Host")) {
-            return request_parse_error("Duplicate Host header detected.");
-        }
-        
-        m_headers.try_emplace(std::string(key), value);
     }
     return std::nullopt;
 }
@@ -439,7 +486,6 @@ auto request_parser::parse_body() -> std::optional<request_parse_error> {
     const auto body_view = m_buffer->view().substr(m_headerSize, m_contentLength);
     auto it = m_headers.find("content-type");
 
-    // REFACTOR: Flattened logic using guard clauses.
     if (it == m_headers.end()) {
         m_body = body_view;
         return std::nullopt;
@@ -458,14 +504,18 @@ auto request_parser::parse_body() -> std::optional<request_parse_error> {
     
     if (content_type.starts_with("multipart/form-data"sv)) {
         const std::string_view boundary_prefix = "boundary="sv;
-        auto boundary_pos = content_type.find(boundary_prefix);
-        if (boundary_pos == std::string_view::npos) {
+        if (auto boundary_pos = content_type.find(boundary_prefix); boundary_pos != std::string_view::npos) {
+            auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
+            if (boundary.starts_with('"')) {
+                boundary.remove_prefix(1);
+            }
+            if (boundary.ends_with('"')) {
+                boundary.remove_suffix(1);
+            }
+            return parse_multipart_form_data(boundary);
+        } else {
             return request_parse_error("Malformed multipart/form-data: boundary not found.");
         }
-        auto boundary = content_type.substr(boundary_pos + boundary_prefix.length());
-        if (boundary.starts_with('"')) boundary.remove_prefix(1);
-        if (boundary.ends_with('"')) boundary.remove_suffix(1);
-        return parse_multipart_form_data(boundary);
     }
     
     m_body = body_view;
@@ -558,19 +608,23 @@ auto parse_chrono_type(std::string_view sv) -> std::optional<T> {
     iss.imbue(std::locale::classic());
 
     if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
-        // Try ISO 8601 format first
         std::chrono::from_stream(iss, "%Y-%m-%dT%H:%M:%S", value);
-        if (!iss.fail()) return value;
-        // Reset and try another common format
+        if (!iss.fail()) {
+            return value;
+        }
         iss.clear();
         iss.seekg(0);
         std::chrono::from_stream(iss, "%Y-%m-%d %H:%M:%S", value);
-        if (!iss.fail()) return value;
+        if (!iss.fail()) {
+            return value;
+        }
     } else if constexpr (std::is_same_v<T, std::chrono::year_month_day>) {
         std::chrono::from_stream(iss, "%Y-%m-%d", value);
         if (!iss.fail()) {
             iss >> std::ws;
-            if (iss.eof()) return value;
+            if (iss.eof()) {
+                return value;
+            }
         }
     }
     return std::nullopt;
@@ -603,7 +657,7 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
         } else {
             return make_error();
         }
-    } else { // For numeric types
+    } else { 
         t value{};
         auto result = std::from_chars(value_sv.data(), value_sv.data() + value_sv.size(), value);
         if (result.ec == std::errc() && result.ptr == value_sv.data() + value_sv.size()) {
