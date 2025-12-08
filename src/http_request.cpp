@@ -99,54 +99,59 @@ request_parser::~request_parser() noexcept = default;
 request_parser::request_parser(request_parser&&) noexcept = default;
 request_parser& request_parser::operator=(request_parser&&) noexcept = default;
 
+// Helper function to process individual parameters
+// IMPLEMENTED as a class member to access private 'multipart_part_headers'
+void request_parser::process_parameter(std::string_view param, request_parser::multipart_part_headers& headers) {
+    param = trim_sv(param);
+    if (param.empty()) {
+        return;
+    }
+
+    // Using init-statement to limit scope of 'eq_pos'
+    if (auto eq_pos = param.find('='); eq_pos != std::string_view::npos) {
+        std::string_view p_key = param.substr(0, eq_pos);
+        std::string_view p_val = param.substr(eq_pos + 1);
+
+        // Strip surrounding quotes
+        if (p_val.size() >= 2 && p_val.front() == '"') {
+            p_val.remove_prefix(1);
+            if (p_val.back() == '"') {
+                p_val.remove_suffix(1);
+            }
+        }
+
+        if (p_key == "name"sv) {
+            headers.field_name = p_val;
+        } else if (p_key == "filename"sv) {
+            headers.filename = sanitize_filename(p_val);
+        }
+    }
+}
 
 // REPLACED: Robust parser that respects quotes and sanitizes filenames
 auto request_parser::parse_part_headers(std::string_view part_headers_sv) const -> multipart_part_headers {
     multipart_part_headers headers;
 
-    // Lambda to extract parameters like 'name' and 'filename' from Content-Disposition.
-    // Handles quoted strings correctly (ignoring semicolons inside quotes).
-    auto extract_params = [&](std::string_view content) {
+    // Separate lambda for extraction logic to keep function clean
+    auto extract_params_from_content = [&](std::string_view content) {
         size_t start = 0;
         bool in_quotes = false;
         
         for (size_t i = 0; i <= content.size(); ++i) {
             const bool is_end = (i == content.size());
-            const bool is_separator = !is_end && (content[i] == ';' && !in_quotes);
-
-            if (!is_end && !is_separator) {
-                if (content[i] == '"') {
-                    in_quotes = !in_quotes;
-                }
+            const bool is_semicolon = !is_end && content[i] == ';';
+            
+            // Toggle quotes state
+            if (!is_end && content[i] == '"') {
+                in_quotes = !in_quotes;
                 continue;
             }
 
-            // We hit a separator or end; process the token.
-            std::string_view param = content.substr(start, i - start);
-            start = i + 1; 
-
-            param = trim_sv(param);
-            if (param.empty()) {
-                continue;
-            }
-
-            if (auto eq_pos = param.find('='); eq_pos != std::string_view::npos) {
-                std::string_view p_key = param.substr(0, eq_pos);
-                std::string_view p_val = param.substr(eq_pos + 1);
-
-                // Strip surrounding quotes
-                if (p_val.size() >= 2 && p_val.front() == '"') {
-                    p_val.remove_prefix(1);
-                    if (p_val.back() == '"') {
-                        p_val.remove_suffix(1);
-                    }
-                }
-
-                if (p_key == "name"sv) {
-                    headers.field_name = p_val;
-                } else if (p_key == "filename"sv) {
-                    headers.filename = sanitize_filename(p_val);
-                }
+            // Split token only if we are at the end or hit a semicolon outside quotes
+            if (is_end || (is_semicolon && !in_quotes)) {
+                // Extract and process the parameter using the helper member function
+                process_parameter(content.substr(start, i - start), headers);
+                start = i + 1; 
             }
         }
     };
@@ -162,7 +167,7 @@ auto request_parser::parse_part_headers(std::string_view part_headers_sv) const 
             std::string_view value = line.substr(colon_pos + 1);
 
             if (sv_ci_equal{}(key, "Content-Disposition")) {
-                extract_params(value);
+                extract_params_from_content(value);
             } else if (sv_ci_equal{}(key, "Content-Type")) {
                 headers.content_type = trim_sv(value);
             }
@@ -608,6 +613,7 @@ auto parse_chrono_type(std::string_view sv) -> std::optional<T> {
     iss.imbue(std::locale::classic());
 
     if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
+        // Try ISO 8601 format first
         std::chrono::from_stream(iss, "%Y-%m-%dT%H:%M:%S", value);
         if (!iss.fail()) {
             return value;
