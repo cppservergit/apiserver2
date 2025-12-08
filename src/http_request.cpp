@@ -375,33 +375,40 @@ auto request_parser::parse_and_store_content_length() -> bool {
 
     const auto current_buffer_view = m_buffer->view();
     
-    if (const auto request_line_end = current_buffer_view.find("\r\n"sv); request_line_end != std::string_view::npos) {
-        const size_t headers_part_start = request_line_end + 2;
-        const size_t headers_part_length = (*m_identifiedHeaderSize - 4) - headers_part_start;
+    // Check request_line_end
+    const auto request_line_end = current_buffer_view.find("\r\n"sv);
+    if (request_line_end == std::string_view::npos) {
+        return false;
+    }
 
-        if (headers_part_start >= *m_identifiedHeaderSize || headers_part_start + headers_part_length > current_buffer_view.size()) {
-            return false;
+    const size_t headers_part_start = request_line_end + 2;
+    const size_t headers_part_length = (*m_identifiedHeaderSize - 4) - headers_part_start;
+
+    if (headers_part_start >= *m_identifiedHeaderSize || headers_part_start + headers_part_length > current_buffer_view.size()) {
+        return false;
+    }
+
+    std::string_view headers_part = current_buffer_view.substr(headers_part_start, headers_part_length);
+
+    for (const auto line_range : headers_part | std::views::split("\r\n"sv)) {
+        std::string_view header_line(line_range.begin(), line_range.end());
+        
+        auto colon_pos = header_line.find(':');
+        if (colon_pos == std::string_view::npos || !sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
+            continue;
         }
 
-        std::string_view headers_part = current_buffer_view.substr(headers_part_start, headers_part_length);
-
-        for (const auto line_range : headers_part | std::views::split("\r\n"sv)) {
-            std::string_view header_line(line_range.begin(), line_range.end());
-            
-            if (auto colon_pos = header_line.find(':'); colon_pos != std::string_view::npos && sv_ci_equal{}(header_line.substr(0, colon_pos), "Content-Length"sv)) {
-                std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
-                cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
-                
-                size_t temp_cl = 0;
-                auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
-                
-                if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
-                    m_identifiedContentLength = temp_cl;
-                    return true;
-                }
-                return false; 
-            }
+        std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
+        cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
+        
+        size_t temp_cl = 0;
+        auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
+        
+        if (ec == std::errc() && ptr == cl_value_sv.data() + cl_value_sv.size()) {
+            m_identifiedContentLength = temp_cl;
+            return true;
         }
+        return false; // Malformed Content-Length value
     }
     return false; 
 }
