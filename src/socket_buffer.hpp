@@ -8,6 +8,7 @@
 #include <sys/types.h> // For ssize_t
 #include <algorithm>   // For std::min
 #include <span>        // For std::span
+#include <format>      // For std::format
 
 class socket_buffer_error : public std::runtime_error {
 public:
@@ -25,7 +26,7 @@ public:
 
         if (m_pos * 4 > m_buffer.size() * 3) {
             if (m_buffer.size() >= k_max_size) {
-                throw socket_buffer_error("Maximum buffer size reached.");
+                throw socket_buffer_error(std::format("Maximum buffer size reached: {} bytes.", k_max_size));
             }
             size_t new_size = m_buffer.size() + k_chunk_size;
             m_buffer.resize(std::min(new_size, k_max_size));

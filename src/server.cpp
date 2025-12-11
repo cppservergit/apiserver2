@@ -268,7 +268,7 @@ void server::io_worker::on_write(int fd) {
     if (res.available_size() == 0) {
         it->second.reset();
         modify_epoll(fd, EPOLLIN);
-        util::log::debug("Response fully sent on fd {}, waiting for close event.", fd);
+        util::log::debug("Response fully sent on fd {}", fd);
     }
 }
 
@@ -282,24 +282,38 @@ void server::io_worker::close_connection(int fd) {
 
 bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
     while (true) {
-        auto buffer = conn.parser.get_buffer();
-        if (buffer.empty()) {
-            util::log::error("Parser buffer full for fd {}", fd);
+        // Wrap buffer access and read operations in a try-catch block
+        try {
+            auto buffer = conn.parser.get_buffer();
+            if (buffer.empty()) {
+                util::log::error("Parser buffer full for fd {}", fd);
+                close_connection(fd);
+                return false;
+            }
+            ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
+            if (bytes_read == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                util::log::error("read error on fd {}: {}", fd, util::str_error_cpp(errno));
+                close_connection(fd);
+                return false;
+            }
+            if (bytes_read == 0) {
+                close_connection(fd);
+                return false;
+            }
+            conn.parser.update_pos(bytes_read);
+        } catch (const socket_buffer_error& e) {
+            using enum http::status;
+            remove_from_epoll(fd);
+            close_connection(fd);
+            util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
+            return false; 
+        } catch (const std::exception& e) {
+            // Catch other runtime errors to prevent crash
+            util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());
             close_connection(fd);
             return false;
         }
-        ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
-        if (bytes_read == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-            util::log::error("read error on fd {}: {}", fd, util::str_error_cpp(errno));
-            close_connection(fd);
-            return false;
-        }
-        if (bytes_read == 0) {
-            close_connection(fd);
-            return false;
-        }
-        conn.parser.update_pos(bytes_read);
     }
     return true;
 }

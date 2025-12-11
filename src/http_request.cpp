@@ -225,6 +225,8 @@ void request_parser::update_pos(ssize_t bytes_read) {
     m_buffer->update_pos(bytes_read);
 }
 
+// --- MODIFIED eof() ---
+// Enables early detection of unknown methods so we don't hang waiting for body data
 auto request_parser::eof() -> bool {
     using enum http::method;
 
@@ -235,6 +237,12 @@ auto request_parser::eof() -> bool {
         return false;
     }
     
+    // UPDATED: If method is unknown, consider request complete (headers-only)
+    // so we can reject it in finalize().
+    if (m_identifiedMethod == unknown) {
+        return true; 
+    }
+
     if (m_identifiedMethod == get || m_identifiedMethod == options) {
         return true;
     }
@@ -249,6 +257,8 @@ auto request_parser::eof() -> bool {
     return false;
 }
 
+// --- MODIFIED finalize() ---
+// Triggers the exception (error) for non-compliant methods
 auto request_parser::finalize() -> std::expected<void, request_parse_error> {
     using enum http::method;
 
@@ -270,6 +280,12 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
         }
         
         m_parsedMethod = m_identifiedMethod.value_or(unknown);
+
+        // UPDATED: Strictly reject unsupported methods here
+        if (m_parsedMethod == unknown) {
+            // This error message will be caught by server.cpp and sent as a 400 Bad Request
+            return std::unexpected(request_parse_error("Method Not Allowed or Unsupported"));
+        }
 
         const auto headers_end_pos_marker = *m_identifiedHeaderSize - 4;
         const auto headers_sv = request_sv.substr(first_line_end_pos + 2, headers_end_pos_marker - (first_line_end_pos + 2));
@@ -323,6 +339,8 @@ auto request_parser::find_and_store_header_end() -> bool {
     return false;
 }
 
+// --- MODIFIED parse_and_store_method() ---
+// Returns TRUE even for unknown methods to allow parsing to proceed to failure state
 auto request_parser::parse_and_store_method() -> bool {
     using enum http::method;
 
@@ -344,6 +362,8 @@ auto request_parser::parse_and_store_method() -> bool {
         const std::string_view request_line_sv = current_buffer_view.substr(0, request_line_end);
         
         if (const auto method_space_pos = request_line_sv.find(' '); method_space_pos == std::string_view::npos) {
+            // Malformed request line (no space), treat as unknown but incomplete? 
+            // Actually this is just garbage data.
             m_identifiedMethod = unknown;
             return false;
         } else {
@@ -355,6 +375,10 @@ auto request_parser::parse_and_store_method() -> bool {
                 m_identifiedMethod = options;
             } else {
                 m_identifiedMethod = unknown;
+                // Important: Return TRUE here. We found a method token, we know what it is (unknown).
+                // Returning true allows eof() to return true, which allows process_request() to call finalize(),
+                // which allows us to return the error.
+                return true; 
             }
         }
     }

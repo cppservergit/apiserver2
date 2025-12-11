@@ -20,6 +20,7 @@ enum class status {
     unauthorized = 401,
     forbidden = 403,
     not_found = 404,
+    entity_too_large = 413,
     internal_server_error = 500
 };
 
@@ -32,6 +33,7 @@ enum class status {
         case unauthorized: return "Unauthorized";
         case forbidden: return "Forbidden";
         case not_found: return "Not Found";
+        case entity_too_large: return "Entity Too Large";
         case internal_server_error: return "Internal Server Error";
     }
     return "Unknown Status";
@@ -49,11 +51,13 @@ public:
     [[nodiscard]] std::span<const char> buffer() const noexcept;
     [[nodiscard]] size_t available_size() const noexcept;
     void update_pos(size_t bytes_sent) noexcept;
+    [[nodiscard]] std::optional<status> status_code() const noexcept;
 private:
     std::vector<char> m_buffer;
     size_t m_readPos{0};
     bool m_finalized{false};
     std::optional<std::string> m_origin;
+    std::optional<status> m_status;
 };
 
 // ... (rest of the implementation is unchanged) ...
@@ -67,6 +71,8 @@ inline response::response(std::optional<std::string_view> origin)
 
 inline void response::set_body(status s, std::string_view body, std::string_view content_type) {
     if (m_finalized) return;
+    // store the status for later retrieval
+    m_status = s;    
     constexpr std::string_view format_template =
         "HTTP/1.1 {} {}\r\n"
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
@@ -164,6 +170,9 @@ inline void response::update_pos(size_t bytes_sent) noexcept {
     m_readPos += bytes_sent;
 }
 
+inline std::optional<status> response::status_code() const noexcept {
+    return m_status;
+}
 
 } // namespace http
 
