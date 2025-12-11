@@ -308,8 +308,7 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
             close_connection(fd);
             util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
             return false; 
-        } catch (const std::exception& e) {
-            // Catch other runtime errors to prevent crash
+        } catch (const std::exception& e) { // NOSONAR: Generic catch required to prevent worker thread crash
             util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());
             close_connection(fd);
             return false;
