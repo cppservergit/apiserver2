@@ -46,6 +46,14 @@ public:
     explicit impl(http_client_config config);
     ~impl();
 
+    // Disable copying to manage CURL* resource correctly
+    impl(const impl&) = delete;
+    impl& operator=(const impl&) = delete;
+
+    // Enable move operations
+    impl(impl&& other) noexcept;
+    impl& operator=(impl&& other) noexcept;
+
     [[nodiscard]] http_response perform_request(const std::string& url,
                                               const std::optional<std::string>& post_body,
                                               const std::optional<std::vector<http_form_part>>& form_parts,
@@ -74,6 +82,22 @@ http_client::impl::~impl() {
     if (m_curl) {
         curl_easy_cleanup(m_curl);
     }
+}
+
+http_client::impl::impl(impl&& other) noexcept : m_config(std::move(other.m_config)), m_curl(other.m_curl) {
+    other.m_curl = nullptr;
+}
+
+http_client::impl& http_client::impl::operator=(impl&& other) noexcept {
+    if (this != &other) {
+        if (m_curl) {
+            curl_easy_cleanup(m_curl);
+        }
+        m_config = std::move(other.m_config);
+        m_curl = other.m_curl;
+        other.m_curl = nullptr;
+    }
+    return *this;
 }
 
 size_t http_client::impl::write_callback(const char* ptr, size_t size, size_t nmemb, /* NOSONAR */ void* userdata) {

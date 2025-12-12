@@ -52,9 +52,8 @@ public:
 
         util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
         
-        // Use thread-local client to reuse connections (Keep-Alive)
-        http_client& client = get_client();
-        const auto response = client.post(get_url() + uri, body, headers);
+        // Use thread-local client member to reuse connections (Keep-Alive)
+        const auto response = m_client.post(get_url() + uri, body, headers);
         if (response.status_code != 200) {
             util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
             throw RemoteServiceError("Remote service invocation failed.");
@@ -75,9 +74,8 @@ private:
 
         util::log::debug("Logging into remote API at {}", get_url());
 
-        // Reuse the thread-local client
-        http_client& client = get_client();
-        const http_response login_response = client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
+        // Reuse the thread-local client member
+        const http_response login_response = m_client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
 
         if (login_response.status_code != 200) {
             util::log::error("Remote API login failed with status {}: {}", login_response.status_code, login_response.body);
@@ -94,11 +92,9 @@ private:
         return id_token;
     }
 
-    // --- Thread-Safe Persistent Client ---
-    static http_client& get_client() {
-        thread_local http_client client;
-        return client;
-    }
+    // --- Thread-Safe Persistent Client Member (C++17 inline static) ---
+    // This avoids the "function-local static" warning and provides a clean thread-local instance per thread.
+    static inline thread_local http_client m_client{};
 
     // --- Configuration Getters using thread-safe function-local statics ---
     static const std::string& get_url()  { static const std::string url = env::get<std::string>("REMOTE_API_URL"); return url; }
