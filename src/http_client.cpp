@@ -1,7 +1,7 @@
 /**
  * @file http_client.cpp
  * @brief Implements the http_client class, a modern C++ wrapper for libcurl.
- * @author Your Name
+ * @author admin@martincordova.com
  * @date 2025-06-26
  */
 

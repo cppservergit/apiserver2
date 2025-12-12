@@ -4,7 +4,7 @@
 /**
  * @file http_client.hpp
  * @brief Defines the interface for a modern C++ HTTP client wrapper for libcurl.
- * @author Your Name
+ * @author admin@martincordova.com
  * @date 2025-06-26
  */
 
