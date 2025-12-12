@@ -52,8 +52,8 @@ public:
 
         util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
         
-        // Create a transient http_client for this specific request.
-        http_client client;
+        // Use thread-local client to reuse connections (Keep-Alive)
+        http_client& client = get_client();
         const auto response = client.post(get_url() + uri, body, headers);
         if (response.status_code != 200) {
             util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
@@ -75,8 +75,8 @@ private:
 
         util::log::debug("Logging into remote API at {}", get_url());
 
-        // Create a transient http_client for the login request.
-        http_client client;
+        // Reuse the thread-local client
+        http_client& client = get_client();
         const http_response login_response = client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
 
         if (login_response.status_code != 200) {
@@ -92,6 +92,12 @@ private:
             throw RemoteServiceError("Invalid response from remote authentication service.");
         }
         return id_token;
+    }
+
+    // --- Thread-Safe Persistent Client ---
+    static http_client& get_client() {
+        thread_local http_client client;
+        return client;
     }
 
     // --- Configuration Getters using thread-safe function-local statics ---

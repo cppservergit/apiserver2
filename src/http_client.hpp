@@ -108,7 +108,7 @@ public:
      * @return An http_response struct containing the server's response.
      * @throws curl_exception on failure.
      */
-    [[nodiscard]] http_response get(const std::string& url, const std::map<std::string, std::string, std::less<>>& headers = {}) const;
+    [[nodiscard]] http_response get(const std::string& url, const std::map<std::string, std::string, std::less<>>& headers = {});
 
     /**
      * @brief Performs an HTTP POST request with a raw string body.
@@ -118,7 +118,7 @@ public:
      * @return An http_response struct containing the server's response.
      * @throws curl_exception on failure.
      */
-    [[nodiscard]] http_response post(const std::string& url, const std::string& body, const std::map<std::string, std::string, std::less<>>& headers = {}) const;
+    [[nodiscard]] http_response post(const std::string& url, const std::string& body, const std::map<std::string, std::string, std::less<>>& headers = {});
     
     /**
      * @brief Performs a multipart/form-data HTTP POST request.
@@ -128,7 +128,7 @@ public:
      * @return An http_response struct containing the server's response.
      * @throws curl_exception on failure.
      */
-    [[nodiscard]] http_response post(const std::string& url, const std::vector<http_form_part>& form_parts, const std::map<std::string, std::string, std::less<>>& headers = {}) const;
+    [[nodiscard]] http_response post(const std::string& url, const std::vector<http_form_part>& form_parts, const std::map<std::string, std::string, std::less<>>& headers = {});
 
 private:
     class impl;
