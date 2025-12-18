@@ -138,7 +138,7 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 Run the server with `./run.sh` and then from another terminal session execute this:
 ```
-curl cpp14.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64a0" -s | jq
+curl cpp14.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 The output will be something like this:
 ```
@@ -160,9 +160,9 @@ The output will be something like this:
 The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load. Other observability endpoints are `/ping` and `/version` if you want to test them with CURL. The `/ping` endpoint is for health-checking by load balancers, also called Ingress services in Cloud containers and Kubernetes.
 
 The diagnostics APIs like `/metrics` and `/version` may be protected by an API-Key which is defined in the `run.sh` script, we suggest using the program `uuid`
-to generate your API Key and distribute it to your monitoring agents.
+to generate your API Key and distribute it to your monitoring agents. If there is no API-KEY defined in run.sh then the diagnostics APIs will respond without the security check, even if an `x-api-key` header was sent in the request.
 
-A bash script using CURL for testing your endpoints is provided in folder `unit-test` this script requires a `/login` and sends the resulting JWT token when invoking the secure endpoints, it is a simple and effective alternative to Postman.
+A bash script `test.sh` using CURL for testing your endpoints is provided in folder `unit-test` this script requires a `/login` and sends the resulting JWT token when invoking the secure endpoints, it is a simple and effective alternative to Postman.
 
 ## **Build options**
 
