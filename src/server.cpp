@@ -365,11 +365,9 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
     using enum http::status;
 
     // Helper lambda to check for API_KEY
-    auto check_api_key = [&](std::string_view path) -> bool {
+    auto check_api_key = [&](std::string_view path) {
         if (m_api_key.empty()) return true; // No key configured, allow access
-        
-        auto header_val = req.get_header_value("X-Api-Key");
-        if (!header_val || *header_val != m_api_key) {
+        if (auto header_val = req.get_header_value("X-Api-Key"); !header_val || *header_val != m_api_key) {
             util::log::warn("Unauthorized access attempt to {} from {}", path, req.get_remote_ip());
             return false;
         }
