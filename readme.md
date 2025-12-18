@@ -123,10 +123,10 @@ The server is configured via environment variables. Use the provided `run.sh` ba
 ```
 You should see output similar to this:
 ```
-[  INFO  ] [Thread: 128360869079680] [--------] Application starting...
-[  INFO  ] [Thread: 128360869079680] [--------] CORS enabled for 2 origin(s).
-[  INFO  ] [Thread: 128360869079680] [--------] APIServer2 version 1.0.0 starting on port 8080 with 2 I/O threads and 8 total worker threads.
-[  INFO  ] [Thread: 128360869079680] [--------] Assigning 4 worker threads per I/O worker.
+[  INFO  ] [Thread: 127779938138752] [--------] Application starting...
+[  INFO  ] [Thread: 127779938138752] [--------] CORS enabled for 2 origin(s).
+[  INFO  ] [Thread: 127779938138752] [--------] APIServer2 version 1.1.1 starting on port 8080 with 4 I/O threads and 24 total worker threads.
+[  INFO  ] [Thread: 127779938138752] [--------] Assigning 6 worker threads per I/O worker.
 ```
 Use CTRL-C to stop the server
 ```
@@ -138,9 +138,8 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 Run the server with `./run.sh` and then from another terminal session execute this:
 ```
-curl localhost:8080/metrics
+curl cpp14.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64a0" -s | jq
 ```
-
 The output will be something like this:
 ```
 {
@@ -159,6 +158,9 @@ The output will be something like this:
 ```
 
 The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load. Other observability endpoints are `/ping` and `/version` if you want to test them with CURL. The `/ping` endpoint is for health-checking by load balancers, also called Ingress services in Cloud containers and Kubernetes.
+
+The diagnostics APIs like `/metrics` and `/version` may be protected by an API-Key which is defined in the `run.sh` script, we suggest using the program `uuid`
+to generate your API Key and distribute it to your monitoring agents.
 
 A bash script using CURL for testing your endpoints is provided in folder `unit-test` this script requires a `/login` and sends the resulting JWT token when invoking the secure endpoints, it is a simple and effective alternative to Postman.
 
@@ -184,8 +186,8 @@ The server is configured via environment variables. Create a run script (e.g., r
 
 # server configuration
 export PORT=8080
-export POOL_SIZE=8
-export IO_THREADS=2
+export POOL_SIZE=24
+export IO_THREADS=4
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
@@ -198,8 +200,16 @@ export CORS_ORIGINS="null,file://"
 export BLOB_PATH="/home/ubuntu/uploads"
 
 # json web token configuration
-export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
+export JWT_SECRET="B@asica2025*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
+
+# api key for diagnostics
+export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
+
+# remote api configuration
+export REMOTE_API_URL="http://localhost:8080"
+export REMOTE_API_USER="mcordova"
+export REMOTE_API_PASS="basica"
 
 # executable
 ./apiserver
