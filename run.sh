@@ -16,8 +16,11 @@ export CORS_ORIGINS="null,file://"
 export BLOB_PATH="/home/ubuntu/uploads"
 
 # json web token configuration
-export JWT_SECRET="B@asica2024*uuid0998554j93m722pQ"
+export JWT_SECRET="B@asica2025*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
+
+# api key for diagnostics
+export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
 
 # remote api configuration
 export REMOTE_API_URL="http://localhost:8080"

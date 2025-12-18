@@ -34,6 +34,7 @@ server::io_worker::io_worker(uint16_t port,
       m_running(running_flag) {
     m_thread_pool = std::make_unique<thread_pool>(worker_thread_count);
     m_response_queue = std::make_unique<shared_queue<response_item>>();
+    m_api_key = env::get<std::string>("API_KEY", "");
 }
 
 server::io_worker::~io_worker() noexcept {
@@ -362,7 +363,24 @@ void server::io_worker::process_request(int fd) {
 
 bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {
     using enum http::status;
+
+    // Helper lambda to check for API_KEY
+    auto check_api_key = [&](std::string_view path) -> bool {
+        if (m_api_key.empty()) return true; // No key configured, allow access
+        
+        auto header_val = req.get_header_value("X-Api-Key");
+        if (!header_val || *header_val != m_api_key) {
+            util::log::warn("Unauthorized access attempt to {} from {}", path, req.get_remote_ip());
+            return false;
+        }
+        return true;
+    };
+
     if (req.get_path() == "/metrics") {
+        if (!check_api_key("/metrics")) {
+            res.set_body(bad_request, R"({"error":"Bad Request"})");
+            return true;
+        }
         res.set_body(ok, m_metrics->to_json());
         return true;
     }
@@ -371,6 +389,10 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         return true;
     }
     if (req.get_path() == "/version") {
+        if (!check_api_key("/version")) {
+            res.set_body(bad_request, R"({"error":"Bad Request"})");
+            return true;
+        }
         auto constexpr json_tpl = R"({{"pod_name":"{}","version":"{}"}})";
         res.set_body(ok, std::format(json_tpl, m_metrics->get_pod_name(), g_version));
         return true;

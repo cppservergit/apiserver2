@@ -65,11 +65,15 @@
   <script type="module">
     const terminal = document.getElementById('terminal');
     const runButton = document.getElementById('runTestsBtn');
+    
+    // Defined API Key
+    const API_KEY = "6976f434-d9c1-11f0-93b8-5254000f64af";
 
     const endpoints = [
       { path: '/shippers', method: 'GET' },
       { path: '/products', method: 'GET' },
       { path: '/metrics', method: 'GET' },
+      { path: '/version', method: 'GET' }, // Added /version
       { path: '/ping', method: 'GET' },
       {
         path: '/customer',
@@ -164,6 +168,14 @@
         contentType: 'application/json'
       },	  
       {
+        path: '/rcustomer',
+        method: 'POST',
+        body: JSON.stringify({
+           id: "anatr"
+        }),
+        contentType: 'application/json'
+      },
+      {
         path: '/upload',
         method: 'POST',
         multipart: true
@@ -204,7 +216,15 @@
 
       for (const ep of endpoints) {
         try {
-          let options = { method: ep.method, headers: { ...headers } };
+          // Clone headers so we can add the API key conditionally without affecting others
+          let currentHeaders = { ...headers };
+
+          // Inject API Key for specific endpoints
+          if (ep.path === '/version' || ep.path === '/metrics') {
+            currentHeaders['x-api-key'] = API_KEY;
+          }
+
+          let options = { method: ep.method, headers: currentHeaders };
 
           if (ep.multipart) {
             const form = new FormData();
@@ -212,6 +232,7 @@
             const fileBlob = new Blob(['This file was generated in JS'], { type: 'text/plain' });
             form.append('file1', fileBlob, 'test.txt');
             options.body = form;
+            // Fetch handles content-type for FormData automatically, so we remove it if it was inherited
             delete options.headers['Content-Type']; 
           } else if (ep.body) {
             options.body = ep.body;

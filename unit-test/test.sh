@@ -2,6 +2,7 @@
 
 BASE_URL="http://localhost:8080"
 LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
+API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
 
 amber="\e[38;5;214m"
 red="\e[31m"
@@ -42,6 +43,7 @@ endpoints=(
   "GET /shippers"
   "GET /products"
   "GET /metrics"
+  "GET /version"
   "GET /ping"
   "POST /customer {\"id\":\"anatr\"}"
   "POST /customer {\"id\":\"quick\"}"
@@ -60,12 +62,27 @@ for entry in "${endpoints[@]}"; do
   IFS=' ' read -r method uri rest <<< "$entry"
   payload=""
   CURL_UUID="$(echo -n $(uuid))"
+
+  # Initialize an array for extra curl headers
+  extra_headers=()
+  
+  # Check if the current URI is one that requires the API key
+  if [[ "$uri" == "/version" || "$uri" == "/metrics" ]]; then
+    extra_headers+=("-H" "x-api-key: $API_KEY")
+  fi
+
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
+    # We expand "${extra_headers[@]}" here to inject the header if it exists
     response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" -d "$payload" "${BASE_URL}${uri}")
+      -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" \
+      "${extra_headers[@]}" \
+      -d "$payload" "${BASE_URL}${uri}")
   else
-    response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" "${BASE_URL}${uri}")
+    response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+      -H "X-Request-ID: $CURL_UUID" \
+      "${extra_headers[@]}" \
+      "${BASE_URL}${uri}")
   fi
 
   body="${response::-3}"
@@ -75,3 +92,4 @@ for entry in "${endpoints[@]}"; do
 
   show_result "$method $uri" "$status" "$ok" "$body"
 done
+exit 0

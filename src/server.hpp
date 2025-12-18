@@ -26,7 +26,7 @@
 #include <thread>
 #include <cstdint>
 
-inline constexpr auto g_version = "1.1.0";
+inline constexpr auto g_version = "1.1.1";
 
 using dispatch_task = std::function<void()>;
 
@@ -130,6 +130,9 @@ private:
         std::unique_ptr<thread_pool> m_thread_pool;
         std::unique_ptr<shared_queue<response_item>> m_response_queue;
         std::unordered_map<int, connection_state> m_connections;
+
+        // API Key for internal endpoints
+        std::string m_api_key;
     };
 
     static inline constexpr int MAX_EVENTS = 8192;
