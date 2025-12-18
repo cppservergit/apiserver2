@@ -935,17 +935,17 @@ We are using plain http with HAProxy on port 80, but it is easy to configure HTT
 
 Open a terminal on the same VM an execute several times to hit the different containers:
 ```
-curl localhost/version -s | jq
+curl cpp14.mshome.net:8080/version -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 ```
-curl localhost/metrics -s | jq
+curl cpp14.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 You should see output like this:
 for `/version`: 
 ```
 {
   "pod_name": "node1",
-  "version": "1.0.4"
+  "version": "1.1.1"
 }
 ```
 for `/metrics`: 
