@@ -7,16 +7,35 @@
 #include <optional>
 #include <vector>
 #include <atomic>
+#include <stdexcept>
+
+// Specific exception for backpressure handling
+class queue_full_error : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 template<typename T>
 class shared_queue {
 public:
     /**
+     * @brief Constructor accepting a capacity limit.
+     * @param capacity The maximum number of items allowed in the queue. 
+     * 0 (default) implies unbounded.
+     */
+    explicit shared_queue(size_t capacity = 0) : m_capacity(capacity) {}
+
+    /**
      * @brief Pushes a new item onto the queue and notifies a waiting thread.
+     * @throws queue_full_error if the queue has reached its capacity.
      */
     void push(T item) {
         {
             std::scoped_lock lock(m_mutex);
+            // Check capacity if limit is set (non-zero)
+            if (m_capacity > 0 && m_queue.size() >= m_capacity) {
+                throw queue_full_error("Queue is full");
+            }
             m_queue.push(std::move(item));
         }
         m_cond.notify_one();
@@ -75,6 +94,9 @@ private:
     mutable std::mutex m_mutex;
     std::condition_variable m_cond;
     std::atomic<bool> m_stopped{false};
+    
+    // Capacity limit (0 = unbounded)
+    size_t m_capacity; 
 };
 
 #endif // SHARED_QUEUE_HPP

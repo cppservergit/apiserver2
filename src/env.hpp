@@ -30,6 +30,7 @@ namespace env {
     concept Supported = std::same_as<T, std::string> ||
                         std::same_as<T, int> ||
                         std::same_as<T, long> ||
+                        std::same_as<T, size_t> ||
                         std::same_as<T, bool>;
 
     namespace detail {
@@ -66,6 +67,17 @@ namespace env {
             auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), result);
             if (ec != std::errc() || ptr != value.data() + value.size()) {
                 throw error("invalid long for key '" + key + "': " + std::string(value));
+            }
+            return result;
+        }
+
+        template <>
+        inline size_t convert<size_t>(std::string_view value, const std::string& key) {
+            size_t result{};
+            // Note: std::from_chars is strict and does not skip whitespace.
+            auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), result);
+            if (ec != std::errc() || ptr != value.data() + value.size()) {
+                throw error("invalid size_t for key '" + key + "': " + std::string(value));
             }
             return result;
         }

@@ -21,7 +21,8 @@ enum class status {
     forbidden = 403,
     not_found = 404,
     entity_too_large = 413,
-    internal_server_error = 500
+    internal_server_error = 500,
+    service_unavailable = 503
 };
 
 [[nodiscard]] constexpr std::string_view to_reason_phrase(status s) {
@@ -35,6 +36,7 @@ enum class status {
         case not_found: return "Not Found";
         case entity_too_large: return "Entity Too Large";
         case internal_server_error: return "Internal Server Error";
+        case service_unavailable: return "Service Unavailable";
     }
     return "Unknown Status";
 }

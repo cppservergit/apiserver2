@@ -87,12 +87,12 @@ private:
     class io_worker {
     public:
         io_worker(uint16_t port,
-                  std::shared_ptr<metrics> metrics, 
-                  const api_router& router,
-                  // *** BUG FIX *** Use the correct set type with the transparent hasher
-                  const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins,
-                  int worker_thread_count,
-                  std::atomic<bool>& running_flag);
+                    std::shared_ptr<metrics> metrics, 
+                    const api_router& router,
+                    const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins,
+                    int worker_thread_count,
+                    size_t queue_capacity, // <--- NEW PARAMETER
+                    std::atomic<bool>& running_flag);
         
         ~io_worker() noexcept;
         void run();
@@ -158,6 +158,9 @@ private:
 
     std::vector<std::unique_ptr<io_worker>> m_workers;
     std::atomic<bool> m_running{true};
+
+    //task queue back pressure control
+    size_t m_queue_capacity{0};
 };
 
 #endif // SERVER_HPP

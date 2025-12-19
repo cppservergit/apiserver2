@@ -4,6 +4,7 @@
 export PORT=8080
 export POOL_SIZE=24
 export IO_THREADS=4
+export QUEUE_CAPACITY=500
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"

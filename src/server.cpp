@@ -23,18 +23,22 @@ using namespace std::chrono_literals;
 server::io_worker::io_worker(uint16_t port,
                              std::shared_ptr<metrics> metrics_ptr, 
                              const api_router& router,
-                             // This now correctly matches the declaration in server.hpp
                              const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins,
                              int worker_thread_count,
+                             size_t queue_capacity, // <--- NEW PARAMETER
                              std::atomic<bool>& running_flag)
     : m_port(port),
       m_metrics(metrics_ptr), 
       m_router(router),
       m_allowed_origins(allowed_origins),
       m_running(running_flag) {
-    m_thread_pool = std::make_unique<thread_pool>(worker_thread_count);
-    m_response_queue = std::make_unique<shared_queue<response_item>>();
-    // Load API_KEY from environment, default to empty (disabled/no auth)
+          
+    // Pass queue_capacity to thread_pool
+    m_thread_pool = std::make_unique<thread_pool>(worker_thread_count, queue_capacity);
+    
+    // Use a larger limit (e.g., 2x) for responses to ensure completed work isn't dropped
+    m_response_queue = std::make_unique<shared_queue<response_item>>(queue_capacity * 2); 
+    
     m_api_key = env::get<std::string>("API_KEY", "");
 }
 
@@ -101,15 +105,10 @@ void server::io_worker::run() {
 void server::io_worker::check_timeouts() {
     auto now = std::chrono::steady_clock::now();
     for (auto it = m_connections.begin(); it != m_connections.end(); ) {
-        // If connection has been idle longer than READ_TIMEOUT
         if (now - it->second.last_activity > server::READ_TIMEOUT) {
             util::log::debug("Connection timed out for fd {}", it->first);
-            
-            // Close the socket
             close(it->first);
             m_metrics->decrement_connections();
-            
-            // Erase from map and advance iterator safely
             it = m_connections.erase(it);
         } else {
             ++it;
@@ -178,29 +177,47 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
 void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint) {
     auto req_ptr = std::make_shared<http::request>(std::move(req));
 
-    m_thread_pool->push_task([this, fd, req_ptr, endpoint]() {
-        const std::string request_id_str(req_ptr->get_header_value("x-request-id").value_or(""));
-        const util::log::request_id_scope rid_scope(request_id_str);
+    try {
+        m_thread_pool->push_task([this, fd, req_ptr, endpoint]() {
+            const std::string request_id_str(req_ptr->get_header_value("x-request-id").value_or(""));
+            const util::log::request_id_scope rid_scope(request_id_str);
 
-        util::log::debug("Dispatching request to worker thread {} for fd {}", req_ptr->get_path(), fd);
-        
-        const auto start_time = std::chrono::high_resolution_clock::now();
-        m_metrics->increment_active_threads();
+            util::log::debug("Dispatching request to worker thread {} for fd {}", req_ptr->get_path(), fd);
+            
+            const auto start_time = std::chrono::high_resolution_clock::now();
+            m_metrics->increment_active_threads();
+            
+            http::response res(req_ptr->get_header_value("Origin"));
+            
+            execute_handler(*req_ptr, res, endpoint);
+            
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
+            
+            m_response_queue->push({fd, std::move(res)});
+            m_metrics->record_request_time(duration);
+            m_metrics->decrement_active_threads();
+
+            util::log::perf("API handler for '{}' executed in {} microseconds.", req_ptr->get_path(), duration.count());
+        });
+    } catch (const queue_full_error& e) {
+        using enum http::status;
+        util::log::warn("Worker queue full. Dropping request for '{}' from {}", 
+                        req_ptr->get_path(), req_ptr->get_remote_ip());
         
         http::response res(req_ptr->get_header_value("Origin"));
+        res.set_body(service_unavailable, R"({"error":"Service Unavailable: Server Overloaded"})");
         
-        execute_handler(*req_ptr, res, endpoint);
-        
-        // FIX: Capture duration for both metrics and performance logging.
-        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
-        
-        m_response_queue->push({fd, std::move(res)});
-        m_metrics->record_request_time(duration);
-        m_metrics->decrement_active_threads();
-
-        // FIX: Add the performance log call. This will be compiled out when ENABLE_PERF_LOGS is not set.
-        util::log::perf("API handler for '{}' executed in {} microseconds.", req_ptr->get_path(), duration.count());
-    });
+        try {
+            m_response_queue->push({fd, std::move(res)});
+            add_to_epoll(fd, EPOLLOUT); 
+        } catch (const queue_full_error&) {
+            util::log::error("Critical: Response queue full for fd {}. Closing connection.", fd);
+            close_connection(fd); 
+        } catch (const server_error& ex) {
+            util::log::error("Critical: Epoll failure for fd {}: {}. Closing connection.", fd, ex.what());
+            close_connection(fd);
+        }
+    }
 }
 
 // ... (rest of server.cpp is unchanged) ...
@@ -455,6 +472,8 @@ server::server() {
     m_port = env::get<int>("PORT", 8080);
     m_io_threads = env::get<int>("IO_THREADS", std::thread::hardware_concurrency());
     m_worker_threads = env::get<int>("POOL_SIZE", 16);
+    // NEW: Get queue capacity configuration (Default 1000 tasks per worker queue)
+    m_queue_capacity = env::get<size_t>("QUEUE_CAPACITY", 1000uz);
     
     m_signals = std::make_unique<util::signal_handler>();
     m_metrics = std::make_shared<metrics>(m_worker_threads);
@@ -484,7 +503,11 @@ void server::start() {
 
     // Stage 1: Create all the worker objects and populate the vector.
     for (int i = 0; i < m_io_threads; ++i) {
-        auto worker = std::make_unique<io_worker>(m_port, m_metrics, m_router, m_allowed_origins, worker_threads_per_io, m_running);
+        // Pass m_queue_capacity to the worker
+        auto worker = std::make_unique<io_worker>(
+            m_port, m_metrics, m_router, m_allowed_origins, 
+            worker_threads_per_io, m_queue_capacity, m_running // <--- UPDATED ARGUMENTS
+        );
         m_metrics->register_thread_pool(worker->get_thread_pool());
         m_workers.push_back(std::move(worker));
     }

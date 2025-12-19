@@ -14,10 +14,16 @@ using dispatch_task = std::function<void()>;
 
 class thread_pool {
 public:
-    explicit thread_pool(size_t num_threads)
+    /**
+     * @brief Constructs the thread pool.
+     * @param num_threads The number of worker threads to spawn.
+     * @param queue_capacity The maximum number of tasks per worker queue. 0 = unbounded.
+     */
+    explicit thread_pool(size_t num_threads, size_t queue_capacity = 0)
         : m_num_threads(num_threads) {
         for (size_t i = 0; i < m_num_threads; ++i) {
-            m_task_queues.push_back(std::make_shared<shared_queue<dispatch_task>>());
+            // Pass the capacity to the shared_queue constructor
+            m_task_queues.push_back(std::make_shared<shared_queue<dispatch_task>>(queue_capacity));
         }
     }
 
@@ -50,6 +56,7 @@ public:
     }
 
     // The I/O thread calls this to dispatch a task in a round-robin fashion.
+    // NOTE: This will now throw queue_full_error if the target queue is full.
     void push_task(dispatch_task task) {
         size_t queue_index = m_next_queue.fetch_add(1, std::memory_order_relaxed) % m_num_threads;
         m_task_queues[queue_index]->push(std::move(task));
