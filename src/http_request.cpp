@@ -583,7 +583,18 @@ request::request(request_parser&& parser, std::string_view remote_ip)
       m_fileParts(std::move(parser.m_fileParts)),
       m_path(parser.m_path),
       m_remote_ip(remote_ip)
-{}
+{
+    // If X-Forwarded-For exists, use the first IP in the list as the real remote IP.
+    if (auto it = m_headers.find("X-Forwarded-For"); it != m_headers.end()) {
+        std::string_view forwarded = it->second;
+        // The header can be "client_ip, proxy1, proxy2". We want the first one.
+        if (auto comma_pos = forwarded.find(','); comma_pos != std::string_view::npos) {
+            m_remote_ip = trim_sv(forwarded.substr(0, comma_pos)); // You need a string copy if m_remote_ip is std::string
+        } else {
+            m_remote_ip = trim_sv(forwarded);
+        }
+    }    
+}
 
 request::~request() noexcept = default;
 request::request(request&&) noexcept = default;
