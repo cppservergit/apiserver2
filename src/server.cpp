@@ -199,7 +199,7 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
 
             util::log::perf("API handler for '{}' executed in {} microseconds.", req_ptr->get_path(), duration.count());
         });
-    } catch (const queue_full_error& e) {
+    } catch (const queue_full_error&) {
         using enum http::status;
         util::log::warn("Worker queue full. Dropping request for '{}' from {}", 
                         req_ptr->get_path(), req_ptr->get_remote_ip());
