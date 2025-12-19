@@ -34,6 +34,7 @@ server::io_worker::io_worker(uint16_t port,
       m_running(running_flag) {
     m_thread_pool = std::make_unique<thread_pool>(worker_thread_count);
     m_response_queue = std::make_unique<shared_queue<response_item>>();
+    // Load API_KEY from environment, default to empty (disabled/no auth)
     m_api_key = env::get<std::string>("API_KEY", "");
 }
 
@@ -60,6 +61,9 @@ void server::io_worker::run() {
     m_thread_pool->start();
 
     std::vector<epoll_event> events(MAX_EVENTS);
+    
+    // Track last timeout check locally to avoid checking every 5ms
+    auto last_timeout_check = std::chrono::steady_clock::now();
 
     while (m_running) {
         const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), EPOLL_WAIT_MS);
@@ -83,8 +87,34 @@ void server::io_worker::run() {
             }
         }
         process_response_queue();
+        
+        // Timeout check logic (~1Hz)
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_timeout_check >= 1s) {
+            check_timeouts();
+            last_timeout_check = now;
+        }
     }
     util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
+}
+
+void server::io_worker::check_timeouts() {
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = m_connections.begin(); it != m_connections.end(); ) {
+        // If connection has been idle longer than READ_TIMEOUT
+        if (now - it->second.last_activity > server::READ_TIMEOUT) {
+            util::log::debug("Connection timed out for fd {}", it->first);
+            
+            // Close the socket
+            close(it->first);
+            m_metrics->decrement_connections();
+            
+            // Erase from map and advance iterator safely
+            it = m_connections.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 // FIX: Implement the new private helper function for token validation.
@@ -254,6 +284,9 @@ void server::io_worker::on_write(int fd) {
     if (it == m_connections.end() || !it->second.response.has_value()) return;
     
     http::response& res = *it->second.response;
+    
+    // Update activity on write too
+    it->second.update_activity();
 
     while (res.available_size() > 0) {
         ssize_t bytes_sent = write(fd, res.buffer().data(), res.buffer().size());
@@ -282,6 +315,9 @@ void server::io_worker::close_connection(int fd) {
 }
 
 bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
+    // Update last activity timestamp on read
+    conn.update_activity();
+    
     while (true) {
         // Wrap buffer access and read operations in a try-catch block
         try {
@@ -305,7 +341,6 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
             conn.parser.update_pos(bytes_read);
         } catch (const socket_buffer_error& e) {
             using enum http::status;
-            remove_from_epoll(fd);
             close_connection(fd);
             util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
             return false; 

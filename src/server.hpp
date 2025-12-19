@@ -25,6 +25,7 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
+#include <chrono> // Added for timeouts
 
 inline constexpr auto g_version = "1.1.1";
 
@@ -36,21 +37,24 @@ public:
 };
 
 struct connection_state {
-    explicit connection_state(std::string ip) : remote_ip(std::move(ip)) {}
+    explicit connection_state(std::string ip) 
+        : remote_ip(std::move(ip)), last_activity(std::chrono::steady_clock::now()) {}
     connection_state() = default;
+    
     http::request_parser parser;
     std::optional<http::response> response;
     std::string remote_ip;
-    void reset() {
-        // This creates a new, default request_parser and move-assigns it.
-        // The old parser and its internal socket_buffer are destroyed.
-        parser = http::request_parser{};
+    std::chrono::steady_clock::time_point last_activity; // Track last read/write
 
-        // This calls std::optional::reset(), which destroys the contained
-        // http::response object and leaves the 'response' optional empty
-        // and ready for the next request-response cycle.
+    void reset() {
+        parser = http::request_parser{};
         response.reset();
+        update_activity(); // Reset timer on new request cycle
     }    
+
+    void update_activity() {
+        last_activity = std::chrono::steady_clock::now();
+    }
 };
 
 struct response_item {
@@ -107,6 +111,7 @@ private:
         void on_read(int fd);
         void on_write(int fd);
         void close_connection(int fd);
+        void check_timeouts(); // Helper to clean up idle connections
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
@@ -138,6 +143,8 @@ private:
     static inline constexpr int MAX_EVENTS = 8192;
     static inline constexpr int LISTEN_BACKLOG = 65536;
 	static inline constexpr int EPOLL_WAIT_MS = 5;
+    // Timeout for idle connections (Slowloris protection)
+    static inline constexpr std::chrono::seconds READ_TIMEOUT{60}; 
 
     uint16_t m_port;
     int m_io_threads;
