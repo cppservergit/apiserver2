@@ -188,6 +188,7 @@ The server is configured via environment variables. Create a run script (e.g., r
 export PORT=8080
 export POOL_SIZE=24
 export IO_THREADS=4
+export QUEUE_CAPACITY=500
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
@@ -382,7 +383,7 @@ void get_shippers([[maybe_unused]] const http::request& req, http::response& res
     res.set_body(ok, sql::get("DB1", "{CALL sp_shippers_view}").value_or("[]"));
 }
 ```
-The we register `/shippers` in `main(){...}` using the shorter version because we have no validator:
+Then we register `/shippers` in `main(){...}` using the shorter version because we have no validator:
 ```
 s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);
 ```
@@ -893,6 +894,7 @@ tee "run.sh" > /dev/null <<'EOF'
 export PORT=8080
 export POOL_SIZE=24
 export IO_THREADS=4
+export QUEUE_CAPACITY=500
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
@@ -902,7 +904,7 @@ export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testd
 export CORS_ORIGINS="null,file://"
 
 # blobs storage configuration
-export BLOB_PATH="/home/ubuntu/uploads"
+export BLOB_PATH="/uploads"
 
 # json web token configuration
 export JWT_SECRET="B@asica2025*uuid0998554j93m722pQ"

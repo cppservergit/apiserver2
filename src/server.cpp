@@ -99,6 +99,7 @@ void server::io_worker::run() {
             last_timeout_check = now;
         }
     }
+    drain_pending_responses();
     util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
@@ -114,6 +115,28 @@ void server::io_worker::check_timeouts() {
             ++it;
         }
     }
+}
+
+void server::io_worker::drain_pending_responses() {
+    // This loop ensures that when Kubernetes stops the pod, we finish processing 
+    // in-flight requests and send their responses before exiting.
+    util::log::debug("I/O worker thread {} shutting down. Draining pending responses...", std::this_thread::get_id());
+
+    std::vector<epoll_event> events(MAX_EVENTS);
+
+    while (m_thread_pool->get_total_pending_tasks() > 0 || m_response_queue->size() > 0) {
+        process_response_queue();
+        
+        // Short timeout (10ms) to spin quickly while draining
+        const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), 10);
+        util::log::debug("Detected {} EPOLL events on thread {}.", num_events, std::this_thread::get_id());
+        for (int i = 0; i < num_events; ++i) {
+            if (events[i].events & EPOLLOUT) {
+                on_write(events[i].data.fd);
+            }
+        }
+    }
+    util::log::debug("I/O worker thread {} drain complete.", std::this_thread::get_id());
 }
 
 // FIX: Implement the new private helper function for token validation.

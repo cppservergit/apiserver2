@@ -112,6 +112,7 @@ private:
         void on_write(int fd);
         void close_connection(int fd);
         void check_timeouts(); // Helper to clean up idle connections
+        void drain_pending_responses();
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
@@ -132,8 +133,9 @@ private:
         const std::unordered_set<std::string, util::string_hash, util::string_equal>& m_allowed_origins;
         std::atomic<bool>& m_running;
         
-        std::unique_ptr<thread_pool> m_thread_pool;
-        std::unique_ptr<shared_queue<response_item>> m_response_queue;
+        std::unique_ptr<shared_queue<response_item>> m_response_queue; // Destroyed LAST
+        std::unique_ptr<thread_pool> m_thread_pool;                   // Destroyed FIRST (stops threads)
+
         std::unordered_map<int, connection_state> m_connections;
 
         // API Key for internal endpoints
