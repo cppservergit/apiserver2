@@ -977,3 +977,171 @@ curl https://cppserver.com/files/apiserver/v2/setup.sh -O && chmod +x setup.sh &
 You would be using your own local server to provide the files of course, so the URL in the command above should change.
 
 You can configure this script to download encrypted environment values as .enc files and the corresponding private key `private.pem` required to decrypt, as well as a server certificate `PEM` file for HAProxy, this server certificate should contain all the necessary parts: the private key, the certificate, and the intermediate certificate, referred as the certificate chain by your certificate provider, they shound be stored in a single PEM file in that order.
+
+## **Docker**
+
+Install docker on your development computer:
+```
+curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && sudo sh get-docker.sh
+```
+
+It is recommended to add you user to the `docker` group so you don't have to type `sudo` every time you run a docker command, also the docker targets in Makefile assume you don't need sudo.
+```
+sudo usermod -aG docker $USER
+```
+You have to exit the Linux shell and login again to apply the changes, if you are doing this in VSCode terminal, you must reboot the Linux VM and restart VSCode.
+
+Test it:
+```
+docker images
+```
+
+### **Running APIServer2 with Docker**
+
+
+If you want to run APIServer2 with the default API samples with docker, there is an image in dockerhub with the latest version, for a quick test:
+```
+docker run -d \
+  --name apiserver2 \
+  --restart unless-stopped \
+  --network host \
+  \
+  -v /home/ubuntu/uploads:/app/uploads \
+  \
+  -e POOL_SIZE=24 \
+  -e IO_THREADS=4 \
+  -e QUEUE_CAPACITY=500 \
+  -e DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8" \
+  -e LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8" \
+  -e CORS_ORIGINS="null,file://" \
+  -e JWT_SECRET="B@asica2025*uuid0998554j93m722pQ" \
+  -e JWT_TIMEOUT_SECONDS=300 \
+  -e API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af" \
+  -e REMOTE_API_URL="http://localhost:8080" \
+  -e REMOTE_API_USER="mcordova" \
+  -e REMOTE_API_PASS="basica" \
+  \
+  cppserver/apiserver2:latest
+```
+This image is intended to be used with Kubernetes and Cloud container services.
+When running on Kubernetes, all those security-sensitive environment variables will be stored as Kubernet secrets, this is transparent to APIServer2, it will always look for the value of the environment variable, if running the container on the Cloud using a serverless container service, you will probably use some kind of encrypted environment variables, again transparent to APIServer2.
+
+#### **Testing your cointainer**
+If you are running on your development machine and your current working directory is /apiserver2, use this command to run the unit tests using the CURL script:
+```
+unit-test/test.sh
+```
+Expected output:
+```
+GET /shippers                       200    true
+GET /products                       200    true
+GET /metrics                        200    true
+GET /version                        200    true
+GET /ping                           200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /customer                      200    true
+POST /sales                         200    true
+POST /sales                         200    true
+POST /sales                         200    true
+POST /rcustomer                     200    true
+```
+If your server is on another port or machine, edit test.sh and change the corresponding varables.
+```
+#!/bin/bash
+
+BASE_URL="http://localhost:8080"
+LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
+API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
+```
+
+### **Building your own Docker image**
+
+First we create a more neutral binary for the docker image, not so hardware tuned:
+```
+make release CXXFLAGS_RELEASE="-O2 -march=x86-64-v3 -DNDEBUG -flto=4"
+```
+
+Now we create the image, The APIServer2 repo already includes a `Dockerfile` in the root folder of this project:
+```
+docker build -t cppserver/apiserver2:latest .
+```
+
+To export your Docker image to a compressed .tgz file that can be transferred to MicroK8s, run this command in your terminal:
+```
+docker save cppserver/apiserver2:latest | gzip > apiserver2.tar.gz
+```
+Once you have the file, you can import it directly into the MicroK8s registry:
+```
+microk8s images import apiserver2.tar.gz
+```
+This avoids the need to push to Docker Hub if your MicroK8s cluster is local or has access to the file.
+
+### **Dockerfile**
+```
+FROM ubuntu:24.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Runtime Dependencies
+# These must match the libraries your binary was linked against.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libcurl4 \
+    libssl3 \
+    libuuid1 \
+    libjson-c5 \
+    liboath0t64 \
+    unixodbc \
+    tdsodbc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Create the uploads directory for BLOB_PATH
+RUN mkdir -p /app/uploads && chown appuser:appuser /app/uploads
+
+# --- COPY THE BINARY ---
+# This copies the 'apiserver' generated by the GitHub Action into the image
+COPY --chown=appuser:appuser apiserver /app/apiserver
+
+# Ensure it is executable
+RUN chmod +x /app/apiserver
+
+# Define the mount point for Kubernetes PVCs
+VOLUME ["/app/uploads"]
+
+# ------------------------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------------------------
+
+# 1. Non-Sensitive Defaults
+ENV PORT=8080
+ENV POOL_SIZE=24
+ENV IO_THREADS=4
+ENV QUEUE_CAPACITY=500
+ENV CORS_ORIGINS="null,file://"
+ENV BLOB_PATH="/app/uploads"
+ENV JWT_TIMEOUT_SECONDS=300
+ENV REMOTE_API_URL="http://localhost:8080"
+
+# 2. Security Sensitive Variables (Empty for injection via K8s Secrets)
+ENV DB1=""
+ENV LOGINDB=""
+ENV JWT_SECRET=""
+ENV API_KEY=""
+ENV REMOTE_API_USER=""
+ENV REMOTE_API_PASS=""
+
+# Expose port
+EXPOSE 8080
+```
