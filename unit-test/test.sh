@@ -1,12 +1,13 @@
 #!/bin/bash
 
-BASE_URL="http://localhost:8080"
+DEFAULT_BASE_URL="http://localhost:8080"
+DEFAULT_API_PREFIX=""
+
+# Accept parameters (positional arguments)
+BASE_URL="${1:-$DEFAULT_BASE_URL}"
+API_PREFIX="${2:-$DEFAULT_API_PREFIX}"
 LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
 API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
-
-# use "/api" for kubernetes MicroK8s testing, 
-# the Ingress will reject it if the request does not start with /api/
-API_PREFIX=""
 
 amber="\e[38;5;214m"
 red="\e[31m"
@@ -23,6 +24,12 @@ function show_result {
   printf "${color}%-35s %-6s %-8s${reset}\n" "$endpoint" "$status" "$success"
   [[ "$status" != "200" ]] && echo -e "${body}\n"
 }
+
+# Check if uuid command exists 
+if ! command -v uuid >/dev/null 2>&1; then 
+   echo "uuid command not found, installing uuid-runtime..." 
+   sudo apt update && sudo apt install -y uuid-runtime 
+fi
 
 CURL_UUID="$(echo -n $(uuid))"
 login_response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \

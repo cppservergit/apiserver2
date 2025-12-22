@@ -268,29 +268,9 @@ Download from GitHub the latest version of `test.sh` script:
 ```
 curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/unit-test/test.sh && chmod +x test.sh
 ```
-
-You will need to install the command `uuid` required by this script:
+Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks:
 ```
-sudo apt install uuid -y
-```
-
-Edit the script and change the values of the `BASE_URL` and `API_PREFIX` variables.
-```
-#!/bin/bash
-
-BASE_URL="https://mk8s.mshome.net"
-LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
-API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
-
-# use "/api" for kubernetes MicroK8s testing,
-# the Ingress will reject it if the request does not start with /api/
-API_PREFIX="/api"
-
-...rest of the file untouched...
-```
-Run it:
-```
-./test.sh
+./test.sh https://mk8s.mshome.net /api
 ```
 Expected output:
 ```
@@ -313,4 +293,4 @@ POST /api/rcustomer                 200    true
 ```
 If you run it several times you will see the logs on MicroK8s and the metrics of the Pods changing.
 
-That's it, welcome to Kubernetes and high-performance light C++ containers the easy way.
+That's it, welcome to Kubernetes and high-performance light C++ containers, the easy way.
