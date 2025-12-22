@@ -262,13 +262,14 @@ kubectl top pod --all-namespaces \
 
 ## Step 6: Testing all APIs
 
-APIServer2 includes a set of sample APIs, and a bash script using CURL is also provided, just download and edit a couple of variables and you are ready to go.
+APIServer2 container includes a set of sample APIs, and a bash script using CURL for unit-testing is also provided, just download it and you are ready to go.
 
 Download from GitHub the latest version of `test.sh` script:
 ```
 curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/unit-test/test.sh && chmod +x test.sh
 ```
-Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks:
+Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks. Please note that `test.sh` requires the program `uuid`, if not present the script will install it before running the tests.
+
 ```
 ./test.sh https://mk8s.mshome.net /api
 ```
@@ -292,5 +293,6 @@ POST /api/sales                     200    true
 POST /api/rcustomer                 200    true
 ```
 If you run it several times you will see the logs on MicroK8s and the metrics of the Pods changing.
+This is a simple but effective tool, it authenticates, then calls the secure APIs sending the resulting JWT token, it also calls diagnostic APIs using the pre-configured API Key defined in the YAML file, it is a tester that you can adapt to your own developments.
 
 That's it, welcome to Kubernetes and high-performance light C++ containers, the easy way.
