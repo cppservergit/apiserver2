@@ -57,11 +57,11 @@ addons:
 
 ## Step 3: Prepare the terminal for easy MicroK8s commands
 
-To avoid typing long commands and using `sudo` every time run this commands:
+To avoid typing long commands and using `sudo` every time:
 
 ```
-sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
-echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
+sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube && \
+echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases && \
 source ~/.bash_aliases
 ```
 Exit the Linux terminal and re-enter for these changes to take effect.
