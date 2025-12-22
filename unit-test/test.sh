@@ -4,6 +4,10 @@ BASE_URL="http://localhost:8080"
 LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
 API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
 
+# use "/api" for kubernetes MicroK8s testing, 
+# the Ingress will reject it if the request does not start with /api/
+API_PREFIX=""
+
 amber="\e[38;5;214m"
 red="\e[31m"
 reset="\e[0m"
@@ -22,7 +26,7 @@ function show_result {
 
 CURL_UUID="$(echo -n $(uuid))"
 login_response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-  -H "X-Request-ID: $CURL_UUID" -d "$LOGIN_PAYLOAD" "${BASE_URL}/login")
+  -H "X-Request-ID: $CURL_UUID" -d "$LOGIN_PAYLOAD" "${BASE_URL}${API_PREFIX}/login")
 
 login_body="${login_response::-3}"
 login_status="${login_response: -3}"
@@ -40,22 +44,22 @@ if [[ "$TOKEN" == "null" || -z "$TOKEN" ]]; then
 fi
 
 endpoints=(
-  "GET /shippers"
-  "GET /products"
-  "GET /metrics"
-  "GET /version"
-  "GET /ping"
-  "POST /customer {\"id\":\"anatr\"}"
-  "POST /customer {\"id\":\"quick\"}"
-  "POST /customer {\"id\":\"bergs\"}"
-  "POST /customer {\"id\":\"ernsh\"}"
-  "POST /customer {\"id\":\"fissa\"}"
-  "POST /customer {\"id\":\"dracd\"}"
-  "POST /customer {\"id\":\"savea\"}"
-  "POST /sales {\"start_date\":\"1994-01-01\",\"end_date\":\"1994-12-31\"}"
-  "POST /sales {\"start_date\":\"1995-01-01\",\"end_date\":\"1995-12-31\"}"
-  "POST /sales {\"start_date\":\"1996-01-01\",\"end_date\":\"1996-12-31\"}"
-  "POST /rcustomer {\"id\":\"anatr\"}"
+  "GET $API_PREFIX/shippers"
+  "GET $API_PREFIX/products"
+  "GET $API_PREFIX/metrics"
+  "GET $API_PREFIX/version"
+  "GET $API_PREFIX/ping"
+  "POST $API_PREFIX/customer {\"id\":\"anatr\"}"
+  "POST $API_PREFIX/customer {\"id\":\"quick\"}"
+  "POST $API_PREFIX/customer {\"id\":\"bergs\"}"
+  "POST $API_PREFIX/customer {\"id\":\"ernsh\"}"
+  "POST $API_PREFIX/customer {\"id\":\"fissa\"}"
+  "POST $API_PREFIX/customer {\"id\":\"dracd\"}"
+  "POST $API_PREFIX/customer {\"id\":\"savea\"}"
+  "POST $API_PREFIX/sales {\"start_date\":\"1994-01-01\",\"end_date\":\"1994-12-31\"}"
+  "POST $API_PREFIX/sales {\"start_date\":\"1995-01-01\",\"end_date\":\"1995-12-31\"}"
+  "POST $API_PREFIX/sales {\"start_date\":\"1996-01-01\",\"end_date\":\"1996-12-31\"}"
+  "POST $API_PREFIX/rcustomer {\"id\":\"anatr\"}"
 )
 
 for entry in "${endpoints[@]}"; do
@@ -67,7 +71,7 @@ for entry in "${endpoints[@]}"; do
   extra_headers=()
   
   # Check if the current URI is one that requires the API key
-  if [[ "$uri" == "/version" || "$uri" == "/metrics" ]]; then
+  if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" ]]; then
     extra_headers+=("-H" "x-api-key: $API_KEY")
   fi
 
