@@ -25,7 +25,7 @@ function show_result {
 }
 
 CURL_UUID="$(echo -n $(uuid))"
-login_response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
+login_response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
   -H "X-Request-ID: $CURL_UUID" -d "$LOGIN_PAYLOAD" "${BASE_URL}${API_PREFIX}/login")
 
 login_body="${login_response::-3}"
@@ -78,12 +78,12 @@ for entry in "${endpoints[@]}"; do
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     # We expand "${extra_headers[@]}" here to inject the header if it exists
-    response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
+    response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
       -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" \
       "${extra_headers[@]}" \
       -d "$payload" "${BASE_URL}${uri}")
   else
-    response=$(curl -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+    response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
       -H "X-Request-ID: $CURL_UUID" \
       "${extra_headers[@]}" \
       "${BASE_URL}${uri}")

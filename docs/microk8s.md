@@ -172,7 +172,7 @@ Events:               <none>
 
 To deploy a container you need a YAML file with several sections, for secrets (security-sensitive environment variables), storage requirements for uploads, container specs, etc, it may be a bit complex to do it from scratch, so we supply a reasonable default configuration for this QuickStart kubernetes deployment on a single-node cluster. MicroK8s is the ideal Kubernets implementation for this task.
 
-Download the latest version of APIServer2 MicroK8s deployment:
+Download the latest version of APIServer2 MicroK8s deployment from GitHub:
 ```
 curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver.yaml 
 ```

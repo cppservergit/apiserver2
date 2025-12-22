@@ -1152,3 +1152,13 @@ USER ubuntu
 # Start the server
 CMD ["./apiserver"]
 ```
+
+## Kubernetes
+
+Now that you have a docker image you can deploy the container to any Kubernetes service in the Cloud, but for local development and testing purposes you can use MicroK8s from Canonical, the best fit for Ubuntu VMs.
+
+You are invited to follow our step-by-step tutorial on deploying APIServer2 on MicroK8s on a single VM, very easy and quick, in 20 minutes or less you are ready to go:
+
+[APIServer2 running on MicroK8s](https://github.com/cppservergit/apiserver2/blob/main/docs/microk8s.md)
+
+You do not have to compile anything or create a K8s deployment YAML file, all the resources are ready to use, including the APIServer2 image on DockerHub.
