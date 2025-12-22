@@ -27,8 +27,8 @@ function show_result {
 
 # Check if uuid command exists 
 if ! command -v uuid >/dev/null 2>&1; then 
-   echo "uuid command not found, installing uuid-runtime..." 
-   sudo apt update && sudo apt install -y uuid-runtime 
+   echo "uuid command not found, installing uuid..." 
+   sudo apt update && sudo apt install -y uuid
 fi
 
 CURL_UUID="$(echo -n $(uuid))"
