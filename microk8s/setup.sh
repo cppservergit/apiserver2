@@ -19,16 +19,14 @@ sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
-if curl -s --max-time 5 http://$IP/ >/dev/null; then
+if curl -s --max-time 5 http://$VM_IP/ >/dev/null; then
    echo "[✓] Ingress is serving HTTP traffic at http://$IP/"
-   break
 fi
 
 # --- Verify connectivity on port 443 (optional, requires TLS configured) ---
 echo "[+] Testing HTTPS connectivity..."
-if curl -sk --max-time 5 https://$IP/ >/dev/null; then
+if curl -sk --max-time 5 https://$VM_IP/ >/dev/null; then
   echo "[✓] Ingress is serving HTTPS traffic at https://$IP/"
-  break
 fi
 
 echo "Retrieving APIserver2 deployment manifest..."
