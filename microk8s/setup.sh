@@ -7,40 +7,15 @@ sudo microk8s enable hostpath-storage
 sudo microk8s enable ingress
 sudo microk8s enable metrics-server
 sudo microk8s enable registry
-sudo microk8s enable metallb:${VM_IP}-${VM_IP}
 sudo microk8s status --wait-ready
 
-echo "[+] Waiting for MetalLB CRDs to be established..." 
-sudo microk8s kubectl wait --for=condition=Established crd/ipaddresspools.metallb.io --timeout=180s 
-sudo microk8s kubectl wait --for=condition=Established crd/l2advertisements.metallb.io --timeout=180s
+microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
+  --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
 # --- Wait for ingress controller pods to be Ready --- 
 echo "[+] Waiting for ingress controller pods..." 
 sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=180s 
-# --- Wait for ingress service to get an external IP --- 
-echo "[+] Waiting for ingress service object..."
-for i in {1..30}; do
-  if sudo microk8s kubectl get svc nginx-ingress-microk8s-controller -n ingress >/dev/null 2>&1; then
-    echo "[✓] Ingress service object created"
-    break
-  fi
-  sleep 10
-done
-echo "[+] Waiting for ingress service external IP..."
-for i in {1..30}; do
-  IP=$(sudo microk8s kubectl get svc nginx-ingress-microk8s-controller -n ingress \
-       -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-  if [ -n "$IP" ]; then
-    echo "[✓] Ingress service external IP assigned: $IP"
-    break
-  fi
-  sleep 10
-done
-
-if [ -z "$IP" ]; then
-  echo "[✗] Timed out waiting for ingress external IP"
-  exit 1
-fi
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
@@ -61,6 +36,7 @@ for i in {1..10}; do
   fi
   sleep 5
 done
+
 echo "Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
 echo "Deploying APIserver2..."
