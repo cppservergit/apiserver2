@@ -3,24 +3,50 @@
 In this tutorial you will use APIServer2 docker image straight from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress), this is equivalent to our LXD setup, but more dynamic in nature and more Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs.
 
 ## Step 1: Create the VM
-You will need a clean Ubuntu 24.04 VM, assuming you are using Multipass on Windows, this is the minimal VM acceptable for this configuration:
+You will need a clean Ubuntu 24.04 VM, assuming you are using Multipass on Windows 10/11, this is the minimal VM for this configuration:
 ```
 multipass launch -n mk8s -c 4 -m 4g -d 8g
 ```
 
-Update the system:
+Enter you Linux VM shell:
 ```
-sudo apt update && sudo apt upgrade -y
+multipass shell mk8s
 ```
-## Step2: Install MicroK8s
+
+## Step 2: Install MicroK8s and deploy APIServer2 cluster
+Download and run the installation script, this will take about 2 minutes if you have a fast connection to the internet:
 ```
-sudo snap install microk8s --classic
+curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/setup.sh && chmod +x setup.sh && ./setup.sh
 ```
-Test the MicroK8s service:
+This script updates de operating system, installs MicroK8s and the required extensions (ingress, host storage, metrics server, etc), configures the load balancer, tests the http ports and deploys the APIServer containers.
+
+When the script ends you will see these messages at the end of the output:
 ```
-sudo microk8s status --wait-ready
+Retrieving APIserver2 deployment manifest...
+Deploying APIserver2...
+secret/apiserver-secrets created
+persistentvolumeclaim/apiserver-pvc created
+deployment.apps/apiserver-deployment created
+service/apiserver-service created
+ingress.networking.k8s.io/apiserver-ingress created
+horizontalpodautoscaler.autoscaling/apiserver-hpa created
+[+] Waiting for ingress controller pod...
+pod/nginx-ingress-microk8s-controller-h9h6r condition met
+[+] Testing HTTP connectivity...
+[✓] Ingress is serving HTTP traffic at http://172.22.15.155/
+[+] Testing HTTPS connectivity...
+[✓] Ingress is serving HTTPS traffic at https://172.22.15.155/
+Adding current user to microk8s group...
+Setting up kubectl alias...
+MicroK8s setup completed. Please log out and log back in for group changes to take effect.
 ```
-When the installation is complete, you will see this output:
+Exit the shell and enter again.
+
+## Step 3: Test the installation
+```
+microk8s status
+```
+Expected output:
 ```
 microk8s is running
 high-availability: no
@@ -32,6 +58,11 @@ addons:
     ha-cluster           # (core) Configure high availability on the current node
     helm                 # (core) Helm - the package manager for Kubernetes
     helm3                # (core) Helm 3 - the package manager for Kubernetes
+    hostpath-storage     # (core) Storage class; allocates storage from host directory
+    ingress              # (core) Ingress controller for external access
+    metrics-server       # (core) K8s Metrics Server for API access to service metrics
+    registry             # (core) Private image registry exposed on localhost:32000
+    storage              # (core) Alias to hostpath-storage add-on, deprecated
   disabled:
     cert-manager         # (core) Cloud native certificate management
     cis-hardening        # (core) Apply CIS K8s hardening
@@ -39,115 +70,67 @@ addons:
     dashboard            # (core) The Kubernetes dashboard
     gpu                  # (core) Alias to nvidia add-on
     host-access          # (core) Allow Pods connecting to Host services smoothly
-    hostpath-storage     # (core) Storage class; allocates storage from host directory
-    ingress              # (core) Ingress controller for external access
     kube-ovn             # (core) An advanced network fabric for Kubernetes
     mayastor             # (core) OpenEBS MayaStor
     metallb              # (core) Loadbalancer for your Kubernetes cluster
-    metrics-server       # (core) K8s Metrics Server for API access to service metrics
     minio                # (core) MinIO object storage
     nvidia               # (core) NVIDIA hardware (GPU and network) support
     observability        # (core) A lightweight observability stack for logs, traces and metrics
     prometheus           # (core) Prometheus operator for monitoring and logging
     rbac                 # (core) Role-Based Access Control for authorisation
-    registry             # (core) Private image registry exposed on localhost:32000
     rook-ceph            # (core) Distributed Ceph storage using Rook
-    storage              # (core) Alias to hostpath-storage add-on, deprecated
 ```
 
-## Step 3: Prepare the terminal for easy MicroK8s commands
-
-To avoid typing long commands and using `sudo` every time:
-
-```
-sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube && \
-echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases && \
-source ~/.bash_aliases
-```
-Exit the Linux terminal and re-enter for these changes to take effect.
-
-Test:
-```
-microk8s version
-```
-Expected output (version may vary):
-```
-MicroK8s v1.32.9 revision 8511
-```
-Test:
+Get the Kubernetes version
 ```
 kubectl version
 ```
-Expected output (version may vary):
+Expected output (versions may vary):
 ```
 Client Version: v1.32.9
 Kustomize Version: v5.5.0
 Server Version: v1.32.9
 ```
-The should work now without `sudo` or the long command `microk8s kubectl`.
 
-## Step 4: Install the required extensions
-
+List APIServer2 pods
 ```
-microk8s enable hostpath-storage && \
-microk8s enable ingress && \
-microk8s enable metrics-server && \
-microk8s enable registry
-```
-Test:
-```
-microk8s status --wait-ready
+kubectl get pods -o wide
 ```
 Expected output:
 ```
-microk8s is running
-high-availability: no
-  datastore master nodes: 127.0.0.1:19001
-  datastore standby nodes: none
-addons:
-  enabled:
-    dns                  # (core) CoreDNS
-    ha-cluster           # (core) Configure high availability on the current node
-    helm                 # (core) Helm - the package manager for Kubernetes
-    helm3                # (core) Helm 3 - the package manager for Kubernetes
-    hostpath-storage     # (core) Storage class; allocates storage from host directory
-    ingress              # (core) Ingress controller for external access
-    metrics-server       # (core) K8s Metrics Server for API access to service metrics
-    registry             # (core) Private image registry exposed on localhost:32000
-    storage              # (core) Alias to hostpath-storage add-on, deprecated
-    ... other messages ....
+NAME                                    READY   STATUS    RESTARTS   AGE     IP             NODE   NOMINATED NODE   READINESS GATES
+apiserver-deployment-784bcb5449-6cs97   1/1     Running   0          5m12s   10.1.215.200   mk8s   <none>           <none>
+apiserver-deployment-784bcb5449-mmctd   1/1     Running   0          5m12s   10.1.215.201   mk8s   <none>           <none>
 ```
-Apply patch to the Ingress so it will listen on the public IP of the host VM on ports 443 and 80
+
+Check the Ingress pod (load balancer):
 ```
-microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
-  --type='json' \
-  -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
-```
-Test:
-```
-kubectl describe daemonset nginx-ingress-microk8s-controller -n ingress
+kubectl describe pod -n ingress -l name=nginx-ingress-microk8s
 ```
 Expected output:
 ```
-Name:           nginx-ingress-microk8s-controller
-Selector:       name=nginx-ingress-microk8s
-Node-Selector:  <none>
-Labels:         microk8s-application=nginx-ingress-microk8s
-Annotations:    deprecated.daemonset.template.generation: 2
-Desired Number of Nodes Scheduled: 1
-Current Number of Nodes Scheduled: 1
-Number of Nodes Scheduled with Up-to-date Pods: 1
-Number of Nodes Scheduled with Available Pods: 1
-Number of Nodes Misscheduled: 0
-Pods Status:  1 Running / 0 Waiting / 0 Succeeded / 0 Failed
-Pod Template:
-  Labels:           name=nginx-ingress-microk8s
-  Service Account:  nginx-ingress-microk8s-serviceaccount
-  Containers:
-   nginx-ingress-microk8s:
-    Image:       registry.k8s.io/ingress-nginx/controller:v1.11.5
-    Ports:       80/TCP, 443/TCP, 10254/TCP
-    Host Ports:  80/TCP, 443/TCP, 10254/TCP
+Name:             nginx-ingress-microk8s-controller-h9h6r
+Namespace:        ingress
+Priority:         0
+Service Account:  nginx-ingress-microk8s-serviceaccount
+Node:             mk8s/172.22.15.155
+Start Time:       Tue, 23 Dec 2025 19:30:11 -0400
+Labels:           controller-revision-hash=5dbf887fdb
+                  name=nginx-ingress-microk8s
+                  pod-template-generation=2
+Annotations:      <none>
+Status:           Running
+IP:               172.22.15.155
+IPs:
+  IP:           172.22.15.155
+Controlled By:  DaemonSet/nginx-ingress-microk8s-controller
+Containers:
+  nginx-ingress-microk8s:
+    Container ID:  containerd://3ee38fa2f4084291e5e456d99194d8cd8a18a3a30695ed9e094be505f47d106a
+    Image:         registry.k8s.io/ingress-nginx/controller:v1.11.5
+    Image ID:      registry.k8s.io/ingress-nginx/controller@sha256:a1cbad75b0a7098bf9325132794dddf9eef917e8a7fe246749a4cea7ff6f01eb
+    Ports:         80/TCP, 443/TCP, 10254/TCP
+    Host Ports:    80/TCP, 443/TCP, 10254/TCP
     Args:
       /nginx-ingress-controller
       --configmap=$(POD_NAMESPACE)/nginx-load-balancer-microk8s-conf
@@ -156,40 +139,43 @@ Pod Template:
       --ingress-class=public
 
       --publish-status-address=127.0.0.1
-    Liveness:   http-get http://:10254/healthz delay=10s timeout=5s period=10s #success=1 #failure=3
-    Readiness:  http-get http://:10254/healthz delay=0s timeout=5s period=10s #success=1 #failure=3
+    State:          Running
+      Started:      Tue, 23 Dec 2025 19:30:18 -0400
+    Ready:          True
+    Restart Count:  0
+    Liveness:       http-get http://:10254/healthz delay=10s timeout=5s period=10s #success=1 #failure=3
+    Readiness:      http-get http://:10254/healthz delay=0s timeout=5s period=10s #success=1 #failure=3
     Environment:
-      POD_NAME:        (v1:metadata.name)
-      POD_NAMESPACE:   (v1:metadata.namespace)
-    Mounts:           <none>
-  Volumes:            <none>
-  Node-Selectors:     <none>
-  Tolerations:        <none>
-Events:               <none>
+      POD_NAME:       nginx-ingress-microk8s-controller-h9h6r (v1:metadata.name)
+      POD_NAMESPACE:  ingress (v1:metadata.namespace)
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-c766d (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True
+  Initialized                 True
+  Ready                       True
+  ContainersReady             True
+  PodScheduled                True
+Volumes:
+  kube-api-access-c766d:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    ConfigMapOptional:       <nil>
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/disk-pressure:NoSchedule op=Exists
+                             node.kubernetes.io/memory-pressure:NoSchedule op=Exists
+                             node.kubernetes.io/network-unavailable:NoSchedule op=Exists
+                             node.kubernetes.io/not-ready:NoExecute op=Exists
+                             node.kubernetes.io/pid-pressure:NoSchedule op=Exists
+                             node.kubernetes.io/unreachable:NoExecute op=Exists
+                             node.kubernetes.io/unschedulable:NoSchedule op=Exists
+Events:                      <none>
 ```
 
-## Step 5: Deploy the APIServer2 container
-
-To deploy a container you need a YAML file with several sections, for secrets (security-sensitive environment variables), storage requirements for uploads, container specs, etc, it may be a bit complex to do it from scratch, so we supply a reasonable default configuration for this QuickStart kubernetes deployment on a single-node cluster. MicroK8s is the ideal Kubernets implementation for this task.
-
-Download the latest version of APIServer2 MicroK8s deployment from GitHub:
-```
-curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver.yaml 
-```
-Deploy the containers into MicroK8s:
-```
-kubectl apply -f deploy-apiserver.yaml
-```
-List your Pods (containers)
-```
-kubectl get pods -o wide
-```
-Expected output (Pod names and IPs will vary):
-```
-NAME                                    READY   STATUS    RESTARTS   AGE   IP            NODE              NOMINATED NODE   READINESS GATES
-apiserver-deployment-784bcb5449-dsl9c   1/1     Running   0          12h   10.1.252.19   mk8s.mshome.net   <none>           <none>
-apiserver-deployment-784bcb5449-lwn2w   1/1     Running   0          12h   10.1.252.18   mk8s.mshome.net   <none>           <none>
-```
 Test your Pods (several times):
 ```
 curl https://localhost/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
@@ -242,12 +228,6 @@ kubectl logs -n ingress -l name=nginx-ingress-microk8s --since=1h
 # warnign: all logs!
 kubectl logs -n ingress -l name=nginx-ingress-microk8s --tail=-1 
 ```
-The same flags apply to the APIServer2 `logs` command.
-
-Inspect the state of the Ingress Pod:
-```
-kubectl describe pod -n ingress -l name=nginx-ingress-microk8s
-```
 
 Check APIServer2 resource usage (cpu, memory):
 ```
@@ -260,12 +240,7 @@ kubectl top pod --all-namespaces \
   --no-headers | awk '{print $2, $1, $3}' | sort -k3 -h | column -t
 ```
 
-Inspect the Ingress (Load Balancer) service:
-```
-microk8s kubectl describe svc nginx-ingress-microk8s-controller -n ingress
-```
-
-## Step 6: Testing all APIs
+## Step 4: Testing all APIs
 
 APIServer2 container includes a set of sample APIs, and a bash script using CURL for unit-testing is also provided, just download it and you are ready to go.
 
@@ -273,7 +248,7 @@ Download from GitHub the latest version of `test.sh` script:
 ```
 curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/unit-test/test.sh && chmod +x test.sh
 ```
-Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks. Please note that `test.sh` requires the program `uuid`, if not present the script will install it before running the tests.
+Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks.
 
 ```
 ./test.sh https://mk8s.mshome.net /api

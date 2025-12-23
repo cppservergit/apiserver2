@@ -17,7 +17,7 @@ sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingre
   --type merge -p '{"data":{"ssl-redirect":"true","force-ssl-redirect":"true"}}'
 
 echo "Retrieving APIserver2 deployment manifest..."
-curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
+curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver.yaml 
 echo "Deploying APIserver2..."
 sudo microk8s kubectl apply -f deploy-apiserver2.yaml
 
@@ -42,4 +42,4 @@ sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "Setting up kubectl alias..."
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 source ~/.bash_aliases
-echo "MicroK8s setup completed. Please log out and log back in for group changes to take effect."
+echo "MicroK8s setup completed. Please log out and log back in for group changes an kubectl alias to take effect."

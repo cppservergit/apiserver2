@@ -200,35 +200,12 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "5m"
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$1
-    
-    # --- PROXY HEADERS (Forward Real Client IP) ---
-    # Tells NGINX to pass X-Forwarded-For, X-Real-IP, etc.
     nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
-    # Trusts the direct connection to the node as the source of truth
     nginx.ingress.kubernetes.io/compute-full-forwarded-for: "true"
 
 spec:
   ingressClassName: public
-  
-  # TLS CONFIGURATION
-  tls:
-  - hosts:
-    - mk8s.mshome.net 
-    # Use fake default cert if no secret provided, but enable SSL mode
-    # secretName: mk8s-tls-secret
-  
   rules:
-  - host: mk8s.mshome.net
-    http:
-      paths:
-      - path: /api/(.+)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: apiserver-service
-            port:
-              number: 8080
-  # Catch-all rule
   - http:
       paths:
       - path: /api/(.+)
