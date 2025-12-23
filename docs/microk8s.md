@@ -125,7 +125,7 @@ microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
 ```
 Test:
 ```
-kubectl get daemonset nginx-ingress-microk8s-controller -n ingress
+kubectl describe daemonset nginx-ingress-microk8s-controller -n ingress
 ```
 Expected output:
 ```

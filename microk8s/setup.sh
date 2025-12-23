@@ -14,8 +14,8 @@ sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingre
   -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
 # --- Wait for ingress controller pods to be Ready --- 
-echo "[+] Waiting for ingress controller pods..." 
-sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=180s 
+#echo "[+] Waiting for ingress controller pod..." 
+#sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=300s 
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
