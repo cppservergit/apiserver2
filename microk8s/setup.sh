@@ -13,6 +13,9 @@ sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingre
   --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
+sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
+  --type merge -p '{"data":{"ssl-redirect":"true","force-ssl-redirect":"true"}}'
+
 echo "Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
 echo "Deploying APIserver2..."
