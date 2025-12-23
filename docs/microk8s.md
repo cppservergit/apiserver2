@@ -260,6 +260,11 @@ kubectl top pod --all-namespaces \
   --no-headers | awk '{print $2, $1, $3}' | sort -k3 -h | column -t
 ```
 
+Inspect the Ingress (Load Balancer) service:
+```
+microk8s kubectl describe svc nginx-ingress-microk8s-controller -n ingress
+```
+
 ## Step 6: Testing all APIs
 
 APIServer2 container includes a set of sample APIs, and a bash script using CURL for unit-testing is also provided, just download it and you are ready to go.
