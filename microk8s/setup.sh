@@ -9,7 +9,7 @@ sudo microk8s enable metrics-server
 sudo microk8s enable registry
 sudo microk8s status --wait-ready
 
-microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
+sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
   --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
@@ -19,23 +19,17 @@ sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
-for i in {1..10}; do
-  if curl -s --max-time 5 http://$IP/ >/dev/null; then
-    echo "[✓] Ingress is serving HTTP traffic at http://$IP/"
-    break
-  fi
-  sleep 5
-done
+if curl -s --max-time 5 http://$IP/ >/dev/null; then
+   echo "[✓] Ingress is serving HTTP traffic at http://$IP/"
+   break
+fi
 
 # --- Verify connectivity on port 443 (optional, requires TLS configured) ---
 echo "[+] Testing HTTPS connectivity..."
-for i in {1..10}; do
-  if curl -sk --max-time 5 https://$IP/ >/dev/null; then
-    echo "[✓] Ingress is serving HTTPS traffic at https://$IP/"
-    break
-  fi
-  sleep 5
-done
+if curl -sk --max-time 5 https://$IP/ >/dev/null; then
+  echo "[✓] Ingress is serving HTTPS traffic at https://$IP/"
+  break
+fi
 
 echo "Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
