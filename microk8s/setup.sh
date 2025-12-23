@@ -13,26 +13,27 @@ sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingre
   --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
+echo "Retrieving APIserver2 deployment manifest..."
+curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
+echo "Deploying APIserver2..."
+sudo microk8s kubectl apply -f deploy-apiserver2.yaml
+
 # --- Wait for ingress controller pods to be Ready --- 
-#echo "[+] Waiting for ingress controller pod..." 
-#sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=300s 
+echo "[+] Waiting for ingress controller pod..." 
+sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=300s 
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
 if curl -s --max-time 5 http://$VM_IP/ >/dev/null; then
-   echo "[✓] Ingress is serving HTTP traffic at http://$IP/"
+   echo "[✓] Ingress is serving HTTP traffic at http://$VM_IP/"
 fi
 
 # --- Verify connectivity on port 443 (optional, requires TLS configured) ---
 echo "[+] Testing HTTPS connectivity..."
 if curl -sk --max-time 5 https://$VM_IP/ >/dev/null; then
-  echo "[✓] Ingress is serving HTTPS traffic at https://$IP/"
+  echo "[✓] Ingress is serving HTTPS traffic at https://$VM_IP/"
 fi
 
-echo "Retrieving APIserver2 deployment manifest..."
-curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver2.yaml 
-echo "Deploying APIserver2..."
-sudo microk8s kubectl apply -f deploy-apiserver2.yaml
 echo "Adding current user to microk8s group..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "Setting up kubectl alias..."
