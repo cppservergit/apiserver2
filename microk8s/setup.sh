@@ -19,7 +19,7 @@ sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingre
 echo "Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver.yaml 
 echo "Deploying APIserver2..."
-sudo microk8s kubectl apply -f deploy-apiserver2.yaml
+sudo microk8s kubectl apply -f deploy-apiserver.yaml
 
 # --- Wait for ingress controller pods to be Ready --- 
 echo "[+] Waiting for ingress controller pod..." 

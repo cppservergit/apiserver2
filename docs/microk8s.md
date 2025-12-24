@@ -273,6 +273,6 @@ POST /api/sales                     200    true
 POST /api/rcustomer                 200    true
 ```
 If you run it several times you will see the logs on MicroK8s and the metrics of the Pods changing.
-This is a simple but effective tool, it authenticates, then calls the secure APIs sending the resulting JWT token, it also calls diagnostic APIs using the pre-configured API Key defined in the YAML file, it is a tester that you can adapt to your own developments.
+This script is a simple but effective tool, it authenticates, then calls the secure APIs sending the resulting JWT token, it also calls diagnostic APIs using the pre-configured API Key defined in the YAML file, it is a tester that you can adapt to your own developments.
 
 That's it, welcome to Kubernetes and high-performance light C++ containers, the easy way.
