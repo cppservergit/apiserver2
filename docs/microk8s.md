@@ -276,3 +276,25 @@ If you run it several times you will see the logs on MicroK8s and the metrics of
 This script is a simple but effective tool, it authenticates, then calls the secure APIs sending the resulting JWT token, it also calls diagnostic APIs using the pre-configured API Key defined in the YAML file, it is a tester that you can adapt to your own developments.
 
 That's it, welcome to Kubernetes and high-performance light C++ containers, the easy way.
+
+## Restarting APIServer
+
+If you want to reconfigura APIServer you change the YAML file, then run:
+```
+kubectl apply -f deploy-apiserver.yaml
+```
+
+But that is not enough, to restart the container and read new values from the environment you must restart-rollout the Pods:
+```
+microk8s kubectl rollout restart deployment
+```
+Expected output:
+```
+deployment.apps/apiserver-deployment restarted
+```
+After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keep running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running from a few seconds ago:
+```
+kubectl get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+apiserver-deployment-6d787d946b-27p9k   1/1     Running   0          12s
+```

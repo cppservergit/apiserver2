@@ -87,9 +87,9 @@ spec:
         - name: PORT
           value: "8080"
         - name: IO_THREADS
-          value: "4"
+          value: "2"
         - name: POOL_SIZE
-          value: "16"
+          value: "8"
         - name: QUEUE_CAPACITY
           value: "1000"
         - name: CORS_ORIGINS
@@ -137,7 +137,7 @@ spec:
         resources:
           requests:
             cpu: "500m"   
-            memory: "128Mi"
+            memory: "32Mi"
           limits:
             cpu: "1000m"   
             memory: "1Gi"
@@ -232,7 +232,7 @@ spec:
     name: apiserver-deployment
   
   minReplicas: 2
-  maxReplicas: 4
+  maxReplicas: 3
   
   metrics:
   - type: Resource
