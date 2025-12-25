@@ -87,11 +87,11 @@ spec:
         - name: PORT
           value: "8080"
         - name: IO_THREADS
-          value: "4"         # Aligned with CPU limit (4 cores)
+          value: "4"
         - name: POOL_SIZE
-          value: "24"        # Matches your run.sh
+          value: "16"
         - name: QUEUE_CAPACITY
-          value: "500"
+          value: "1000"
         - name: CORS_ORIGINS
           value: "null,file://"
         - name: BLOB_PATH
@@ -137,9 +137,9 @@ spec:
         resources:
           requests:
             cpu: "500m"   
-            memory: "512Mi"
+            memory: "128Mi"
           limits:
-            cpu: "2000m"   
+            cpu: "1000m"   
             memory: "1Gi"
 
         # --- Health Checks ---
