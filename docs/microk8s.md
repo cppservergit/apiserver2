@@ -7,6 +7,8 @@ You will need a clean Ubuntu 24.04 VM, assuming you are using Multipass on Windo
 ```
 multipass launch -n mk8s -c 4 -m 4g -d 8g
 ```
+**Note**: for this tutorial to run you need another VM named demodb.mshome.net running the SQLServer 2019 demo database used by APIServer2 example APIs, please check this [tutorial](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md) to quickly create that VM and install the database, it takes less than 10 minutes. If you installed the database in another VM you will have to edit the deploy-apiserver.yaml file and change the Kubernet secrets referring to the databases.
+
 
 Enter you Linux VM shell:
 ```
@@ -283,8 +285,7 @@ If you want to reconfigure APIServer you change the YAML file, then run:
 ```
 kubectl apply -f deploy-apiserver.yaml
 ```
-
-But that is not enough, to restart the container and read new values from the environment you must restart-rollout the Pods:
+But that is not enough, to restart the container and read the new values from the environment you must restart-rollout the Pods:
 ```
 microk8s kubectl rollout restart deployment
 ```
@@ -298,3 +299,30 @@ kubectl get pods
 NAME                                    READY   STATUS    RESTARTS   AGE
 apiserver-deployment-6d787d946b-27p9k   1/1     Running   0          12s
 ```
+
+## Auto-scaling APIServer
+
+The YAML file includes a section to configure horizontal scaling, more Pods if the CPU load reaches some level:
+```
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: apiserver-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: apiserver-deployment
+  
+  minReplicas: 2
+  maxReplicas: 3
+  
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 30
+```
+In this case, if the CPU reaches 30% of utilization, a new Pod will be started running an APIServer2 container, when the CPU load goes down, the container will be removed.

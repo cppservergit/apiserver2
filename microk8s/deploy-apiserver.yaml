@@ -219,7 +219,7 @@ spec:
 ---
 # ==============================================================================
 # 6. HORIZONTAL POD AUTOSCALER (HPA)
-# Dynamic Scaling (2 to 4 pods)
+# Dynamic Scaling (2 to 3 pods)
 # ==============================================================================
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
