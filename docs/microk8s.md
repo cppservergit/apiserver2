@@ -279,7 +279,7 @@ That's it, welcome to Kubernetes and high-performance light C++ containers, the 
 
 ## Restarting APIServer
 
-If you want to reconfigura APIServer you change the YAML file, then run:
+If you want to reconfigure APIServer you change the YAML file, then run:
 ```
 kubectl apply -f deploy-apiserver.yaml
 ```
