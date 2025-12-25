@@ -293,16 +293,20 @@ Expected output:
 ```
 deployment.apps/apiserver-deployment restarted
 ```
-After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keep running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running from a few seconds ago:
+After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keep running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running since a few seconds ago:
 ```
 kubectl get pods
+```
+Expected output:
+```
 NAME                                    READY   STATUS    RESTARTS   AGE
-apiserver-deployment-6d787d946b-27p9k   1/1     Running   0          12s
+apiserver-deployment-6678566c86-52t9q   1/1     Running   0          9s
+apiserver-deployment-6678566c86-wzvhp   1/1     Running   0          12s
 ```
 
 ## Auto-scaling APIServer
 
-The YAML file includes a section to configure horizontal scaling, more Pods if the CPU load reaches some level:
+The YAML file includes at the end a section to configure horizontal scaling, to run more Pods if the CPU load reaches some level:
 ```
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
