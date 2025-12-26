@@ -293,7 +293,7 @@ Expected output:
 ```
 deployment.apps/apiserver-deployment restarted
 ```
-After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keep running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running since a few seconds ago:
+After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keeps running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running since a few seconds ago:
 ```
 kubectl get pods
 ```
@@ -330,3 +330,14 @@ spec:
         averageUtilization: 30
 ```
 In this case, if the CPU reaches 30% of utilization, a new Pod will be started running an APIServer2 container, when the CPU load goes down, the container will be removed.
+
+You can monitor the HPA activity with this command:
+```
+kubectl get hpa
+```
+Expected output:
+```
+NAME            REFERENCE                         TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+apiserver-hpa   Deployment/apiserver-deployment   cpu: 3%/30%   2         3         2          21
+```
+If the CPU reaches the target 30% replicas will increase to 3, according to `maxReplicas` value. If you were using MicroK8s in a multi-node cluster (multiple VMs) the Pod may be created on any node, depending on the resources available.
