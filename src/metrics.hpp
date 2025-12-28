@@ -116,9 +116,7 @@ private:
         // 1. Try to load from TZ environment variable using env::get
         // Returns empty string if missing (the fallback logic is inside env.hpp wrapper)
         //
-        const std::string tz_env = env::get<std::string>("TZ", "");
-
-        if (!tz_env.empty()) {
+        if (const std::string tz_env = env::get<std::string>("TZ", ""); !tz_env.empty()) {
             try {
                 tz = std::chrono::locate_zone(tz_env);
             } catch (const std::runtime_error& e) {
