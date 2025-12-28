@@ -3,6 +3,8 @@
 
 #include "util.hpp"
 #include "thread_pool.hpp"
+#include "logger.hpp"
+#include "env.hpp"
 
 #include <string>
 #include <chrono>
@@ -22,9 +24,7 @@ public:
           m_start_time(std::chrono::system_clock::now()),
           m_pool_size(pool_size),
           m_total_ram_kb(util::get_total_memory()),
-          m_start_date_str(std::format("{:%FT%T}", 
-              std::chrono::zoned_time{std::chrono::current_zone(), 
-              std::chrono::floor<std::chrono::seconds>(m_start_time)}))
+          m_start_date_str(format_timestamp())
     {}
 
     void increment_connections() noexcept { m_connections.fetch_add(1, std::memory_order_relaxed); }
@@ -101,6 +101,50 @@ private:
 
     mutable std::mutex m_pools_mutex;
     std::vector<const thread_pool*> m_thread_pools;
+
+/**
+     * @brief Formats the start time respecting the TZ environment variable via env::get.
+     * * Handles C++20/23 timezone database lookups gracefully.
+     * Priority:
+     * 1. TZ Environment Variable (e.g., "America/Caracas")
+     * 2. System Timezone (/etc/localtime)
+     * 3. UTC Fallback
+     */
+    [[nodiscard]] std::string format_timestamp() const {
+        const std::chrono::time_zone* tz = nullptr;
+
+        // 1. Try to load from TZ environment variable using env::get
+        // Returns empty string if missing (the fallback logic is inside env.hpp wrapper)
+        //
+        const std::string tz_env = env::get<std::string>("TZ", "");
+
+        if (!tz_env.empty()) {
+            try {
+                tz = std::chrono::locate_zone(tz_env);
+            } catch (const std::runtime_error& e) {
+               util::log::warn("metrics", "Failed to locate timezone from TZ env {}: Falling back to system timezone: {}.", tz_env, e.what());
+            }
+        }
+
+        // 2. Fallback to System Timezone
+        if (!tz) {
+            try {
+                tz = std::chrono::current_zone();
+            } catch (const std::runtime_error& e) {
+                util::log::warn("metrics", "Failed to get system timezone: Falling back to UTC: {}.", e.what());
+            }
+        }
+
+        // 3. Format
+        if (tz) {
+            return std::format("{:%FT%T}", 
+                std::chrono::zoned_time{tz, 
+                std::chrono::floor<std::chrono::seconds>(m_start_time)});
+        }
+
+        // 4. Ultimate Fallback: Raw system time (effectively UTC)
+        return std::format("{:%FT%T}", std::chrono::floor<std::chrono::seconds>(m_start_time));
+    }    
 };
 
 #endif // METRICS_HPP

@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liboath0t64 \
     unixodbc \
     tdsodbc \
+    tzdata \
+    tzdata-legacy \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

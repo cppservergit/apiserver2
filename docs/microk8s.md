@@ -105,77 +105,15 @@ apiserver-deployment-784bcb5449-6cs97   1/1     Running   0          5m12s   10.
 apiserver-deployment-784bcb5449-mmctd   1/1     Running   0          5m12s   10.1.215.201   mk8s   <none>           <none>
 ```
 
-Check the Ingress pod (load balancer):
+Check the Ingress pods (load balancer):
 ```
-kubectl describe pod -n ingress -l name=nginx-ingress-microk8s
+kubectl get pods -n ingress
 ```
-Expected output:
+Expected output (names may vary):
 ```
-Name:             nginx-ingress-microk8s-controller-h9h6r
-Namespace:        ingress
-Priority:         0
-Service Account:  nginx-ingress-microk8s-serviceaccount
-Node:             mk8s/172.22.15.155
-Start Time:       Tue, 23 Dec 2025 19:30:11 -0400
-Labels:           controller-revision-hash=5dbf887fdb
-                  name=nginx-ingress-microk8s
-                  pod-template-generation=2
-Annotations:      <none>
-Status:           Running
-IP:               172.22.15.155
-IPs:
-  IP:           172.22.15.155
-Controlled By:  DaemonSet/nginx-ingress-microk8s-controller
-Containers:
-  nginx-ingress-microk8s:
-    Container ID:  containerd://3ee38fa2f4084291e5e456d99194d8cd8a18a3a30695ed9e094be505f47d106a
-    Image:         registry.k8s.io/ingress-nginx/controller:v1.11.5
-    Image ID:      registry.k8s.io/ingress-nginx/controller@sha256:a1cbad75b0a7098bf9325132794dddf9eef917e8a7fe246749a4cea7ff6f01eb
-    Ports:         80/TCP, 443/TCP, 10254/TCP
-    Host Ports:    80/TCP, 443/TCP, 10254/TCP
-    Args:
-      /nginx-ingress-controller
-      --configmap=$(POD_NAMESPACE)/nginx-load-balancer-microk8s-conf
-      --tcp-services-configmap=$(POD_NAMESPACE)/nginx-ingress-tcp-microk8s-conf
-      --udp-services-configmap=$(POD_NAMESPACE)/nginx-ingress-udp-microk8s-conf
-      --ingress-class=public
-
-      --publish-status-address=127.0.0.1
-    State:          Running
-      Started:      Tue, 23 Dec 2025 19:30:18 -0400
-    Ready:          True
-    Restart Count:  0
-    Liveness:       http-get http://:10254/healthz delay=10s timeout=5s period=10s #success=1 #failure=3
-    Readiness:      http-get http://:10254/healthz delay=0s timeout=5s period=10s #success=1 #failure=3
-    Environment:
-      POD_NAME:       nginx-ingress-microk8s-controller-h9h6r (v1:metadata.name)
-      POD_NAMESPACE:  ingress (v1:metadata.namespace)
-    Mounts:
-      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-c766d (ro)
-Conditions:
-  Type                        Status
-  PodReadyToStartContainers   True
-  Initialized                 True
-  Ready                       True
-  ContainersReady             True
-  PodScheduled                True
-Volumes:
-  kube-api-access-c766d:
-    Type:                    Projected (a volume that contains injected data from multiple sources)
-    TokenExpirationSeconds:  3607
-    ConfigMapName:           kube-root-ca.crt
-    ConfigMapOptional:       <nil>
-    DownwardAPI:             true
-QoS Class:                   BestEffort
-Node-Selectors:              <none>
-Tolerations:                 node.kubernetes.io/disk-pressure:NoSchedule op=Exists
-                             node.kubernetes.io/memory-pressure:NoSchedule op=Exists
-                             node.kubernetes.io/network-unavailable:NoSchedule op=Exists
-                             node.kubernetes.io/not-ready:NoExecute op=Exists
-                             node.kubernetes.io/pid-pressure:NoSchedule op=Exists
-                             node.kubernetes.io/unreachable:NoExecute op=Exists
-                             node.kubernetes.io/unschedulable:NoSchedule op=Exists
-Events:                      <none>
+NAME                                      READY   STATUS    RESTARTS   AGE
+nginx-ingress-microk8s-controller-h458n   1/1     Running   3          10m
+nginx-ingress-microk8s-controller-jqns2   1/1     Running   2          10m
 ```
 
 Test your Pods (several times):
@@ -287,7 +225,7 @@ kubectl apply -f deploy-apiserver.yaml
 ```
 But that is not enough, to restart the container and read the new values from the environment you must restart-rollout the Pods:
 ```
-microk8s kubectl rollout restart deployment
+kubectl rollout restart deployment
 ```
 Expected output:
 ```
@@ -327,9 +265,9 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 30
+        averageUtilization: 80
 ```
-In this case, if the CPU reaches 30% of utilization, a new Pod will be started running an APIServer2 container, when the CPU load goes down, the container will be removed.
+In this case, if the CPU reaches 80% of utilization, a new Pod will be started running an APIServer2 container, when the CPU load goes down, the container will be removed.
 
 You can monitor the HPA activity with this command:
 ```
@@ -338,6 +276,6 @@ kubectl get hpa
 Expected output:
 ```
 NAME            REFERENCE                         TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
-apiserver-hpa   Deployment/apiserver-deployment   cpu: 3%/30%   2         3         2          21
+apiserver-hpa   Deployment/apiserver-deployment   cpu: 3%/80%   2         3         2          21
 ```
-If the CPU reaches the target 30% replicas will increase to 3, according to `maxReplicas` value. If you were using MicroK8s in a multi-node cluster (multiple VMs) the Pod may be created on any node, depending on the resources available.
+If the CPU reaches the target 80% replicas will increase to 3, according to `maxReplicas` value. If you were using MicroK8s in a multi-node cluster (multiple VMs) the Pod may be created on any node, depending on the resources available.
