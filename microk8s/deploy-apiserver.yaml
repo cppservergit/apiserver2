@@ -95,7 +95,12 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
-        
+
+        # [FIX] Apply ulimit correctly before starting the app
+        command: ["/bin/sh", "-c"]
+        args: 
+        - "ulimit -n 65535 && exec ./apiserver"
+
         # --- ESSENTIAL ENV VARS ---
         env:
         # [TIMEZONE ESSENTIAL]
@@ -142,12 +147,6 @@ spec:
           limits:
             cpu: "1"        
             memory: "512Mi" 
-
-        # --- LIFECYCLE HOOKS ---
-        lifecycle:
-          postStart:
-            exec:
-              command: ["/bin/sh", "-c", "ulimit -n 65535 || true"]
 
         # --- PROBES ---
         livenessProbe:
