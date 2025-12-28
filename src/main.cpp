@@ -148,8 +148,7 @@ void get_products([[maybe_unused]] const http::request& req, http::response& res
 }
 
 void get_customer(const http::request& req, http::response& res) {
-    auto id_result = req.get_value<std::string>("id");
-    const std::string& customer_id = **id_result;
+    auto customer_id = **req.get_value<std::string>("id");
     const auto json_result = sql::get("DB1", "{CALL sp_customer_get(?)}", customer_id);
     res.set_body(
         json_result ? ok : not_found,
