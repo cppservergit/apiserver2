@@ -3,14 +3,16 @@
 Let's assume that you have a brand-new Ubuntu 24.04 virtual machine, if it was created with multipass you will use the `ubuntu` user and its `/home/ubuntu` directory.
 Please log in to this VM and make sure you are in your home directory.
 
-When using multipass you can create the VM with this command:
+When using multipass you can create the minimal VM (2 cores, 4GB RAM, 12GB disk space) with this command:
 ```
-multipass launch -n sqlserver -c 4 -m 4G -d 12G
-multipass shell sqlserver
+multipass launch -n demodb -c 2 -m 4G -d 12G
 ```
-These parameters are enough to run a few small demo databases.
+Log into the VM:
+```
+multipass shell demodb
+```
 
-__Just in case__: [Install Multipass on your system](https://multipass.run/install)
+__Reference__: [Install Multipass on your system](https://multipass.run/install)
 
 ## Step 1: Install tree
 This software will let you see the full directory structure and verify that SQL Server filled it with its data/log files.
@@ -37,7 +39,10 @@ sudo docker pull mcr.microsoft.com/mssql/server:2019-latest
 ## Step 4: Create a directory structure for SQL Server data files
 ```
 mkdir sql && mkdir sql/data && mkdir sql/log && mkdir sql/secrets
-chmod -R 777 sql
+```
+Add permissions so the docker container can write into this directory
+```
+chmod -R 770 sql
 ```
 
 ## Step 5: Run SQL Server container
@@ -83,19 +88,31 @@ sql
     └── machine-key
 ```
 
-## Step 7: Download API-Server demo database backups
+## Step 7: Test database connectivity:
+```
+sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost -U SA -P 'Basica2024' -Q "SELECT @@VERSION;"
+```
+Expected output (versions may vary):
+```
+Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5068404) - 15.0.4455.2 (X64)
+        Oct  7 2025 21:10:15
+        Copyright (C) 2019 Microsoft Corporation
+        Developer Edition (64-bit) on Linux (Ubuntu 20.04.6 LTS) <X64>
+```
+
+## Step 8: Download API-Server demo database backups
 ```
 curl https://cppserver.com/files/apiserver/demodb.bak -O
 curl https://cppserver.com/files/apiserver/testdb.bak -O
 
 ```
 
-## Step 8: Copy the backups to the data directory of the container
+## Step 9: Copy the backups to the data directory of the container
 ```
 cp *.bak sql/data
 ```
 
-## Step 9: Restore the backups
+## Step 10: Restore the backups
 
 ### demodb
 ```
@@ -112,26 +129,32 @@ sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost \
    -Q 'RESTORE DATABASE testdb FROM DISK="/var/opt/mssql/data/testdb.bak" WITH REPLACE, RECOVERY;'
 ```
 
-That's it, your SQL Server should be ready to accept connections.
+That's it, your SQL Server docker container is ready to use, when using Multipass on Windows 10/11, other VMs should be able to connect to it using the DNS name `demodb.mshome.net`, it is visible on the multipass subnet only, inside your Windows host.
 
+## Step 11: List databases
+```
+sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost -U SA -P 'Basica2024' -Q "SELECT name FROM sys.databases;"
+```
+Expected output:
+```
+master                                                                                   tempdb                                                                                   model                                                                                    msdb                                                                                     demodb                                                                                   testdb
+```
 ## Notes
 
 ### ODBC connection strings
-API-Server++ uses FreeTDS ODBC Driver, a fast and solid driver that works with SQL Server and Sybase.
-Take note of your VM IP address with `ip a` looking for the 2nd or 3rd interface, depending on the network configuration of your host:
+APIServer2 uses FreeTDS ODBC Driver, a fast and solid driver that works with SQL Server and Sybase.
 ```
-Driver=FreeTDS;SERVER=172.22.103.242;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=API-Server;Encryption=off;ClientCharset=UTF-8
-Driver=FreeTDS;SERVER=172.22.103.242;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=API-Server;Encryption=off;ClientCharset=UTF-8
+Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=APIServer2;Encryption=off;ClientCharset=UTF-8
+Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=APIServer2;Encryption=off;ClientCharset=UTF-8
 ```
-If you have a DNS name for the database server then it would be better to use that name instead of the IP address, if you are using a Multipass VM on a Windows host it is way better to use the network name xxx.mshome.net in your ODBC connection string. APIServer++ supports encrypted connection strings using OpenSSL's RSA asymmetric encryption for environment variables.
 
 Using encryption is possible with this ODBC driver, we disable it by default for development, troubleshooting encryption configuration between the client and the SQL Server is beyond the scope of this guide, please refer to the driver's documentation.
 * [Free TDS ODBC connection properties](https://www.freetds.org/userguide/freetdsconf.html) Look for table 3.3 at the end of the document.
 
-You may have noticed that we include the `APP` attribute on the connection string, this is useful to monitor API-Server++ connections on the server.
+You may have noticed that we include the `APP` attribute on the connection string, this is useful to monitor APIServer2 connections on the server.
 
 ### Executing clean backups in SQL Server 2019
-Assuming you are using the same $HOME directory as in the steps above, you must remove the previous BAK file using:
+Assuming you are using the same base directory as in the steps above, you must remove the previous BAK file using:
 ```
 sudo rm sql/data/testdb.bak
 ```
