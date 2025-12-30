@@ -147,7 +147,12 @@ sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost -U SA 
 ```
 Expected output:
 ```
-master                                                                                   tempdb                                                                                   model                                                                                    msdb                                                                                     demodb                                                                                   testdb
+master
+tempdb
+model
+msdb
+demodb
+testdb
 ```
 ## Notes
 
