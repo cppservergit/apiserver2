@@ -42,7 +42,7 @@ mkdir sql && mkdir sql/data && mkdir sql/log && mkdir sql/secrets
 ```
 Add permissions so the docker container can write into this directory
 ```
-chmod -R 770 sql
+sudo chown -R 10001:0 sql && sudo chmod -R 770 sql
 ```
 
 ## Step 5: Run SQL Server container
@@ -54,7 +54,7 @@ Please wait a few seconds, then proceed to the next step.
 
 ## Step 6: Verify that SQL Server created the basic data files.
 ```
-tree sql
+sudo tree sql
 ```
 
 You should see something like this:
@@ -108,7 +108,7 @@ curl https://cppserver.com/files/apiserver/testdb.bak -O
 
 ## Step 9: Copy the backups to the data directory of the container
 ```
-cp *.bak sql/data
+sudo cp *.bak sql/data
 ```
 
 ## Step 10: Restore the backups
@@ -119,13 +119,24 @@ sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost \
    -U SA -P 'Basica2024' \
    -Q 'RESTORE DATABASE demodb FROM DISK="/var/opt/mssql/data/demodb.bak" WITH REPLACE, RECOVERY;'
 ```
-
+Expected output:
+```
+Processed 736 pages for database 'demodb', file 'demo' on file 1.
+Processed 2 pages for database 'demodb', file 'demo_log' on file 1.
+RESTORE DATABASE successfully processed 738 pages in 0.040 seconds (144.042 MB/sec).
+```
 ### testdb
 This is the security database that serves as an example of integration with a custom SQL-based security mechanism (users, roles, etc), of particular importance is the stored procedure `cpp_dblogin`, regardless of the security database structure, API-Server++ login module expects an SP with this name, parameters, and other conventions; the SP is fully documented inside.
 ```
 sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -No -S localhost \
    -U SA -P 'Basica2024' \
    -Q 'RESTORE DATABASE testdb FROM DISK="/var/opt/mssql/data/testdb.bak" WITH REPLACE, RECOVERY;'
+```
+Expected out
+```
+Processed 496 pages for database 'testdb', file 'testdb' on file 1.
+Processed 2 pages for database 'testdb', file 'testdb_log' on file 1.
+RESTORE DATABASE successfully processed 498 pages in 0.041 seconds (94.798 MB/sec).
 ```
 
 That's it, your SQL Server docker container is ready to use, when using Multipass on Windows 10/11, other VMs should be able to connect to it using the DNS name `demodb.mshome.net`, it is visible on the multipass subnet only, inside your Windows host.
@@ -182,13 +193,18 @@ go
 
 ### Removing the docker container
 ```
-sudo docker stop mssql
-sudo docker rm mssql
+sudo docker stop mssql && \
+sudo docker rm mssql && \
+sudo docker system prune
 ```
 
 ### Removing the Multipass VM
+From a Windows CMD shell:
+Stop and delete VM:
 ```
-multipass stop sqlserver
 multipass delete sqlserver
+```
+Clean disk space:
+```
 multipass purge
 ```
