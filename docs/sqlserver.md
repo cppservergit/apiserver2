@@ -102,9 +102,8 @@ Microsoft SQL Server 2019 (RTM-CU32-GDR) (KB5068404) - 15.0.4455.2 (X64)
 
 ## Step 8: Download API-Server demo database backups
 ```
-curl https://cppserver.com/files/apiserver/demodb.bak -O
+curl https://cppserver.com/files/apiserver/demodb.bak -O && \
 curl https://cppserver.com/files/apiserver/testdb.bak -O
-
 ```
 
 ## Step 9: Copy the backups to the data directory of the container
