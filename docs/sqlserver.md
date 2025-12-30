@@ -12,7 +12,10 @@ Log into the VM:
 multipass shell demodb
 ```
 
-__Reference__: [Install Multipass on your system](https://multipass.run/install)
+**Reference**: 
+<a href="https://multipass.run/install" target="_blank" rel="noopener noreferrer">
+Install Multipass on your system
+</a>
 
 ## Step 1: Install tree
 This software will let you see the full directory structure and verify that SQL Server filled it with its data/log files.
@@ -164,6 +167,7 @@ Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Bas
 ```
 
 Using encryption is possible with this ODBC driver, we disable it by default for development, troubleshooting encryption configuration between the client and the SQL Server is beyond the scope of this guide, please refer to the driver's documentation.
+
 * [Free TDS ODBC connection properties](https://www.freetds.org/userguide/freetdsconf.html) Look for table 3.3 at the end of the document.
 
 You may have noticed that we include the `APP` attribute on the connection string, this is useful to monitor APIServer2 connections on the server.
