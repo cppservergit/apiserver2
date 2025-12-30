@@ -5,7 +5,7 @@ Please log in to this VM and make sure you are in your home directory.
 
 When using multipass you can create the minimal VM (2 cores, 4GB RAM, 12GB disk space) with this command:
 ```
-multipass launch -n demodb -c 2 -m 4G -d 12G
+multipass launch -n demodb -c 2 -m 4G -d 10G
 ```
 Log into the VM:
 ```
