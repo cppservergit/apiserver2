@@ -109,9 +109,9 @@ curl https://cppserver.com/res/demodb.bak -O && \
 curl https://cppserver.com/res/testdb.bak -O
 ```
 
-## Step 9: Copy the backups to the data directory of the container
+## Step 9: Move the backups to the data directory of the container
 ```
-sudo cp *.bak sql/data
+sudo mv *.bak sql/data
 ```
 
 ## Step 10: Restore the backups
