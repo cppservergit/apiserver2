@@ -112,8 +112,7 @@ kubectl get pods -n ingress
 Expected output (names may vary):
 ```
 NAME                                      READY   STATUS    RESTARTS   AGE
-nginx-ingress-microk8s-controller-h458n   1/1     Running   3          10m
-nginx-ingress-microk8s-controller-jqns2   1/1     Running   2          10m
+nginx-ingress-microk8s-controller-4l548   1/1     Running   0          74s
 ```
 
 Test your Pods (several times):
