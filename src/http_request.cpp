@@ -1,5 +1,6 @@
 #include "http_request.hpp"
 #include "jwt.hpp"
+#include "logger.hpp"
 #include <utility>
 #include <format>
 #include <locale> 
@@ -374,6 +375,7 @@ auto request_parser::parse_and_store_method() -> bool {
             } else if (method_sv == "OPTIONS"sv) {
                 m_identifiedMethod = options;
             } else {
+                util::log::warn("Received request with unknown method: '{}'", method_sv);
                 m_identifiedMethod = unknown;
                 // Important: Return TRUE here. We found a method token, we know what it is (unknown).
                 // Returning true allows eof() to return true, which allows process_request() to call finalize(),

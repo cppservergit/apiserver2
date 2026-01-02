@@ -401,7 +401,7 @@ void server::io_worker::process_request(int fd) {
     connection_state& conn = it->second;
 
     if (auto res = conn.parser.finalize(); !res.has_value()) {
-        util::log::error("Failed to parse request on fd {}: {}", fd, res.error().what());
+        util::log::error("Failed to parse request on fd {} from IP {}: {}", fd, conn.remote_ip, res.error().what());
         http::response err_res;
         err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
         m_response_queue->push({fd, std::move(err_res)});
