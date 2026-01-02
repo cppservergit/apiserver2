@@ -173,23 +173,9 @@ You may not see any logs if there are not enough log records in the buffer, afte
 2025-12-22T12:40:47.049865971-04:00 [  INFO  ] [Thread: 126022385133248] [f1ed8d9e-df54-11f0-b26f-52540016bd16] Login OK for user 'mcordova': sessionId 15c204d1-ff4b-419d-a875-3bcae33362f6 - from 172.22.4.248
 ```
 
-Other variants of the `logs` command for the Ingress:
-```
-kubectl logs -n ingress -l name=nginx-ingress-microk8s --tail=1000
-kubectl logs -n ingress -l name=nginx-ingress-microk8s --since=1h
-# warnign: all logs!
-kubectl logs -n ingress -l name=nginx-ingress-microk8s --tail=-1 
-```
-
 Check APIServer2 resource usage (cpu, memory):
 ```
 kubectl top pods
-```
-
-Check all Pods resources usage:
-```
-kubectl top pod --all-namespaces \
-  --no-headers | awk '{print $2, $1, $3}' | sort -k3 -h | column -t
 ```
 
 ## Step 4: Testing all APIs
