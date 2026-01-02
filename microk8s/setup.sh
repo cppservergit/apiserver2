@@ -67,7 +67,7 @@ if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
 fi
 
 APISERVER2_VERSION=$(curl https://localhost/api/version -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq -r '.version')
-echo "APIServer2 version: $APISERVER2_VERSION"
+echo "[+] APIServer2 version: $APISERVER2_VERSION"
 
 echo "[+] Adding current user to microk8s group..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
