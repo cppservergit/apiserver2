@@ -56,6 +56,12 @@ if curl -sk --max-time 5 https://localhost/ >/dev/null; then
   echo "[✓] Ingress is serving HTTPS traffic at 443"
 fi
 
+# --- Verify connectivity on port 443 for APIServer2 ---
+echo "[+] Testing APIServer2 connectivity..."
+if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
+  echo "[✓] APIServer2 is ready to accept requests at port 443"
+fi
+
 echo "[+] Adding current user to microk8s group..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "[+] Setting up kubectl alias..."
