@@ -142,6 +142,19 @@ From a remote machine you can use the VM DNS name or its IP address to connect t
 curl https://mk8s.mshome.net/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 
+Invoke the `login` API to force a test of the connection to the database:
+```
+curl --json '{"username":"mcordova", "password":"basica"}' https://localhost/api/login -s -k | jq
+```
+Expected output (token will vary):
+```
+{
+  "displayname": "Martín Córdova",
+  "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NjczMjIyNDMiLCJpYXQiOiIxNzY3MzIxOTQzIiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6ImQ1MzYyNzk0LTI5NWEtNDQyNS1iMDUzLTA1YzgyZThhODhhNCIsInVzZXIiOiJtY29yZG92YSJ9.ewQIim-PBxwoG7sED4l0i1NuzBuMr5Uwg1D_oYifvW0",
+  "token_type": "bearer"
+}
+```
+
 Check the Ingress (load balancer) HTTP access logs:
 ```
 kubectl logs -n ingress -l name=nginx-ingress-microk8s
