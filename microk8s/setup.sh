@@ -57,6 +57,8 @@ if curl -sk --max-time 5 https://localhost/ >/dev/null; then
 fi
 
 # --- Verify connectivity on port 443 for APIServer2 ---
+echo "[+] Waiting for APIServer2 Pods to be Ready..."
+sudo microk8s kubectl rollout status deployment/apiserver-deployment --timeout=300s
 echo "[+] Testing APIServer2 connectivity..."
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo "[✓] APIServer2 is ready to accept requests at port 443"
