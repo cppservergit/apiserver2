@@ -41,8 +41,12 @@ echo "[+] Deploying APIserver2..."
 sudo microk8s kubectl apply -f deploy-apiserver.yaml
 
 # --- Wait for ingress controller pods to be Ready --- 
-echo "[+] Waiting for ingress controller pod - this may take a few minutes..." 
-sudo microk8s kubectl wait --namespace ingress --for=condition=Ready pod -l name=nginx-ingress-microk8s --timeout=420s 
+echo "[+] Waiting for ingress controller Pod - this may take a few minutes..." 
+sudo microk8s kubectl wait --namespace ingress \
+  --for=condition=Ready pod \
+  --selector=name=nginx-ingress-microk8s \
+  --field-selector=status.phase=Running \
+  --timeout=300s
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
