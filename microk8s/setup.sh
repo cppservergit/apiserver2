@@ -8,10 +8,12 @@ sudo microk8s enable metrics-server
 sudo microk8s enable registry
 sudo microk8s status --wait-ready
 
+echo "[+] Patching ingress controller to use host network..."
 sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
   --type='json' \
   -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
 
+echo "[+] Patching ingress controller to redirect HTTP to HTTPS..."
 sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
   --type merge -p '{"data":{"ssl-redirect":"true","force-ssl-redirect":"true"}}'
 
