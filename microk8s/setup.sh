@@ -62,9 +62,13 @@ if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo "[✓] APIServer2 is ready to accept requests at port 443"
 fi
 
+APISERVER2_VERSION=$(curl https://localhost/api/version -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq -r '.version')
+echo "APIServer2 version: $APISERVER2_VERSION"
+
 echo "[+] Adding current user to microk8s group..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "[+] Setting up kubectl alias..."
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 source ~/.bash_aliases
-echo "[✓] MicroK8s setup completed. Please log out and log back in for group changes an kubectl alias to take effect."
+echo "[✓] MicroK8s setup completed."
+echo -e "\033[31mPlease LOG OUT AND LOG BACK IN for group changes to take effect.\033[0m"
