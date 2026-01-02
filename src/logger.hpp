@@ -64,7 +64,7 @@ namespace detail {
             std::this_thread::get_id(),
             g_request_id.empty() ? "--------" : g_request_id
         );
-        std::osyncstream synced_out((level == Error || level == Critical) ? std::cerr : std::cout);
+        std::osyncstream synced_out((level == Error || level == Critical || level == Warning) ? std::cerr : std::cout);
         synced_out << log_prefix;
         synced_out << std::vformat(fmt, args);
         synced_out << '\n';
