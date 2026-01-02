@@ -15,9 +15,27 @@ sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingre
 sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
   --type merge -p '{"data":{"ssl-redirect":"true","force-ssl-redirect":"true"}}'
 
-echo "Retrieving APIserver2 deployment manifest..."
+echo "[+] Patching ingress controller to mount host /etc/localtime..."
+sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress --patch '
+spec:
+  template:
+    spec:
+      containers:
+      - name: nginx-ingress-microk8s
+        volumeMounts:
+        - mountPath: /etc/localtime
+          name: localtime
+          readOnly: true
+      volumes:
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+          type: File
+'
+
+echo "[+] Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/deploy-apiserver.yaml 
-echo "Deploying APIserver2..."
+echo "[+] Deploying APIserver2..."
 sudo microk8s kubectl apply -f deploy-apiserver.yaml
 
 # --- Wait for ingress controller pods to be Ready --- 
