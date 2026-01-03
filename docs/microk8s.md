@@ -1,6 +1,6 @@
 # Running APIServer2 with MicroK8s on Ubuntu 24.04
 
-In this tutorial you will use APIServer2 docker image straight from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress), scalabe up to 3 pods, using a very modest VM (4 cores, 4GB RAM), self-healing, with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs.
+In this tutorial you will use APIServer2 docker image straight from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress), scalable up to 3 pods using a very modest VM (4 cores, 4GB RAM), with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs, requires the same DemoDB SQL Server container as the bare-metal tutorial, assumes demodb.mshome.net as its default location, you can edit the APIServer2 YAML file to change the secrets and point to another database host. We recommend this deployment as the ideal way to use APIServer2 for OnPrem production, single-node or in high-availability (3+ VMs).
 
 ```mermaid
 flowchart TD
