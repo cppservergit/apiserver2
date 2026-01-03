@@ -1,6 +1,40 @@
 # Running APIServer2 with MicroK8s on Ubuntu 24.04
 
-In this tutorial you will use APIServer2 docker image straight from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress), this is equivalent to our LXD setup, but more dynamic in nature and more Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs.
+In this tutorial you will use APIServer2 docker image straight from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress), scalabe up to 3 pods, using a very modest VM (4 cores, 4GB RAM), self-healing, with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs.
+
+```mermaid
+flowchart TD
+    User((Internet Traffic))
+
+    subgraph UbuntuVM [Ubuntu 24.04 VM]
+        style UbuntuVM fill:#f9f9f9,stroke:#333,stroke-width:2px
+        
+        HostIP["Host Network Interface<br/>(Public IP)"]
+        style HostIP fill:#fff,stroke:#333
+        
+        subgraph MicroK8s [MicroK8s Cluster]
+            style MicroK8s fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,stroke-dasharray: 5 5
+            
+            Ingress["<b>Ingress Controller Pod</b><br/>(Bound to Host Ports 80/443)"]
+            style Ingress fill:#b3e5fc,stroke:#0277bd
+            
+            Service["<b>Service</b><br/>(ClusterIP / LoadBalancer)"]
+            style Service fill:#fff9c4,stroke:#fbc02d
+            
+            Pod1["<b>APIServer2</b><br/>Pod Replica 1"]
+            style Pod1 fill:#c8e6c9,stroke:#388e3c
+            
+            Pod2["<b>APIServer2</b><br/>Pod Replica 2"]
+            style Pod2 fill:#c8e6c9,stroke:#388e3c
+        end
+    end
+
+    User -->|HTTPS :443 / HTTP :80| HostIP
+    HostIP -->|Traffic Forwarding| Ingress
+    Ingress -->|Routing Rules| Service
+    Service -->|Load Balance| Pod1
+    Service -->|Load Balance| Pod2
+```
 
 ## Step 1: Create the VM
 You will need a clean Ubuntu 24.04 VM, assuming you are using Multipass on Windows 10/11, this is the minimal VM for this configuration:
