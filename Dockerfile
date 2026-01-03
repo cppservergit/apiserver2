@@ -51,7 +51,7 @@ ENV QUEUE_CAPACITY=500
 ENV CORS_ORIGINS="null,file://"
 ENV BLOB_PATH="/app/uploads"
 ENV JWT_TIMEOUT_SECONDS=300
-ENV REMOTE_API_URL="http://localhost:8080"
+ENV REMOTE_API_URL="https://cppserver.com"
 
 # 2. Security Sensitive Variables (Empty for injection via K8s Secrets)
 ENV DB1=""

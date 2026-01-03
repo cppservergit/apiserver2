@@ -27,7 +27,7 @@
 #include <cstdint>
 #include <chrono> // Added for timeouts
 
-inline constexpr auto g_version = "1.1.4";
+inline constexpr auto g_version = "1.1.5";
 
 using dispatch_task = std::function<void()>;
 

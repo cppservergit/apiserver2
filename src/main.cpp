@@ -39,7 +39,7 @@ public:
      * @brief Fetches customer information from the remote API.
      */
     static http_response get_customer_info(std::string_view customer_id) {
-        const std::string uri = "/customer";
+        const std::string uri = "/api/customer";
         const std::string token = login_and_get_token();
         const std::map<std::string, std::string, std::less<>> payload = {
             {"id", std::string(customer_id)}
@@ -75,7 +75,7 @@ private:
         util::log::debug("Logging into remote API at {}", get_url());
 
         // Reuse the thread-local client member
-        const http_response login_response = m_client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
+        const http_response login_response = m_client.post(get_url() + "/api/login", login_body, {{"Content-Type", "application/json"}});
 
         if (login_response.status_code != 200) {
             util::log::error("Remote API login failed with status {}: {}", login_response.status_code, login_response.body);
