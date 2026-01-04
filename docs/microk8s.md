@@ -189,6 +189,13 @@ Expected output (token will vary):
 }
 ```
 
+A 2-liner to test a secure API with database access:
+```
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "https://localhost/api/login" -k -s | jq -r '.id_token')
+curl "https://localhost/api/customer" -k -s --json '{"id":"ANATR"}' -H "Authorization: Bearer $TOKEN" | jq
+```
+You should see the JSON response of the `/api/customer` endpoint.
+
 Check the Ingress (load balancer) HTTP access logs:
 ```
 kubectl logs -n ingress -l name=nginx-ingress-microk8s
