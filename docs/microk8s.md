@@ -207,13 +207,17 @@ Expected output, something like this:
 ```
 APIServer2 Pods logs:
 ```
-kubectl logs -l app=apiserver2 --all-containers=true --timestamps=true
+kubectl logs -l app=apiserver2 -c=apiserver2 --timestamps=true
 ```
-You may not see any logs if there are not enough log records in the buffer, after some activity you will start seeing log records, like these:
+Expected output:
 ```
-2025-12-22T12:40:32.863063835-04:00 [  WARN  ] [Thread: 131130846078656] [eef5aba8-df54-11f0-82e4-52540016bd16] SQL connection error on 'LOGINDB' (SQLSTATE: HY000). Attempting reconnect. Error: ODBC Error on 'SQLExecute': [SQLState: HY000] [Native Error: 0] [FreeTDS][SQL Server]Unknown error
-2025-12-22T12:40:47.049865971-04:00 [  INFO  ] [Thread: 126022385133248] [f1ed8d9e-df54-11f0-b26f-52540016bd16] Login OK for user 'mcordova': sessionId 15c204d1-ff4b-419d-a875-3bcae33362f6 - from 172.22.4.248
+2026-01-04T21:13:16.474527564-04:00 [  INFO  ] [Thread: 140638524725888] [--------] Application starting...
+2026-01-04T21:13:16.478812677-04:00 [  INFO  ] [Thread: 140638524725888] [--------] CORS enabled for 2 origin(s).
+2026-01-04T21:13:16.478819076-04:00 [  INFO  ] [Thread: 140638524725888] [--------] APIServer2 version 1.1.5 starting on port 8080 with 1 I/O threads and 4 total worker threads.
+2026-01-04T21:13:16.478820876-04:00 [  INFO  ] [Thread: 140638524725888] [--------] Assigning 4 worker threads per I/O worker.
+2026-01-04T21:25:56.326279372-04:00 [  INFO  ] [Thread: 140638435669696] [7bc3e1aa-e9d5-11f0-869f-5254008ff37c] Login OK for user 'mcordova': sessionId 7c7f67f5-61f6-4795-bb23-9b1e2d0ec26c - from 172.25.65.150
 ```
+The command above consolidates the logs from all the APIServer2 Pods.
 
 Check APIServer2 resource usage (cpu, memory):
 ```
@@ -289,7 +293,7 @@ The YAML file includes at the end a section to configure horizontal scaling, to 
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: apiserver-hpa
+  name: apiserver2-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
