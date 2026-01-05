@@ -323,3 +323,53 @@ NAME            REFERENCE                         TARGETS       MINPODS   MAXPOD
 apiserver-hpa   Deployment/apiserver-deployment   cpu: 3%/80%   2         3         2          21
 ```
 If the CPU reaches the target 80% replicas will increase to 3, according to `maxReplicas` value. If you were using MicroK8s in a multi-node cluster (multiple VMs) the Pod may be created on any node, depending on the resources available.
+
+## Checking the state of the whole MicroK8s cluster
+```
+kubectl get all --all-namespaces
+```
+Expected output:
+```
+NAMESPACE            NAME                                           READY   STATUS    RESTARTS   AGE
+container-registry   pod/registry-579865c76c-gsx8z                  1/1     Running   0          9h
+default              pod/apiserver2-7476ff954c-56bzh                1/1     Running   0          6h39m
+default              pod/apiserver2-7476ff954c-qkj4t                1/1     Running   0          6h39m
+ingress              pod/nginx-ingress-microk8s-controller-8vtr5    1/1     Running   0          9h
+kube-system          pod/calico-kube-controllers-5947598c79-gw9nh   1/1     Running   0          9h
+kube-system          pod/calico-node-gxj7p                          1/1     Running   0          9h
+kube-system          pod/coredns-79b94494c7-lnx9g                   1/1     Running   0          9h
+kube-system          pod/hostpath-provisioner-c778b7559-cjwbp       1/1     Running   0          9h
+kube-system          pod/metrics-server-7dbd8b5cc9-wxvtf            1/1     Running   0          9h
+
+NAMESPACE            NAME                         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                  AGE
+container-registry   service/registry             NodePort    10.152.183.231   <none>        5000:32000/TCP           9h
+default              service/apiserver2-service   ClusterIP   10.152.183.92    <none>        8080/TCP                 9h
+default              service/kubernetes           ClusterIP   10.152.183.1     <none>        443/TCP                  9h
+kube-system          service/kube-dns             ClusterIP   10.152.183.10    <none>        53/UDP,53/TCP,9153/TCP   9h
+kube-system          service/metrics-server       ClusterIP   10.152.183.230   <none>        443/TCP                  9h
+
+NAMESPACE     NAME                                               DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+ingress       daemonset.apps/nginx-ingress-microk8s-controller   1         1         1       1            1           <none>                   9h
+kube-system   daemonset.apps/calico-node                         1         1         1       1            1           kubernetes.io/os=linux   9h
+
+NAMESPACE            NAME                                      READY   UP-TO-DATE   AVAILABLE   AGE
+container-registry   deployment.apps/registry                  1/1     1            1           9h
+default              deployment.apps/apiserver2                2/2     2            2           9h
+kube-system          deployment.apps/calico-kube-controllers   1/1     1            1           9h
+kube-system          deployment.apps/coredns                   1/1     1            1           9h
+kube-system          deployment.apps/hostpath-provisioner      1/1     1            1           9h
+kube-system          deployment.apps/metrics-server            1/1     1            1           9h
+
+NAMESPACE            NAME                                                 DESIRED   CURRENT   READY   AGE
+container-registry   replicaset.apps/registry-579865c76c                  1         1         1       9h
+default              replicaset.apps/apiserver2-5dcd6864ff                0         0         0       9h
+default              replicaset.apps/apiserver2-7476ff954c                2         2         2       6h39m
+default              replicaset.apps/apiserver2-779f796c5                 0         0         0       7h30m
+kube-system          replicaset.apps/calico-kube-controllers-5947598c79   1         1         1       9h
+kube-system          replicaset.apps/coredns-79b94494c7                   1         1         1       9h
+kube-system          replicaset.apps/hostpath-provisioner-c778b7559       1         1         1       9h
+kube-system          replicaset.apps/metrics-server-7dbd8b5cc9            1         1         1       9h
+
+NAMESPACE   NAME                                                 REFERENCE               TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+default     horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          9h
+```
