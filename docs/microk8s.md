@@ -265,7 +265,7 @@ That's it, welcome to Kubernetes and high-performance light C++ containers, the 
 
 If you want to reconfigure APIServer you change the YAML file, then run:
 ```
-kubectl apply -f deploy-apiserver.yaml
+kubectl apply -f apiserver2.yaml
 ```
 But that is not enough, to restart the container and read the new values from the environment you must restart-rollout the Pods:
 ```
@@ -273,7 +273,7 @@ kubectl rollout restart deployment
 ```
 Expected output:
 ```
-deployment.apps/apiserver-deployment restarted
+deployment.apps/apiserver2 restarted
 ```
 After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keeps running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running since a few seconds ago:
 ```
@@ -282,8 +282,8 @@ kubectl get pods
 Expected output:
 ```
 NAME                                    READY   STATUS    RESTARTS   AGE
-apiserver-deployment-6678566c86-52t9q   1/1     Running   0          9s
-apiserver-deployment-6678566c86-wzvhp   1/1     Running   0          12s
+apiserver2-6678566c86-52t9q   1/1     Running   0          9s
+apiserver2-6678566c86-wzvhp   1/1     Running   0          12s
 ```
 
 ## Auto-scaling APIServer
@@ -298,7 +298,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: apiserver-deployment
+    name: apiserver2
   
   minReplicas: 2
   maxReplicas: 3
@@ -320,7 +320,7 @@ kubectl get hpa
 Expected output:
 ```
 NAME            REFERENCE                         TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
-apiserver-hpa   Deployment/apiserver-deployment   cpu: 3%/80%   2         3         2          21
+apiserver-hpa   Deployment/apiserver2             cpu: 3%/80%   2         3         2          21
 ```
 If the CPU reaches the target 80% replicas will increase to 3, according to `maxReplicas` value. If you were using MicroK8s in a multi-node cluster (multiple VMs) the Pod may be created on any node, depending on the resources available.
 
