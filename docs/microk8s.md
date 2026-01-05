@@ -68,10 +68,10 @@ daemon set "nginx-ingress-microk8s-controller" successfully rolled out
 [+] Testing HTTPS connectivity...
 [✓] Ingress is serving HTTPS traffic at 443
 [+] Waiting for APIServer2 Pods to be Ready...
-deployment "apiserver-deployment" successfully rolled out
+deployment "apiserver2" successfully rolled out
 [+] Testing APIServer2 connectivity...
 [✓] APIServer2 is ready to accept requests at port 443
-[+] APIServer2 version: 1.1.4
+[+] APIServer2 version: 1.1.5
 [+] Adding current user to microk8s group...
 [+] Setting up kubectl alias...
 [✓] MicroK8s setup completed.
@@ -136,8 +136,8 @@ kubectl get pods -o wide
 Expected output:
 ```
 NAME                                    READY   STATUS    RESTARTS   AGE     IP             NODE   NOMINATED NODE   READINESS GATES
-apiserver-deployment-784bcb5449-6cs97   1/1     Running   0          5m12s   10.1.215.200   mk8s   <none>           <none>
-apiserver-deployment-784bcb5449-mmctd   1/1     Running   0          5m12s   10.1.215.201   mk8s   <none>           <none>
+apiserver2-784bcb5449-6cs97   1/1     Running   0          5m12s   10.1.215.200   mk8s   <none>           <none>
+apiserver2-784bcb5449-mmctd   1/1     Running   0          5m12s   10.1.215.201   mk8s   <none>           <none>
 ```
 
 Check the Ingress pods (load balancer):
@@ -157,17 +157,17 @@ curl https://localhost/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-525
 Expected output:
 ```
 {
-  "pod_name": "apiserver-deployment-784bcb5449-dsl9c",
-  "start_time": "2025-12-22T04:21:34",
-  "total_requests": 721,
-  "average_processing_time_seconds": 0.004351,
+  "pod_name": "apiserver2-5dcd6864ff-xnvs7",
+  "start_time": "2026-01-04T21:13:16",
+  "total_requests": 0,
+  "average_processing_time_seconds": 0.000000,
   "current_connections": 1,
   "current_active_threads": 0,
   "pending_tasks": 0,
-  "thread_pool_size": 24,
-  "total_ram_kb": 4008592,
-  "memory_usage_kb": 28288,
-  "memory_usage_percentage": 0.71
+  "thread_pool_size": 4,
+  "total_ram_kb": 4008584,
+  "memory_usage_kb": 13052,
+  "memory_usage_percentage": 0.33
 }
 ```
 If you execute several times the command above you will see a different Pod responding.
