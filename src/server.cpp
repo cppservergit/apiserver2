@@ -457,6 +457,14 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         res.set_body(ok, m_metrics->to_json());
         return true;
     }
+    if (req.get_path() == "/metricsp") {
+        if (!check_api_key("/metricsp")) {
+            res.set_body(bad_request, R"({"error":"Bad Request"})");
+            return true;
+        }
+        res.set_body(ok, m_metrics->to_prometheus(), "text/plain");
+        return true;
+    }    
     if (req.get_path() == "/ping") {
         res.set_body(ok, R"({"status":"OK"})");
         return true;
