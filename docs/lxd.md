@@ -97,7 +97,7 @@ We are using plain http with HAProxy on port 80, but it is easy to configure HTT
 
 Open a terminal on the same VM an execute several times to hit the different containers:
 ```
-curl localhost:8080/version -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl localhost/version -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 ```
 curl localhost/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
