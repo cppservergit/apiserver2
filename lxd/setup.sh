@@ -8,7 +8,7 @@
 sudo apt update && sudo apt upgrade -y
 
 # download APIServer2
-curl https://cppserver.com/files/apiserver/v2/apiserver -O && chmod +x apiserver
+curl https://cppserver.com/res/apiserver -O && chmod +x apiserver
 
 # setup central upload directory
 sudo mkdir -p /srv/uploads
