@@ -2,31 +2,24 @@
 
 APIServer2 was designed to be run behind a load balancer that serves the HTTPS traffic to the clients, APIServer2 only supports plain HTTP 1.1 keep-alive, the most simple and recommended setup is in a single VM using HAProxy as the load balancer and LXD native Linux containers, this is for high-performance and low management complexity. It can also be run as a container in Docker, Kubernetes or any container service on the Cloud.
 
-```
-+------------------------------------------------------------------+
-|                          Ubuntu 24.04 VM                         |
-|                                                                  |
-|   Incoming HTTP Request                                          |
-|          |                                                       |
-|          v                                                       |
-|   +--------------+                                               |
-|   |   HAProxy    |                                               |
-|   +------+-------+                                               |
-|          |                                                       |
-|          +------------[ Load balances HTTP traffic to ]-----------+
-|          |                                                       |
-|    +-----+--------------------+                                  |
-|    |                          |                                  |
-|    v                          v                                  |
-| +---------------------+    +---------------------+               |
-| |   LXD Container 1   |    |   LXD Container 2   |               |
-| |       (node1)       |    |       (node2)       |               |
-| |    [APIServer2]     |    |    [APIServer2]     |               |
-| +---------------------+    +---------------------+               |
-|                                                                  |
-+------------------------------------------------------------------+
-```
+```mermaid
+graph TD
+    subgraph VM [Ubuntu 24.04 VM]
+        direction TB
+        Input(Incoming HTTP Request)
+        
+        Input --> HA[HAProxy]
+        
+        HA -- Load balances HTTP traffic --> C1[LXD Container 1<br/>node1<br/>APIServer2]
+        HA -- Load balances HTTP traffic --> C2[LXD Container 2<br/>node2<br/>APIServer2]
+    end
 
+    %% Optional styling for better visualization
+    style VM fill:#f5f5f5,stroke:#333,stroke-width:2px
+    style HA fill:#d4e1f5,stroke:#333
+    style C1 fill:#e1f5d4,stroke:#333
+    style C2 fill:#e1f5d4,stroke:#333
+```
 We provide an installation script `setup.sh` that runs on a clean Ubuntu 24.04 VM and installs and configures all the required software, including HAProxy, LXD, two containers running APIServer as a SystemD service, even the DNS configuration to provide name resolution for LXD containers is performed by this script. It will install a pre-compiled APIServer2 binary with all the examples shown above. You can edit `test.sh` to provide your own configuration for database connections, secrets, etc.
 
 If you are using Multipass we suggest creating a VM like this:
