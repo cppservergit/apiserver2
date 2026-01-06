@@ -1053,8 +1053,6 @@ You are invited to follow our step-by-step tutorial on deploying APIServer2 on M
 
 [APIServer2 running on MicroK8s](https://github.com/cppservergit/apiserver2/blob/main/docs/microk8s.md)
 
-It is a quick start, it takes less than 20 minutes to deploy and test.
-
 ## Linux native deployment
 
 If you prefer a native Linux solution that fits a single VM with low resources, consider LXD containers, we provide a complete tutorial to setup in minutes a single VM with HAProxy as the Load Balancer and 2 LXD containers running APIServer2 as a Linux SystemD service.
