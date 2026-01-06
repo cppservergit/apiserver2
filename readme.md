@@ -1,61 +1,105 @@
 # **APIServer2**
 
 APIServer2 is a high-performance, multi-reactor EPOLL based web server written in modern C++23. It is engineered from the ground up to handle massive concurrent loads with low latency, making it an ideal foundation for scalable and robust backend services. The architecture prioritizes performance and stability through a clean separation of I/O and business logic. This is the 2nd generation of APIServer, hence the name. It was written 100% with AI.
+```mermaid
+graph TD
+    Client(Client Connections) --> Kernel
 
-```
-                             Client Connections
-                                        │
-                                        ▼
-                       ┌───────────────────────────────────┐
-                       │   Linux Kernel (SO_REUSEPORT)     │
-                       │ Load balances new connections...  │
-                       └───────────────────────────────────┘
-                                │               │
-              ┌─────────────────┴───────────────┴─────────────────┐
-              │                                                   │
-              ▼                                                   ▼
-┌───────────────────────────┐                       ┌───────────────────────────┐
-│   I/O Thread 1 (Reactor)  │                       │   I/O Thread N (Reactor)  │
-│ ┌───────────────────────┐ │                       │ ┌───────────────────────┐ │
-│ │ Listening Socket (FD) │ │                       │ │ Listening Socket (FD) │ │
-│ └───────────────────────┘ │                       │ └───────────────────────┘ │
-│ ┌───────────────────────┐ │                       │ ┌───────────────────────┐ │
-│ │  epoll_wait() loop    │ │                       │ │  epoll_wait() loop    │ │
-│ │ (Accepts & Reads)     │ │                       │ │ (Accepts & Reads)     │ │
-│ └───────────────────────┘ │                       │ └───────────────────────┘ │
-│             │             │                       │             │             │
-│             ▼             │                       │             ▼             │
-│ `dispatch_to_worker()`    │                       │ `dispatch_to_worker()`    │
-│ (Round-Robin Dispatch)    │                       │ (Round-Robin Dispatch)    │
-│   │       │       │       │                       │   │       │       │       │
-└─┬─│───────│───────│───────┘                       └─┬─│───────│───────│───────┘
-  │ │       │       │                                 │ │       │       │
-  ▼ │       ▼       ▼                                 ▼ │       ▼       ▼
-┌───┴───┐ ┌───┴───┐ ┌───┴───┐                       ┌───┴───┐ ┌───┴───┐ ┌───┴───┐
-│ Task  │ │ Task  │ │ Task  │ ...                   │ Task  │ │ Task  │ │ Task  │
-│ Queue │ │ Queue │ │ Queue │                       │ Queue │ │ Queue │ │ Queue │
-└───┬───┘ └───┬───┘ └───┬───┘                       └───┬───┘ └───┬───┘ └───┬───┘
-    │         │         │                               │         │         │
-    ▼         ▼         ▼                               ▼         ▼         ▼
-┌─────────┐ ┌─────────┐ ┌─────────┐                 ┌─────────┐ ┌─────────┐ ┌─────────┐
-│ Worker  │ │ Worker  │ │ Worker  │ ...             │ Worker  │ │ Worker  │ │ Worker  │
-│ Thread 1│ │ Thread 2│ │ Thread M│                 │ Thread 1│ │ Thread 2│ │ Thread M│
-└─────────┘ └─────────┘ └─────────┘                 └─────────┘ └─────────┘ └─────────┘
-    │         │         │                               │         │         │
-    └─────────┼─────────┘                               └─────────┼─────────┘
-              │                                                   │
-              ▼                                                   ▼
-    ┌───────────────────┐                             ┌───────────────────┐
-    │  Response Queue   │                             │  Response Queue   │
-    │ (MPSC)            │                             │ (MPSC)            │
-    └───────────────────┘                             └───────────────────┘
-              ▲                                                   ▲
-              │                                                   │
-┌─────────────┴─────────────┐                       ┌─────────────┴─────────────┐
-│ I/O Thread 1 (Reactor)    │                       │ I/O Thread N (Reactor)    │
-│ (Processes response queue │                       │ (Processes response queue │
-│  and writes to socket)    │                       │  and writes to socket)    │
-└───────────────────────────┘                       └───────────────────────────┘
+    subgraph OS [Kernel Space]
+        style OS fill:#e1edfa,stroke:#333,stroke-dasharray: 5 5
+        Kernel[Linux Kernel<br/>SO_REUSEPORT<br/>Load balances new connections]
+        style Kernel fill:#333,color:#fff
+    end
+
+    %% Connection to Reactor 1 Lane
+    Kernel -->|Connection| R1_Top
+
+    %% Connection to Reactor N Lane
+    Kernel -->|Connection| RN_Top
+
+    %% ==========================================
+    %% PROCESSING LANE 1
+    %% ==========================================
+    subgraph Lane1 [Processing Lane 1]
+        direction TB
+        style Lane1 fill:#f9f9f9,stroke:#333
+
+        R1_Top[I/O Thread 1 Reactor<br/>Listening Socket FD<br/>epoll_wait loop]
+        style R1_Top fill:#d5e8d4,stroke:#82b366
+
+        R1_Dispatch[dispatch_to_worker<br/>Round-Robin Dispatch]
+        
+        R1_Top --> R1_Dispatch
+
+        %% Queues and Workers
+        subgraph R1_Pool [Worker Pool]
+            style R1_Pool fill:#fff,stroke:#ccc
+            
+            R1_Q1[Task Queue] --> R1_W1[Worker Thread 1]
+            R1_Q2[Task Queue] --> R1_W2[Worker Thread 2]
+            R1_QM[Task Queue] --> R1_WM[Worker Thread M]
+        end
+
+        R1_Dispatch --> R1_Q1
+        R1_Dispatch --> R1_Q2
+        R1_Dispatch --> R1_QM
+
+        %% Response Queue aggregation
+        R1_RespQ[Response Queue<br/>MPSC]
+        style R1_RespQ fill:#ffe6cc,stroke:#d79b00
+
+        R1_W1 --> R1_RespQ
+        R1_W2 --> R1_RespQ
+        R1_WM --> R1_RespQ
+
+        %% Back to IO Thread for writing
+        R1_Bot[I/O Thread 1 Reactor<br/>Processes response queue<br/>Writes to socket]
+        style R1_Bot fill:#d5e8d4,stroke:#82b366
+
+        R1_RespQ --> R1_Bot
+    end
+
+    %% ==========================================
+    %% PROCESSING LANE N
+    %% ==========================================
+    subgraph LaneN [Processing Lane N]
+        direction TB
+        style LaneN fill:#f9f9f9,stroke:#333
+
+        RN_Top[I/O Thread N Reactor<br/>Listening Socket FD<br/>epoll_wait loop]
+        style RN_Top fill:#d5e8d4,stroke:#82b366
+
+        RN_Dispatch[dispatch_to_worker<br/>Round-Robin Dispatch]
+        
+        RN_Top --> RN_Dispatch
+
+        %% Queues and Workers
+        subgraph RN_Pool [Worker Pool]
+            style RN_Pool fill:#fff,stroke:#ccc
+            
+            RN_Q1[Task Queue] --> RN_W1[Worker Thread 1]
+            RN_Q2[Task Queue] --> RN_W2[Worker Thread 2]
+            RN_QM[Task Queue] --> RN_WM[Worker Thread M]
+        end
+
+        RN_Dispatch --> RN_Q1
+        RN_Dispatch --> RN_Q2
+        RN_Dispatch --> RN_QM
+
+        %% Response Queue aggregation
+        RN_RespQ[Response Queue<br/>MPSC]
+        style RN_RespQ fill:#ffe6cc,stroke:#d79b00
+
+        RN_W1 --> RN_RespQ
+        RN_W2 --> RN_RespQ
+        RN_WM --> RN_RespQ
+
+        %% Back to IO Thread for writing
+        RN_Bot[I/O Thread N Reactor<br/>Processes response queue<br/>Writes to socket]
+        style RN_Bot fill:#d5e8d4,stroke:#82b366
+
+        RN_RespQ --> RN_Bot
+    end
 ```
 
 ## **Core Features**
