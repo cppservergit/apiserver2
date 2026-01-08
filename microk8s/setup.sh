@@ -1,3 +1,5 @@
+sudo mkdir -p /mnt/apiserver-data
+sudo chown 1000:1000 /mnt/apiserver-data
 sudo apt update && sudo apt upgrade -y
 sudo apt install uuid -y
 sudo snap install microk8s --classic
@@ -60,11 +62,12 @@ fi
 echo "[+] Waiting for APIServer2 Pods to be Ready..."
 sudo microk8s kubectl rollout status deployment/apiserver2 --timeout=300s
 echo "[+] Testing APIServer2 connectivity..."
+sleep 1s
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo "[✓] APIServer2 is ready to accept requests at port 443"
 fi
 
-APISERVER2_VERSION=$(curl https://localhost/api/version -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq -r '.version')
+APISERVER2_VERSION=$(curl https://localhost/api/version -sk -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq -r '.version')
 echo "[+] APIServer2 version: $APISERVER2_VERSION"
 
 echo "[+] Adding current user to microk8s group..."
@@ -73,4 +76,4 @@ echo "[+] Setting up kubectl alias..."
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 source ~/.bash_aliases
 echo "[✓] MicroK8s setup completed."
-echo -e "\033[31mPlease LOG OUT AND LOG BACK IN for group changes to take effect.\033[0m"
+echo -e "\033[33mPlease LOG OUT AND LOG BACK IN for group changes to take effect.\033[0m"

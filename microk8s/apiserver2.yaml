@@ -16,13 +16,31 @@ stringData:
 
 ---
 # ==============================================================================
-# 2. STORAGE (PVC)
+# 2. STORAGE (Universal PV + PVC)
+# Creates a bridge between K8s and the Host OS path /mnt/apiserver-data
 # ==============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: apiserver2-pv
+  labels:
+    type: universal-storage
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/apiserver-data"   # The single standardized path on the host
+
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: apiserver2-pvc
 spec:
+  storageClassName: manual        # Binds explicitly to the PV above
   accessModes:
     - ReadWriteOnce
   resources:
