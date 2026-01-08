@@ -180,9 +180,9 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 ## **Test the server**
 
-Run the server with `./run.sh` and then from another terminal session execute this:
+Run the server with `./run.sh` and then from another terminal session execute this (change the URL to your server):
 ```
-curl cpp14.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl HOSTNAME.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 The output will be something like this:
 ```
