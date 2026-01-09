@@ -76,4 +76,5 @@ echo "[+] Setting up kubectl alias..."
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 source ~/.bash_aliases
 echo "[✓] MicroK8s setup completed."
-echo -e "\033[33mPlease LOG OUT AND LOG BACK IN for group changes to take effect.\033[0m"
+echo ""
+echo -e "\033[5;33m →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←\033[0m"
