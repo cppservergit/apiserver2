@@ -252,7 +252,7 @@ export JWT_TIMEOUT_SECONDS=300
 export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
 
 # remote api configuration
-export REMOTE_API_URL="http://localhost:8080"
+export REMOTE_API_URL="https://cppserver.com"
 export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
 
