@@ -355,3 +355,14 @@ kube-system          replicaset.apps/metrics-server-7dbd8b5cc9            1     
 NAMESPACE   NAME                                                 REFERENCE               TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
 default     horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          9h
 ```
+
+## Additional notes about this installation script
+
+This installation script goes an extra-mile to save you manual configuration:
+
+* Configures redirect from HTTP to HTTPS, this must be enabled in the Ingress ConfigMap and then configured in the APIServer2 ingress as a rule.
+* Sets the timezone for the Ingress logs to the timezone of the host machine, the timezone for APIServer2 can be set in apiserver2.yaml, it is an environment variable `TZ`.
+* It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or S3, without changing `apiserver2.yaml` or APIServer2 code.
+* It does install only the minimal set of MicroK8s add-ons: host-storage, ingress and metrics-server.
+* You can enable add-ons for tasks like automating observability using Grafana Stack, but keep in mind of the extra CPU load these add-ons may demand. APIServer2 exposes the endpoints `/metrics` for JSON consumers and `/metricsp` for Prometheus, you can recollect metrics via HTTPS using an API-Key (configured as a secret in apiserver2.yaml) without installing an additional module in the MicroK8s cluster.
+
