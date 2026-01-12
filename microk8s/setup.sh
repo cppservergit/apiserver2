@@ -1,19 +1,27 @@
+clear
+echo "---------------------------------------------------------------------------------"
+echo "This script will install MicroK8s and deploy APIServer2 on your system."
+echo "It may take between 5 and 10 minutes depending on your system and bandwidth."
+echo "---------------------------------------------------------------------------------"
 sudo mkdir -p /mnt/apiserver-data
 sudo chown 1000:1000 /mnt/apiserver-data
-sudo apt update && sudo apt upgrade -y
-sudo apt install uuid -y
-sudo snap install microk8s --classic
-sudo microk8s status --wait-ready
-sudo microk8s enable hostpath-storage
-sudo microk8s enable ingress
-sudo microk8s enable metrics-server
-sudo microk8s enable registry
-sudo microk8s status --wait-ready
-
-echo "[+] Patching ingress controller to use host network..."
-sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress \
-  --type='json' \
-  -p='[{"op": "add", "path": "/spec/template/spec/hostNetwork", "value": true}, {"op": "add", "path": "/spec/template/spec/dnsPolicy", "value": "ClusterFirstWithHostNet"}]'
+echo "[+] Updating the operating system, please wait..."
+sudo apt-get -qq update >/dev/null 
+sudo apt-get -qq upgrade -y >/dev/null
+echo "[+] Installing MicroK8s via snap..."
+sudo snap install microk8s --classic >/dev/null
+echo "[+] Waiting for MicroK8s to be ready..."
+sudo microk8s status --wait-ready >/dev/null
+echo "[✓] MicroK8s is ready."
+sudo microk8s kubectl version
+echo "[+] Installing add-ons: hostpath-storage"
+sudo microk8s enable hostpath-storage >/dev/null
+echo "[+] Installing add-ons: ingress"
+sudo microk8s enable ingress >/dev/null
+echo "[+] Installing add-ons: metrics-server"
+sudo microk8s enable metrics-server >/dev/null
+sudo microk8s status --wait-ready >/dev/null
+echo "[+] MicroK8s base system installed."
 
 echo "[+] Patching ingress controller to redirect HTTP to HTTPS..."
 sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
@@ -37,14 +45,10 @@ spec:
           type: File
 '
 
-echo "[+] Retrieving APIserver2 deployment manifest..."
-curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml 
-echo "[+] Deploying APIserver2..."
-sudo microk8s kubectl apply -f apiserver2.yaml
-
 # --- Wait for ingress controller pods to be Ready --- 
-echo "[+] Waiting for the ingress controller pod to be ready - this may take a few seconds..." 
-sudo microk8s kubectl rollout status daemonset/nginx-ingress-microk8s-controller -n ingress --timeout=120s
+echo "[+] Waiting for the ingress controller pod to be ready - this may take 1-2 minutes..." 
+sudo microk8s kubectl rollout status daemonset/nginx-ingress-microk8s-controller -n ingress --timeout=120s >/dev/null
+echo "[✓] Ingress deployed."
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
@@ -58,23 +62,33 @@ if curl -sk --max-time 5 https://localhost/ >/dev/null; then
   echo "[✓] Ingress is serving HTTPS traffic at 443"
 fi
 
+# --- Deploy APIServer2 container ---
+echo "[+] Retrieving APIserver2 deployment manifest..."
+curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml 
+echo "[+] Deploying APIserver2..."
+sudo microk8s kubectl apply -f apiserver2.yaml
+
 # --- Verify connectivity on port 443 for APIServer2 ---
 echo "[+] Waiting for APIServer2 Pods to be Ready..."
-sudo microk8s kubectl rollout status deployment/apiserver2 --timeout=300s
+sudo microk8s kubectl rollout status deployment/apiserver2 --timeout=300s >/dev/null
+echo "[✓] APIServer2 deployment is ready."
 echo "[+] Testing APIServer2 connectivity..."
-sleep 1s
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo "[✓] APIServer2 is ready to accept requests at port 443"
 fi
-
+sleep 1s # avoid ocassional failure
 APISERVER2_VERSION=$(curl https://localhost/api/version -sk -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq -r '.version')
 echo "[+] APIServer2 version: $APISERVER2_VERSION"
+
+echo "[+] Waiting for all the Kubernetes pods to be ready..."
+sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
+echo "[✓] Pods are ready."
 
 echo "[+] Adding current user to microk8s group..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "[+] Setting up kubectl alias..."
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 source ~/.bash_aliases
-echo "[✓] MicroK8s setup completed."
+echo "[✓] MicroK8s/APIServer2 setup completed."
 echo ""
 echo -e "\033[5;33m →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←\033[0m"
