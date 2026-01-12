@@ -134,7 +134,7 @@ nginx-ingress-microk8s-controller-4l548   1/1     Running   0          74s
 
 Test APIServer2 diagnostics API, do it several times to see the different Pods responding:
 ```
-curl https://localhost/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl https://localhost/api/metrics -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 Expected output:
 ```
@@ -155,12 +155,12 @@ Expected output:
 If you execute several times the command above you will see a different Pod responding.
 From a remote machine you can use the VM DNS name or its IP address to connect to the API:
 ```
-curl https://mk8s.mshome.net/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl https://mk8s.mshome.net/api/metrics -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 
 Get APIServer2 version:
 ```
-curl https://localhost/api/version -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl https://localhost/api/version -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 Expected output:
 ```
@@ -171,7 +171,7 @@ Expected output:
 
 Invoke the `login` API to force a test of the connection to the database:
 ```
-curl --json '{"username":"mcordova", "password":"basica"}' https://localhost/api/login -s -k | jq
+curl --json '{"username":"mcordova", "password":"basica"}' https://localhost/api/login -ks | jq
 ```
 Expected output (token will vary):
 ```
@@ -184,8 +184,8 @@ Expected output (token will vary):
 
 A 2-liner to test a secure API with database access:
 ```
-TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "https://localhost/api/login" -k -s | jq -r '.id_token')
-curl "https://localhost/api/customer" -k -s --json '{"id":"ANATR"}' -H "Authorization: Bearer $TOKEN" | jq
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "https://localhost/api/login" -ks | jq -r '.id_token')
+curl "https://localhost/api/customer" -ks --json '{"id":"ANATR"}' -H "Authorization: Bearer $TOKEN" | jq
 ```
 You should see the JSON response of the `/api/customer` endpoint.
 
