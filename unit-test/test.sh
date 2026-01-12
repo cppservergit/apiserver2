@@ -25,15 +25,8 @@ function show_result {
   [[ "$status" != "200" ]] && echo -e "${body}\n"
 }
 
-# Check if uuid command exists 
-if ! command -v uuid >/dev/null 2>&1; then 
-   echo "uuid command not found, installing uuid..." 
-   sudo apt update && sudo apt install -y uuid
-fi
-
-CURL_UUID="$(echo -n $(uuid))"
 login_response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-  -H "X-Request-ID: $CURL_UUID" -d "$LOGIN_PAYLOAD" "${BASE_URL}${API_PREFIX}/login")
+  -d "$LOGIN_PAYLOAD" "${BASE_URL}${API_PREFIX}/login")
 
 login_body="${login_response::-3}"
 login_status="${login_response: -3}"
@@ -72,7 +65,6 @@ endpoints=(
 for entry in "${endpoints[@]}"; do
   IFS=' ' read -r method uri rest <<< "$entry"
   payload=""
-  CURL_UUID="$(echo -n $(uuid))"
 
   # Initialize an array for extra curl headers
   extra_headers=()
@@ -86,12 +78,11 @@ for entry in "${endpoints[@]}"; do
     payload="$rest"
     # We expand "${extra_headers[@]}" here to inject the header if it exists
     response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $CURL_UUID" \
+      -H "Authorization: Bearer $TOKEN" \
       "${extra_headers[@]}" \
       -d "$payload" "${BASE_URL}${uri}")
   else
     response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
-      -H "X-Request-ID: $CURL_UUID" \
       "${extra_headers[@]}" \
       "${BASE_URL}${uri}")
   fi

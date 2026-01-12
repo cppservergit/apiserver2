@@ -1,6 +1,6 @@
 # Running APIServer2 with MicroK8s on Ubuntu 24.04
 
-In this tutorial you will use APIServer2 docker image from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress) set up to use the host’s public IP, so it listens directly on that address and handles HTTPS traffic without requiring an additional load balancer or proxy. This setup is scalable up to 3 pods using a very modest VM (4 cores, 4GB RAM), with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs, requires the same [DemoDB SQL Server container](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md) as the bare-metal tutorial, it assumes demodb.mshome.net as its default location, you can edit the APIServer2 YAML file to change the secrets and point to another database host. We recommend MicroK8s as the ideal way to use APIServer2 for OnPrem production, single-node or in high-availability (3+ VMs), depending on your resource availability.
+In this tutorial you will use APIServer2 docker image from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress) that will listen on ports 80/443 of the host’s public IP. This setup is scalable up to 3 pods using a very modest VM (4 cores, 4GB RAM), with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs, requires the same [DemoDB SQL Server container](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md) as the bare-metal tutorial, it assumes demodb.mshome.net as its default location, you can edit the APIServer2 YAML file to change the secrets and point to another database host. We recommend MicroK8s as the ideal way to use APIServer2 for OnPrem production, single-node or in high-availability (3+ VMs), depending on your resources.
 
 ```mermaid
 flowchart TD
@@ -58,76 +58,58 @@ This script updates de operating system, installs MicroK8s and the required exte
 
 When the script ends you will see these messages at the end of the output:
 ```
-[+] Waiting for the ingress controller pod to be ready - this may take a few seconds...
-Waiting for daemon set "nginx-ingress-microk8s-controller" rollout to finish: 0 out of 1 new pods have been updated...
-Waiting for daemon set "nginx-ingress-microk8s-controller" rollout to finish: 0 out of 1 new pods have been updated...
-Waiting for daemon set "nginx-ingress-microk8s-controller" rollout to finish: 0 of 1 updated pods are available...
-daemon set "nginx-ingress-microk8s-controller" successfully rolled out
+[+] Updating the operating system, please wait...
+Scanning processes...
+Scanning candidates...
+Scanning linux images...
+[+] Installing MicroK8s via snap...
+[+] Waiting for MicroK8s to be ready...
+[✓] MicroK8s is ready.
+Client Version: v1.32.9
+Kustomize Version: v5.5.0
+Server Version: v1.32.9
+[+] Installing add-ons: hostpath-storage
+Infer repository core for addon hostpath-storage
+[+] Installing add-ons: ingress
+Infer repository core for addon ingress
+[+] Installing add-ons: metrics-server
+Infer repository core for addon metrics-server
+[+] MicroK8s base system installed.
+[+] Patching ingress controller to redirect HTTP to HTTPS...
+configmap/nginx-load-balancer-microk8s-conf patched
+[+] Patching ingress controller to mount host /etc/localtime...
+daemonset.apps/nginx-ingress-microk8s-controller patched
+[+] Waiting for the ingress controller pod to be ready - this may take 1-2 minutes...
+[✓] Ingress deployed.
 [+] Testing HTTP connectivity...
 [✓] Ingress is serving HTTP traffic at port 80
 [+] Testing HTTPS connectivity...
 [✓] Ingress is serving HTTPS traffic at 443
+[+] Retrieving APIserver2 deployment manifest...
+[+] Deploying APIserver2...
+secret/apiserver2-secrets created
+persistentvolume/apiserver2-pv created
+persistentvolumeclaim/apiserver2-pvc created
+deployment.apps/apiserver2 created
+service/apiserver2-service created
+ingress.networking.k8s.io/apiserver2-ingress created
+horizontalpodautoscaler.autoscaling/apiserver2-hpa created
 [+] Waiting for APIServer2 Pods to be Ready...
-deployment "apiserver2" successfully rolled out
+[✓] APIServer2 deployment is ready.
 [+] Testing APIServer2 connectivity...
 [✓] APIServer2 is ready to accept requests at port 443
-[+] APIServer2 version: 1.1.5
+[+] APIServer2 version: 1.1.6
+[+] Waiting for all the Kubernetes pods to be ready...
+[✓] Pods are ready.
 [+] Adding current user to microk8s group...
 [+] Setting up kubectl alias...
-[✓] MicroK8s setup completed.
-Please LOG OUT AND LOG BACK IN for group changes to take effect.
+[✓] MicroK8s/APIServer2 setup completed.
+
+ →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←
 ```
 Exit the shell and enter again.
 
 ## Step 3: Test the installation
-```
-microk8s status
-```
-Expected output:
-```
-microk8s is running
-high-availability: no
-  datastore master nodes: 127.0.0.1:19001
-  datastore standby nodes: none
-addons:
-  enabled:
-    dns                  # (core) CoreDNS
-    ha-cluster           # (core) Configure high availability on the current node
-    helm                 # (core) Helm - the package manager for Kubernetes
-    helm3                # (core) Helm 3 - the package manager for Kubernetes
-    hostpath-storage     # (core) Storage class; allocates storage from host directory
-    ingress              # (core) Ingress controller for external access
-    metrics-server       # (core) K8s Metrics Server for API access to service metrics
-    registry             # (core) Private image registry exposed on localhost:32000
-    storage              # (core) Alias to hostpath-storage add-on, deprecated
-  disabled:
-    cert-manager         # (core) Cloud native certificate management
-    cis-hardening        # (core) Apply CIS K8s hardening
-    community            # (core) The community addons repository
-    dashboard            # (core) The Kubernetes dashboard
-    gpu                  # (core) Alias to nvidia add-on
-    host-access          # (core) Allow Pods connecting to Host services smoothly
-    kube-ovn             # (core) An advanced network fabric for Kubernetes
-    mayastor             # (core) OpenEBS MayaStor
-    metallb              # (core) Loadbalancer for your Kubernetes cluster
-    minio                # (core) MinIO object storage
-    nvidia               # (core) NVIDIA hardware (GPU and network) support
-    observability        # (core) A lightweight observability stack for logs, traces and metrics
-    prometheus           # (core) Prometheus operator for monitoring and logging
-    rbac                 # (core) Role-Based Access Control for authorisation
-    rook-ceph            # (core) Distributed Ceph storage using Rook
-```
-
-Get the Kubernetes version
-```
-kubectl version
-```
-Expected output (versions may vary):
-```
-Client Version: v1.32.9
-Kustomize Version: v5.5.0
-Server Version: v1.32.9
-```
 
 List APIServer2 pods
 ```
@@ -235,7 +217,7 @@ curl -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/unit-t
 Run the script, change the URL to your VM address if necessary. The /api prefix is required, otherwise the request is rejected by the Ingress, this is to protect the Pods against common HTTP attacks.
 
 ```
-./test.sh https://mk8s.mshome.net /api
+./test.sh https://localhost /api
 ```
 Expected output:
 ```
