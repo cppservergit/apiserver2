@@ -132,7 +132,7 @@ NAME                                      READY   STATUS    RESTARTS   AGE
 nginx-ingress-microk8s-controller-4l548   1/1     Running   0          74s
 ```
 
-Test your Pods (several times):
+Test APIServer2 diagnostics API, do it several times to see the different Pods responding:
 ```
 curl https://localhost/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
@@ -156,6 +156,17 @@ If you execute several times the command above you will see a different Pod resp
 From a remote machine you can use the VM DNS name or its IP address to connect to the API:
 ```
 curl https://mk8s.mshome.net/api/metrics -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+```
+
+Get APIServer2 version:
+```
+curl https://localhost/api/version -k -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+```
+Expected output:
+```
+{
+  "version": "1.1.6"
+}
 ```
 
 Invoke the `login` API to force a test of the connection to the database:
