@@ -76,9 +76,6 @@ echo "[+] Testing APIServer2 connectivity..."
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo "[✓] APIServer2 is ready to accept requests at port 443"
 fi
-sleep 1s # avoid ocassional failure
-APISERVER2_VERSION=$(curl https://localhost/api/version -sk -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq -r '.version')
-echo "[+] APIServer2 version: $APISERVER2_VERSION"
 
 echo "[+] Waiting for all the Kubernetes pods to be ready..."
 sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
