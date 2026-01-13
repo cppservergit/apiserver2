@@ -180,9 +180,9 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 ## **Test the server**
 
-Run the server with `./run.sh` and then from another terminal session execute this (change the URL to your server):
+Run the server with `./run.sh` and then from another terminal session on the same host execute this:
 ```
-curl HOSTNAME.mshome.net:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl localhost:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 The output will be something like this:
 ```
@@ -200,13 +200,27 @@ The output will be something like this:
   "memory_usage_percentage": 0.32
 }
 ```
+To get the version of APIServer2:
+```
+curl localhost:8080/version -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+```
+Expected result (version number may vary):
+```
+{
+  "pod_name": "cpp14",
+  "version": "1.1.6"
+}
+```
 
-The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load. Other observability endpoints are `/ping` and `/version` if you want to test them with CURL. The `/ping` endpoint is for health-checking by load balancers, also called Ingress services in Cloud containers and Kubernetes.
+The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load, there is a another version of this API called `/metricsp` to be consumed by Grafana Prometheus. Other observability endpoints are `/ping` for health-checking and `/version`. The `/ping` endpoint is for health-checking by load balancers and Kubernetes.
 
-The diagnostics APIs like `/metrics` and `/version` may be protected by an API-Key which is defined in the `run.sh` script, we suggest using the program `uuid`
-to generate your API Key and distribute it to your monitoring agents. If there is no API-KEY defined in run.sh then the diagnostics APIs will respond without the security check, even if an `x-api-key` header was sent in the request.
+The diagnostics APIs `/metrics`, `/metricsp` and `/version` are protected by an API-Key which is defined in the `run.sh` script, we suggest using the program `uuid`
+to generate your API Key and distribute it to your monitoring agents. Please note that if there is no API-KEY defined in run.sh then the diagnostics APIs will respond without the security check, even if an `x-api-key` header was sent in the request.
 
-A bash script `test.sh` using CURL for testing your endpoints is provided in folder `unit-test` this script requires a `/login` and sends the resulting JWT token when invoking the secure endpoints, it is a simple and effective alternative to Postman.
+Try calling `/metricsp` for Prometheus, the output is plain text, you do not neet `jq` for JSON pretty printing:
+```
+curl localhost:8080/metricsp -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af"
+```
 
 ## **Build options**
 
@@ -435,9 +449,10 @@ This is a secure method, if you call this API `localhost:8080/shippers` with CUR
 ```
 {"error":"Invalid or missing token"}
 ```
-You need to `/login`, then copy the token from the response and execute CURL like this (use your current token):
+With a simple and quick 2-liner we can login, capture the JWT token and then invoke the secure API:
 ```
-curl localhost:8080/shippers -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ"
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl "http://localhost:8080/shippers" -s -H "Authorization: Bearer $TOKEN" | jq
 ```
 The response will be something like this:
 ```
@@ -477,6 +492,10 @@ The response will be something like this:
 Please note that this JSON is returned straight from the database Stored Procedure, if you are curious about how to write SQL that returns JSON, feel free to examine the provided demo databases, we recommend using DBeaver SQL Client to navigate into the database objects.
 
 Execute the same exercise with `/products`, it is a very similar implementation. Please note that JWT tokens can expire after a few minutes, you may need a fresh token.
+```
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl "http://localhost:8080/products" -s -H "Authorization: Bearer $TOKEN" | jq
+```
 
 ## **Parameterized SQL queries**
 
@@ -514,10 +533,57 @@ s.register_api(webapi_path{"/customer"}, post, customer_validator, &get_customer
 ```
 We are using the full overload of the `register_api()` function, we pass the validator and the function address. In this example we accept a parameter, so `post` is only verb we can use for this API, the data must be sent using multipart-form-data or JSON. An API will only accept a request with the HTTP VERB indicated in the `register_api()` call, that is another security clause of the APIServer2 contract, a violation will trigger an exception `400 BAD REQUEST`.
 
-Test it calling `/customer` with CURL, this is a secure API, you need to `/login`, then copy the token from the response and execute CURL like this to send JSON using a POST verb (use your current token):
+Test it calling `/customer`, as before, we need to login first to capture the JWT token and then pass it to the API:
 ```
-curl localhost:8080/customer --json '{"id":"anatr"}' -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0MDg2MTkiLCJpYXQiOiIxNzU0NDA4MzE5Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6IjNjMjlkYTc0LWQwOGItNGU3NS1iYjllLTQ2Zjg5YTkyY2M0MCIsInVzZXIiOiJtY29yZG92YSJ9.W9clBi-Ndyx8SmcPGCLKYCYaJlLv-N4D7Pj51ticuXQ" -s | jq
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl "http://localhost:8080/customer" --json '{"id":"anatr"}' -H "Authorization: Bearer $TOKEN" -s | jq
 ```
+Expected output:
+```
+{
+  "customerid": "ANATR",
+  "contactname": "Ana Trujillo",
+  "companyname": "Ana Trujillo Emparedados y helados",
+  "city": "México D.F.",
+  "country": "Mexico",
+  "phone": "(5) 555-4729",
+  "orders": [
+    {
+      "customerid": "ANATR",
+      "orderid": 10308,
+      "orderdate": "1994-10-19",
+      "shipcountry": "Mexico",
+      "shipper": "Federal Shipping",
+      "total": 88.8000
+    },
+    {
+      "customerid": "ANATR",
+      "orderid": 10625,
+      "orderdate": "1995-09-08",
+      "shipcountry": "Mexico",
+      "shipper": "Speedy Express",
+      "total": 479.7500
+    },
+    {
+      "customerid": "ANATR",
+      "orderid": 10759,
+      "orderdate": "1995-12-29",
+      "shipcountry": "Mexico",
+      "shipper": "Federal Shipping",
+      "total": 320.0000
+    },
+    {
+      "customerid": "ANATR",
+      "orderid": 10926,
+      "orderdate": "1996-04-03",
+      "shipcountry": "Mexico",
+      "shipper": "Federal Shipping",
+      "total": 514.4000
+    }
+  ]
+}
+```
+
 The stored procedure invoked by this API is an interesting example of using more complex SQL logic to efficiently produce a compact nested JSON response (customer with all its purchase orders).
 
 ## **Parameterized SQL queries with dates**
@@ -549,7 +615,8 @@ If the inputs do not comply with the custom rule then a `400 BAD REQUEST` will b
 
 To test this `/sales` API you need a valid token, then you can call it like:
 ```
-curl --json '{"start_date":"1994-01-01","end_date":"1996-12-31"}' localhost:8080/sales -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im1hcnRpbi5jb3Jkb3ZhQGdtYWlsLmNvbSIsImV4cCI6IjE3NTQ0NTAxODYiLCJpYXQiOiIxNzU0NDQ5ODg2Iiwicm9sZXMiOiJzeXNhZG1pbiwgY2FuX2RlbGV0ZSwgY2FuX3VwZGF0ZSIsInNlc3Npb25JZCI6ImIxYzZiYzhlLTIyYjEtNDI0Ni05NmMwLTc1NWI4ZmJiODI3ZSIsInVzZXIiOiJtY29yZG92YSJ9.uDhrmaIBic6oiDY6R6Y2AGNn7V0Nl6fk46CLQbo-Rzo" -s | jq
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl --json '{"start_date":"1994-01-01","end_date":"1996-12-31"}' "http://localhost:8080/sales" -H "Authorization: Bearer $TOKEN" -s | jq
 ```
 The expected response:
 ```
@@ -603,34 +670,6 @@ If you try passing an invalid date the server responds with `400 bad request` an
 }
 ```
 The same for missing required input parameters.
-
-## **A quick BASH utility for testing APIs**
-
-By now you may be tired of copying and pasting that JWT token after login just to test every API, here is a quick solution using `bash` and `curl`, this script sends a UUID to simulate the trace-id that Load Balancers would send to APIServer2, so please install `uuid` before using this script: `sudo apt install uuid -y`.
-
-Create the file:
-```
-nano qtest.sh
-```
-Add this code, change the BASE_URL and the curl call at the end to meet your requirements:
-```
-# test server
-BASE_URL="http://localhost:8080"
-# call login and extract token
-login_response=$(curl -s -w "%{http_code}" -H "Content-Type: application/json" \
-  -H "X-Request-ID: $(echo -n $(uuid))" -d '{"username":"mcordova", "password":"basica"}' "${BASE_URL}/login")
-login_body="${login_response::-3}"
-login_status="${login_response: -3}"
-TOKEN=$(echo "$login_body" | jq -r '.id_token')
-# call secure API
-curl ${BASE_URL}/sales --json '{"start_date":"1994-01-01","end_date":"1996-12-31"}' -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
-```
-CTRL-X to save it, then `chmod +x qtest.sh`
-Your quick test is ready, it will login, extract the token and invoke the API you want to test passing the token in the `Authorization` header:
-```
-./qtest.sh
-```
-You should see the output of the requested API, this is an effective way to test your secure APIs.
 
 ## **Uploads with database access**
 
@@ -716,17 +755,18 @@ void upload_file(const http::request& req, http::response& res) {
     }
 }
 ```
-For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
+A quick test with your 2-liner, you need a file test.txt, something like `echo "Hello World APIServer2" > test.txt` in the current directory:
 ```
-curl ${BASE_URL}/upload -F "file1=@qtest.sh" -F "title=My little BASH script" -s -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl "http://localhost:8080/upload" -F "file1=@test.txt" -F "title=My little text file" -s -H "Authorization: Bearer $TOKEN" | jq
 ```
 You should see a response similar to this:
 ```
 {
-  "originalFilename": "test.sh",
-  "savedFilename": "8e603bf2-384c-4bc4-971e-26b94ad6d8a1.sh",
-  "size": "853",
-  "title": "My little BASH script"
+  "originalFilename": "test.txt",
+  "savedFilename": "cc4712f7-788c-4b47-8782-aaa02011f02b.txt",
+  "size": "24",
+  "title": "My little text file"
 }
 ```
 In your `run.sh` script you configure the location to store the blobs, if you run several times the test you will see several files like these:
@@ -739,9 +779,9 @@ uploads
 ```
 On your server's terminal you will see a log entry for the upload activity:
 ```
-[  INFO  ] [Thread: 125085813827264] [d048eb44-72de-11f0-87d2-525400c57898] Saving uploaded file 'test.sh' as '/home/ubuntu/uploads/243c7fc3-fbdb-43e6-afc0-d3852cd2dd40.sh' with title 'My little BASH script'
+[  INFO  ] [Thread: 124822654793408] [--------] Saving uploaded file 'test.txt' as '/home/ubuntu/uploads/cc4712f7-788c-4b47-8782-aaa02011f02b.txt' with title 'My little text file'
 ```
-The storage location defined in run.sh is just a path, in our case is a local storage, but it could be mapped to a centralized NFS storage, or another cluster or cloud storage service, in these cases additional configuration is required to map the path to the storage service, that must be transparent to APIServer2, it only sees a local path just like when using local storage. Kubernetes, Docker and Cloud services provide the facilities to define paths that look like local storage to the containers.
+The storage location defined in run.sh is just a path, in our case it is a local storage, but it could be mapped to a centralized storage, like NFS or MinIO (S3), in these cases additional configuration is required to map the path to the storage service, that mapping it transparent to APIServer2, it only sees a local path just like when using local storage. Kubernetes, Docker and Cloud services provide the facilities to define paths that look like local storage to the containers.
 
 ## **Calling a remote REST API**
 In this section we study the code required to create an API that instead of calling a database stored procedure, it will call a remote API via HTTP/HTTPS, for simplicity's sake we will invoke our own local APIServer2 `/customer` API, this is a secure API, so we have to login, extract the token and then call the API, we will use a helper class `RemoteCustomerService` defined at the top of `main.cpp`. This class uses the module `http_client` which is a convenient wrapper of the native libcurl library. We also provide a custom exception for all errors thrown from this class code.
@@ -873,14 +913,19 @@ Remember that these security-sensitive environment variables can be managed with
 
 For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
 ```
-curl "${BASE_URL}/rcustomer" -s -d '{"id":"ANATR"}' -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -H "X-Request-ID: $(echo -n $(uuid))" | jq
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "http://localhost:8080/login" -s | jq -r '.id_token')
+curl "http://localhost:8080/rcustomer" --json '{"id":"anatr"}' -H "Authorization: Bearer $TOKEN" -s | jq
 ```
+It may take a second or two, because the remote API is located in New York.
+
 ### **About using self-signed certificates**
 The `http_client` wrapper module makes safe use if libcurl, it means it among other things that it won't accept invalid certificates, otherwise APIServer2 would not pass the strict rules of SonarCloud static analysis. If you want to use a self-signed certificate the you must change `http_client.cpp` the function `http_client::impl::configure_common_options` and add these lines:
 ```
 curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
 curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 ```
+
+**NOTE**: APIServer2 uses a `libcurl` wrapper and makes proper use of keep-alive to save client connections, if you are using a lot of requests to REST APIs you may need to tune your OS for reusing sockets quickly and expanding the port range available to APIServer2 when acting as an HTTP client. When deploying APIServer2 on Kubernetes the provided YAML file already tunes these parameters for you.
 
 ## **Docker**
 
@@ -909,9 +954,7 @@ docker run -d \
   --name apiserver2 \
   --restart unless-stopped \
   --network host \
-  \
   -v /home/ubuntu/uploads:/app/uploads \
-  \
   -e POOL_SIZE=24 \
   -e IO_THREADS=4 \
   -e QUEUE_CAPACITY=500 \
@@ -1095,7 +1138,7 @@ flowchart LR
 
 You are invited to follow our step-by-step tutorial on deploying APIServer2 on MicroK8s on a single VM, very easy and quick, in 20 minutes or less you are ready to go:
 
-[APIServer2 running on MicroK8s](https://github.com/cppservergit/apiserver2/blob/main/docs/microk8s.md)
+[Running APIServer2 on MicroK8s](https://github.com/cppservergit/apiserver2/blob/main/docs/microk8s.md)
 
 ## Linux native deployment
 
