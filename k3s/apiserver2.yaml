@@ -1,0 +1,315 @@
+# ==============================================================================
+# 1. SECRETS
+# ==============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: apiserver2-secrets
+  namespace: default
+type: Opaque
+stringData:
+  DB1: "Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
+  LOGINDB: "Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
+  JWT_SECRET: "B@asica2025*uuid0998554j93m722pQ"
+  API_KEY: "6976f434-d9c1-11f0-93b8-5254000f64af"
+  REMOTE_API_USER: "mcordova"
+  REMOTE_API_PASS: "basica"
+
+---
+# ==============================================================================
+# 2. STORAGE (Universal PV + PVC)
+# Creates a bridge between K8s and the Host OS path /mnt/apiserver-data
+# NOTE: Ensure /mnt/apiserver-data exists on the K3s node!
+# ==============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: apiserver2-pv
+  labels:
+    type: universal-storage
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/apiserver-data"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apiserver2-pvc
+  namespace: default
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ==============================================================================
+# 3. DEPLOYMENT
+# Configuration: "Golden Unit" (1 Core/Pod) + HA + Timezone Env
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apiserver2
+  namespace: default
+  labels:
+    app: apiserver2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: apiserver2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: apiserver2
+    spec:
+      # --- HA CONFIGURATION ---
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: apiserver2
+
+      # --- SECURITY CONTEXT ---
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      # --- INIT CONTAINER (KERNEL TUNING) ---
+      initContainers:
+      - name: tune-sysctls
+        image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          sysctl -w net.core.somaxconn=4096
+          sysctl -w net.ipv4.tcp_max_syn_backlog=4096
+          sysctl -w net.ipv4.ip_local_port_range="10240 65535"
+          sysctl -w net.ipv4.tcp_tw_reuse=1
+          sysctl -w net.ipv4.tcp_fin_timeout=15
+
+      # --- MAIN CONTAINER ---
+      containers:
+      - name: apiserver2
+        image: cppserver/apiserver2:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+
+        # [FIX] Apply ulimit correctly before starting the app
+        command: ["/bin/sh", "-c"]
+        args: 
+        - "ulimit -n 65535 && exec ./apiserver"
+
+        # --- ESSENTIAL ENV VARS ---
+        env:
+        - name: TZ
+          value: "America/Caracas"
+        - name: PORT
+          value: "8080"
+        - name: IO_THREADS
+          value: "1"  # Golden Unit
+        - name: POOL_SIZE
+          value: "4" 
+        - name: QUEUE_CAPACITY
+          value: "1000"
+        - name: CORS_ORIGINS
+          value: "null,file://"
+        - name: BLOB_PATH
+          value: "/app/uploads"
+        - name: JWT_TIMEOUT_SECONDS
+          value: "300"
+        - name: REMOTE_API_URL
+          value: "https://cppserver.com"
+          
+        # Secrets injection
+        - name: DB1
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: DB1 } }
+        - name: LOGINDB
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: LOGINDB } }
+        - name: JWT_SECRET
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: JWT_SECRET } }
+        - name: API_KEY
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: API_KEY } }
+        - name: REMOTE_API_USER
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: REMOTE_API_USER } }
+        - name: REMOTE_API_PASS
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: REMOTE_API_PASS } }
+
+        # --- RESOURCES (Golden Unit) ---
+        resources:
+          requests:
+            cpu: "1"        
+            memory: "32Mi" 
+          limits:
+            cpu: "1"        
+            memory: "512Mi" 
+
+        # --- PROBES ---
+        livenessProbe:
+          httpGet: { path: /ping, port: 8080 }
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet: { path: /ping, port: 8080 }
+          initialDelaySeconds: 2
+          periodSeconds: 5
+
+        # --- VOLUME MOUNTS ---
+        volumeMounts:
+        - name: blob-storage
+          mountPath: /app/uploads
+
+      volumes:
+      - name: blob-storage
+        persistentVolumeClaim:
+          claimName: apiserver2-pvc
+
+---
+# ==============================================================================
+# 4. SERVICE
+# ==============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: apiserver2-service
+  namespace: default
+spec:
+  selector:
+    app: apiserver2
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+
+---
+# ==============================================================================
+# 5. TRAEFIK MIDDLEWARES
+# ==============================================================================
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apiserver2-strip
+  namespace: default
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apiserver2-limits
+  namespace: default
+spec:
+  buffering:
+    maxRequestBodyBytes: 5242880 # 5MB limit
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apiserver2-redirect
+  namespace: default
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+
+---
+# ==============================================================================
+# 6. INGRESS ROUTE (Traefik CRD)
+# ==============================================================================
+# ROUTE 1: HTTP -> HTTPS Redirect
+# Catches anything starting with /api on port 80 and forces HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: apiserver2-ingress-http
+  namespace: default
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: PathPrefix(`/api`)
+      kind: Rule
+      services:
+        - name: apiserver2-service # Dummy service call, redirect happens before
+          port: 8080
+      middlewares:
+        - name: apiserver2-redirect
+
+---
+# ROUTE 2: HTTPS Traffic
+# Handles strict regex matching, prefix stripping, and limits
+# Renamed back to 'apiserver2-ingress' to overwrite any legacy resource
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: apiserver2-ingress
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Strict Regex: Must start with /api/ followed by at least one char
+    # e.g. /api/login (match), /api/ (no match), /api (no match)
+    - match: PathRegexp(`^/api/.+`)
+      kind: Rule
+      services:
+        - name: apiserver2-service
+          port: 8080
+      middlewares:
+        - name: apiserver2-strip
+        - name: apiserver2-limits
+  tls: {}
+
+---
+# ==============================================================================
+# 7. HPA
+# ==============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: apiserver2-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: apiserver2
+  
+  minReplicas: 2
+  maxReplicas: 3
+  
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
