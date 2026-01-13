@@ -210,7 +210,14 @@ Expected output:
 2026-01-04T21:13:16.478820876-04:00 [  INFO  ] [Thread: 140638524725888] [--------] Assigning 4 worker threads per I/O worker.
 2026-01-04T21:25:56.326279372-04:00 [  INFO  ] [Thread: 140638435669696] [7bc3e1aa-e9d5-11f0-869f-5254008ff37c] Login OK for user 'mcordova': sessionId 7c7f67f5-61f6-4795-bb23-9b1e2d0ec26c - from 172.25.65.150
 ```
-The command above consolidates the logs from all the APIServer2 Pods.
+The command above consolidates the last log entries from all the APIServer2 Pods. 
+For more control you can execute this to get all the available logs:
+```
+for pod in $(kubectl get pods -l app=apiserver2 -o name); do
+  echo "=== Logs from $pod ==="
+  kubectl logs $pod -c apiserver2 --timestamps=true
+done
+```
 
 Check APIServer2 resource usage (cpu, memory):
 ```
