@@ -1140,6 +1140,10 @@ You are invited to follow our step-by-step tutorial on deploying APIServer2 on M
 
 [Running APIServer2 on MicroK8s](https://github.com/cppservergit/apiserver2/blob/main/docs/microk8s.md)
 
+We also offer instructions to deploy APIServer2 on K3s, another lightweight Kubernetes implementation, please check our tutorial:
+
+[Running APIServer2 on K3S](https://github.com/cppservergit/apiserver2/blob/main/docs/k3s.md)
+
 ## Linux native deployment
 
 If you prefer a native Linux solution that fits a single VM with low resources, consider LXD containers, we provide a complete tutorial to setup in minutes a single VM with HAProxy as the Load Balancer and 2 LXD containers running APIServer2 as a Linux SystemD service.

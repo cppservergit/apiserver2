@@ -1,4 +1,4 @@
-# Running APIServer2 with K3S on Ubuntu 24.04
+# Running APIServer2 with K3s on Ubuntu 24.04
 
 You can deploy APIServer2 with equivalent features as in MicroK8s, but using [K3S](https://k3s.io/), another lightweight Kubernetes implementation.
 
