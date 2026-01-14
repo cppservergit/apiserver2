@@ -967,7 +967,6 @@ docker run -d \
   -e REMOTE_API_URL="http://localhost:8080" \
   -e REMOTE_API_USER="mcordova" \
   -e REMOTE_API_PASS="basica" \
-  \
   cppserver/apiserver2:latest
 ```
 This image is intended to be used with Kubernetes and Cloud container services.
