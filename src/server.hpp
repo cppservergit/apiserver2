@@ -118,6 +118,7 @@ private:
         void process_request(int fd);
         void dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
+        bool validate_bearer_token(const http::request& req, std::string_view path) const;
         bool handle_internal_api(const http::request& req, http::response& res) const;
         
         void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint) const;

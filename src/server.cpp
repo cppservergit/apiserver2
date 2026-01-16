@@ -14,6 +14,7 @@
 #include <sstream>
 #include <algorithm>
 #include <numeric>
+#include <ranges>
 
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
@@ -437,62 +438,68 @@ void server::io_worker::process_request(int fd) {
     }
 }
 
-bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {
-    using enum http::status;
+bool server::io_worker::validate_bearer_token(const http::request& req, std::string_view path) const {
+    using namespace std::string_view_literals;
 
-    // Helper lambda to check for Authorization: Bearer <token>
-    auto check_bearer_auth = [&](std::string_view path) {
-        if (m_api_key.empty()) return true;
+    if (m_api_key.empty()) return true;
 
-        auto header_val = req.get_header_value("Authorization");
+    auto header_val = req.get_header_value("Authorization");
 
-        // 1. Check existence and minimum length ("bearer " is 7 chars)
-        if (!header_val || header_val->size() < 7) {
-            util::log::warn("Unauthorized (missing Bearer) to {} from {}", path, req.get_remote_ip());
-            return false;
-        }
+    // 1. Check existence and minimum length
+    if (!header_val || header_val->size() < 7) {
+        util::log::warn("Unauthorized (missing Bearer) to {} from {}", path, req.get_remote_ip());
+        return false;
+    }
 
-        // 2. Case-insensitive prefix check using std::ranges
-        auto prefix = header_val->substr(0, 7);
-        
-        if (bool is_bearer = std::ranges::equal(prefix, "bearer "sv, 
+    auto prefix = header_val->substr(0, 7);
+
+    // 2. Case-insensitive prefix check (Scoped to the if-block)
+    if (bool is_bearer = std::ranges::equal(prefix, "bearer "sv, 
             [](unsigned char a, unsigned char b) { 
                 return std::tolower(a) == std::tolower(b); 
             }); !is_bearer) {
-            util::log::warn("Unauthorized (invalid scheme: {}) to {} from {}", prefix, path, req.get_remote_ip());
-            return false;
-        }
+        
+        util::log::warn("Unauthorized (invalid scheme: {}) to {} from {}", prefix, path, req.get_remote_ip());
+        return false;
+    }
 
-        // 3. Extract token (substring from index 7) and compare
-        if (std::string_view token = std::string_view(*header_val).substr(7); token != m_api_key) {
-            util::log::warn("Unauthorized (invalid token) to {} from {}", path, req.get_remote_ip());
-            return false;
-        }
-        return true;
-    };
+    // 3. Extract token and compare
+    if (std::string_view token = std::string_view(*header_val).substr(7); token != m_api_key) {
+        util::log::warn("Unauthorized (invalid token) to {} from {}", path, req.get_remote_ip());
+        return false;
+    }
+
+    return true;
+}
+
+bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {
+    using enum http::status;
 
     if (req.get_path() == "/metrics") {
-        if (!check_bearer_auth("/metrics")) {
+        if (!validate_bearer_token(req, "/metrics")) {
             res.set_body(bad_request, R"({"error":"Bad Request"})");
             return true;
         }
         res.set_body(ok, m_metrics->to_json());
         return true;
     }
+
     if (req.get_path() == "/metricsp") {
-        if (!check_bearer_auth("/metricsp")) {
+        if (!validate_bearer_token(req, "/metricsp")) {
             res.set_body(bad_request, R"({"error":"Bad Request"})");
             return true;
         }        
         res.set_body(ok, m_metrics->to_prometheus(), "text/plain");
         return true;
     }
+
     if (req.get_path() == "/ping") {
         res.set_body(ok, R"({"status":"OK"})");
         return true;
     }
+
     if (req.get_path() == "/version") {
-        if (!check_bearer_auth("/version")) {
+        if (!validate_bearer_token(req, "/version")) {
             res.set_body(bad_request, R"({"error":"Bad Request"})");
             return true;
         }
@@ -500,6 +507,7 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
         res.set_body(ok, std::format(json_tpl, m_metrics->get_pod_name(), g_version));
         return true;
     }
+
     return false;
 }
 
