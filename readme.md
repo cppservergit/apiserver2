@@ -182,7 +182,7 @@ INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shut
 
 Run the server with `./run.sh` and then from another terminal session on the same host execute this:
 ```
-curl localhost:8080/metrics -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl localhost:8080/metrics -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 The output will be something like this:
 ```
@@ -202,7 +202,7 @@ The output will be something like this:
 ```
 To get the version of APIServer2:
 ```
-curl localhost:8080/version -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
+curl localhost:8080/version -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" -s | jq
 ```
 Expected result (version number may vary):
 ```
@@ -215,17 +215,18 @@ Expected result (version number may vary):
 The `/metrics` endpoint is a built-in observability feature of APIServer2, it will respond immedately even under high load, there is a another version of this API called `/metricsp` to be consumed by Grafana Prometheus. Other observability endpoints are `/ping` for health-checking and `/version`. The `/ping` endpoint is for health-checking by load balancers and Kubernetes.
 
 The diagnostics APIs `/metrics`, `/metricsp` and `/version` are protected by an API-Key which is defined in the `run.sh` script, we suggest using the program `uuid`
-to generate your API Key and distribute it to your monitoring agents. Please note that if there is no API-KEY defined in run.sh then the diagnostics APIs will respond without the security check, even if an `x-api-key` header was sent in the request.
+to generate your API Key and distribute it to your monitoring agents. Please note that if there is no API-KEY defined in run.sh then the diagnostics APIs will respond without the security check, even if an `Authentication: Bearer <token>` header was sent in the request.
 
-Try calling `/metricsp` for Prometheus, the output is plain text, you do not neet `jq` for JSON pretty printing:
+Try calling `/metricsp` for Prometheus, the output is plain text, you do not need `jq` for JSON pretty printing:
 ```
-curl localhost:8080/metricsp -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af"
+curl http://cpp14.mshome.net:8080/metricsp -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af"
 ```
 
 ## **Build options**
 
 | make command | Executable program | Result
 |-----------------|-----------------|-----------------|
+| make release    | apiserver     | Optimized executable for production
 | make server     | apiserver     | Optimized executable for production
 | make server_debug     | apiserver_debug     | Debug version, non-optimized, prints debug messages and stack traces in case of errors, may produce lots of logs
 | make server_perflog     | apiserver_perflog     | Same as `make server` but prints performance metrics in logs to identify performance problems

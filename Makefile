@@ -6,7 +6,7 @@ CXX = g++
 CXXFLAGS_BASE = -std=c++23 -Wall -Wextra
 
 CXXFLAGS_DEBUG = -g -DENABLE_DEBUG_LOGS -DUSE_STACKTRACE
-CXXFLAGS_RELEASE = -O2 -march=native -DNDEBUG -flto=4
+CXXFLAGS_RELEASE = -O2 -DLOG_USE_JSON -DNDEBUG -march=x86-64-v3 -flto=4
 # FIX: Add new perflog build flags
 CXXFLAGS_PERFLOG = -O2 -march=native -DNDEBUG -flto=4 -DENABLE_PERF_LOGS
 CXXFLAGS_SANITIZER_ADDRESS = -g -fsanitize=address -fno-omit-frame-pointer -O1

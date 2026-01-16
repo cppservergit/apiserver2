@@ -1,51 +1,92 @@
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
-#include <iostream>
+// C++23 Modernization: Use <print> instead of <iostream>/<syncstream>
+// <print> provides atomic writes to C streams and is more efficient.
+#include <print>
 #include <string_view>
 #include <format>
-#include <syncstream>
 #include <thread>
 #include <string>
+#include <cstdio> // For stdout, stderr
 
 #ifdef USE_STACKTRACE
 #include <stacktrace>
 #endif
 
-namespace util::log {
+// --- Configuration ---
 
-// --- Compile-time configuration for logging ---
+// Compile-time flag for JSON formatting
+// usage: g++ -DLOG_USE_JSON ...
+#ifdef LOG_USE_JSON
+constexpr bool use_json_format = true;
+#else
+constexpr bool use_json_format = false;
+#endif
+
+// Compile-time configuration for logging
 #ifdef ENABLE_DEBUG_LOGS
 constexpr bool debug_logging_enabled = true;
 #else
 constexpr bool debug_logging_enabled = false;
 #endif
 
-// FIX: Add compile-time flag for performance logging
 #ifdef ENABLE_PERF_LOGS
 constexpr bool perf_logging_enabled = true;
 #else
 constexpr bool perf_logging_enabled = false;
 #endif
 
+namespace util::log {
 
-// Defines the severity level of a log message.
 enum class Level {
     Debug,
     Info,
     Warning,
     Error,
     Critical,
-    Perf // FIX: Add new Perf level
+    Perf
 };
 
 namespace detail {
+    // NOSONAR: Thread-local global is required for context-aware logging without passing context everywhere.
     /* NOSONAR */ inline thread_local std::string_view g_request_id;
+
+    // Helper to escape JSON strings
+    inline std::string json_escape(std::string_view s) {
+        constexpr size_t RESERVE_PADDING = 10; // Avoid magic number for SonarCloud
+        std::string res;
+        res.reserve(s.size() + RESERVE_PADDING);
+        
+        for (char c : s) {
+            switch (c) {
+                case '"': res += "\\\""; break;
+                case '\\': res += "\\\\"; break;
+                case '\b': res += "\\b"; break;
+                case '\f': res += "\\f"; break;
+                case '\n': res += "\\n"; break;
+                case '\r': res += "\\r"; break;
+                case '\t': res += "\\t"; break;
+                default:
+                    if (static_cast<unsigned char>(c) < 0x20) {
+                        res += std::format("\\u{:04x}", static_cast<unsigned char>(c));
+                    } else {
+                        res += c;
+                    }
+            }
+        }
+        return res;
+    }
+
     inline void vprint(
         const Level level,
-        const std::string_view fmt,
+        std::string_view fmt_str, // Pass string_view by value (S3656)
         std::format_args args) 
     {
+        // 1. Select Stream (Info -> stdout, others -> stderr)
+        std::FILE* output_stream = (level == Level::Info) ? stdout : stderr;
+
+        // 2. Determine Level String
         std::string_view level_str;
         using enum Level;
         switch (level) {
@@ -54,23 +95,48 @@ namespace detail {
             case Warning: level_str = "WARN";    break;
             case Error:   level_str = "ERROR";   break;
             case Critical:level_str = "CRITICAL";break;
-            // FIX: Handle new Perf level
-            case Perf:    level_str = "PERF";    break; 
+            case Perf:    level_str = "PERF";    break;
             default:      level_str = "UNKNOWN"; break;
         }
-        const auto log_prefix = std::format(
-            "[{:^8}] [Thread: {}] [{}] ",
-            level_str,
-            std::this_thread::get_id(),
-            g_request_id.empty() ? "--------" : g_request_id
-        );
-        std::osyncstream synced_out(std::cerr);
-        synced_out << log_prefix;
-        synced_out << std::vformat(fmt, args);
-        synced_out << '\n';
+
+        // 3. Prepare Data
+        // Handle Request ID (using view, no allocation)
+        std::string_view request_id = g_request_id.empty() ? "--------" : g_request_id;
+
+        // Format the user message
+        std::string message = std::vformat(fmt_str, args);
+
+        // 4. Print
+        if constexpr (use_json_format) {
+            // JSON Format
+            // Optimization: Assuming request_id is a valid UUID (safe chars), we skip escaping.
+            // SonarCloud: Using Raw String Literal to avoid escaped quotes complexity.
+            // Note: {{ and }} are escaped braces for std::format/std::print
+            std::string json_msg = json_escape(message);
+            
+            std::println(output_stream, 
+                R"({{"level": "{}", "thread": "{}", "req_id": "{}", "msg": "{}"}})",
+                level_str,
+                std::this_thread::get_id(),
+                request_id,
+                json_msg
+            );
+        } else {
+            // Plain Text Format
+            std::println(output_stream, 
+                "[{:^8}] [Thread: {}] [{}] {}",
+                level_str,
+                std::this_thread::get_id(),
+                request_id,
+                message
+            );
+        }
+
+        // 5. Stacktrace (Optional)
         #ifdef USE_STACKTRACE
         if (level == Error || level == Critical) {
-            synced_out << "--- Stack Trace ---\n" << std::stacktrace::current() << "-------------------\n";
+             std::println(output_stream, "--- Stack Trace ---\n{}\n-------------------", 
+                std::to_string(std::stacktrace::current()));
         }
         #endif
     }
@@ -79,6 +145,7 @@ namespace detail {
 /**
  * @class request_id_scope
  * @brief A RAII helper to set and clear the thread-local request ID.
+ * @note The string provided to the constructor MUST outlive this scope.
  */
 class request_id_scope {
 public:
@@ -86,7 +153,7 @@ public:
         detail::g_request_id = id;
     }
     ~request_id_scope() noexcept {
-        detail::g_request_id = {}; // Clear the ID
+        detail::g_request_id = {}; // Clear the ID view
     }
     // Non-copyable and non-movable
     request_id_scope(const request_id_scope&) = delete;
@@ -95,8 +162,7 @@ public:
     request_id_scope& operator=(request_id_scope&&) = delete;
 };
 
-
-// --- Public-facing convenience functions ---
+// --- Public API ---
 
 template<typename... Args>
 void debug(std::format_string<Args...> fmt, Args&&... args) {
@@ -105,7 +171,6 @@ void debug(std::format_string<Args...> fmt, Args&&... args) {
     }
 }
 
-// FIX: Add new perf() log function
 template<typename... Args>
 void perf(std::format_string<Args...> fmt, Args&&... args) {
     if constexpr (perf_logging_enabled) {
@@ -132,5 +197,6 @@ template<typename... Args>
 void critical(std::format_string<Args...> fmt, Args&&... args) {
     detail::vprint(Level::Critical, fmt.get(), std::make_format_args(args...));
 }
+
 } // namespace util::log
 #endif // LOGGER_HPP
