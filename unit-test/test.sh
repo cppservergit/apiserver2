@@ -47,6 +47,7 @@ endpoints=(
   "GET $API_PREFIX/shippers"
   "GET $API_PREFIX/products"
   "GET $API_PREFIX/metrics"
+  "GET $API_PREFIX/metricsp"
   "GET $API_PREFIX/version"
   "GET $API_PREFIX/ping"
   "POST $API_PREFIX/customer {\"id\":\"anatr\"}"
@@ -66,25 +67,20 @@ for entry in "${endpoints[@]}"; do
   IFS=' ' read -r method uri rest <<< "$entry"
   payload=""
 
-  # Initialize an array for extra curl headers
-  extra_headers=()
-  
-  # Check if the current URI is one that requires the API key
-  if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" ]]; then
-    extra_headers+=("-H" "x-api-key: $API_KEY")
-  fi
-
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
-    # We expand "${extra_headers[@]}" here to inject the header if it exists
     response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
       -H "Authorization: Bearer $TOKEN" \
-      "${extra_headers[@]}" \
       -d "$payload" "${BASE_URL}${uri}")
   else
-    response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
-      "${extra_headers[@]}" \
+    # send API_KEY for diagnostic endpoints
+    if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" || "$uri" == "$API_PREFIX/metricsp" ]]; then
+      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $API_KEY" \
       "${BASE_URL}${uri}")
+    else
+      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+      "${BASE_URL}${uri}")
+    fi
   fi
 
   body="${response::-3}"
