@@ -60,13 +60,13 @@ namespace detail {
         
         for (char c : s) {
             switch (c) {
-                case '"': res += "\\\""; break;
-                case '\\': res += "\\\\"; break;
-                case '\b': res += "\\b"; break;
-                case '\f': res += "\\f"; break;
-                case '\n': res += "\\n"; break;
-                case '\r': res += "\\r"; break;
-                case '\t': res += "\\t"; break;
+                case '"': res += R"(\")"; break;
+                case '\\': res += R"(\\)"; break;
+                case '\b': res += R"(\b)"; break;
+                case '\f': res += R"(\f)"; break;
+                case '\n': res += R"(\n)"; break;
+                case '\r': res += R"(\r)"; break;
+                case '\t': res += R"(\t)"; break;
                 default:
                     if (static_cast<unsigned char>(c) < 0x20) {
                         res += std::format("\\u{:04x}", static_cast<unsigned char>(c));

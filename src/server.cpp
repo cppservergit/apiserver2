@@ -454,20 +454,17 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
 
         // 2. Case-insensitive prefix check using std::ranges
         auto prefix = header_val->substr(0, 7);
-        bool is_bearer = std::ranges::equal(prefix, "bearer "sv, 
+        
+        if (bool is_bearer = std::ranges::equal(prefix, "bearer "sv, 
             [](unsigned char a, unsigned char b) { 
                 return std::tolower(a) == std::tolower(b); 
-            }
-        );
-
-        if (!is_bearer) {
+            }); !is_bearer) {
             util::log::warn("Unauthorized (invalid scheme: {}) to {} from {}", prefix, path, req.get_remote_ip());
             return false;
         }
 
         // 3. Extract token (substring from index 7) and compare
-        std::string_view token = std::string_view(*header_val).substr(7);
-        if (token != m_api_key) {
+        if (std::string_view token = std::string_view(*header_val).substr(7); token != m_api_key) {
             util::log::warn("Unauthorized (invalid token) to {} from {}", path, req.get_remote_ip());
             return false;
         }
