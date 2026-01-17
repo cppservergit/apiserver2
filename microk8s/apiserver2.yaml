@@ -86,8 +86,8 @@ spec:
           labelSelector:
             matchLabels:
               app: apiserver2
-
-      # --- POD SECURITY CONTEXT ---
+      # [CIS 5.1.6 / KSV036] Disable auto-mounting of API tokens
+      automountServiceAccountToken: false
       securityContext:
         runAsUser: 10001
         runAsGroup: 10001
@@ -244,3 +244,36 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+---
+# ==============================================================================
+# 7. NETWORK POLICIES (CIS 5.3.2)
+# ==============================================================================
+# 1. Default Deny Ingress: Blocks all traffic to the namespace by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cppserver
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+---
+# 2. Allow API Access: Explicitly allows traffic to port 8080
+# This is required so the Ingress Controller can reach the pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apiserver-ingress
+  namespace: cppserver
+spec:
+  podSelector:
+    matchLabels:
+      app: apiserver2
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - port: 8080
+      protocol: TCP
