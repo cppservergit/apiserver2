@@ -1004,9 +1004,9 @@ unit-test/test.sh http://yourVM:8080
 
 ### **Building your own Docker image**
 
-First we create an optimized but also more neutral binary for the docker image:
+First we create an optimized binary for the docker image:
 ```
-make clean && make release CXXFLAGS_RELEASE="-O2 -march=x86-64-v3 -DNDEBUG -flto=4"
+make clean && make release
 ```
 
 Now we create the image, The APIServer2 repo already includes a `Dockerfile` in the root folder of this project:
@@ -1016,27 +1016,24 @@ docker build -t cppserver/apiserver2:latest .
 
 To export your Docker image to a compressed .tgz file that can be transferred to MicroK8s, run this command in your terminal:
 ```
-docker save cppserver/apiserver2:latest | gzip > apiserver2.tar.gz
+docker save cppserver/apiserver2:latest > apiserver2.tar
 ```
 Once you have the file, you can import it directly into the MicroK8s registry:
 ```
-microk8s images import apiserver2.tar.gz
+microk8s images import apiserver2.tar
 ```
 This avoids the need to push to Docker Hub if your MicroK8s cluster is local or has access to the file.
 
 ### **Dockerfile**
 ```
-# ==============================================================================
-# Runtime Stage Only
-# ==============================================================================
 FROM ubuntu:24.04
 
-# Prevent interactive prompts
+# Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Runtime Dependencies
-# These must match the libraries your binary was linked against.
-# Note: We REMOVED the user creation steps because 'ubuntu' (UID 1000) exists by default.
+# 1. Install Runtime Dependencies & Harden Image
+# CRITICAL FIX: We must run 'autoremove' and 'clean' BEFORE we purge 'tar' and 'gpgv'.
+# Once 'tar' is removed, apt/dpkg become unstable, so that must be the final step.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libcurl4 \
@@ -1046,17 +1043,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liboath0t64 \
     unixodbc \
     tdsodbc \
-    && rm -rf /var/lib/apt/lists/*
+    tzdata \
+    tzdata-legacy \
+    # 1. Clean up apt caches while the package manager still works
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    # 2. --- HARDENING START ---
+    # Now that apt is done, we forcibly remove the dangerous tools.
+    # We use '|| true' to ensure the build succeeds even if 'git' or 'wget' 
+    # were never installed in the first place.
+    && (dpkg --purge --force-all gnupg gpgv tar wget git mount || true)
+    # --- HARDENING END ---
+
+# 2. Create the Non-Root User (UID 10001)
+RUN groupadd -g 10001 cppserver && \
+    useradd -u 10001 -g cppserver -s /bin/false -m cppserver
 
 # Set working directory
 WORKDIR /app
 
-# Create the uploads directory for BLOB_PATH
-# We use the existing 'ubuntu' user (UID 1000)
-RUN mkdir -p /app/uploads && chown ubuntu:ubuntu /app/uploads
+# 3. Setup Permissions
+RUN mkdir -p /app/uploads && chown 10001:10001 /app/uploads
 
-# --- COPY THE BINARY ---
-COPY --chown=ubuntu:ubuntu apiserver /app/apiserver
+# 4. Copy the Binary
+COPY --chown=10001:10001 apiserver /app/apiserver
 
 # Ensure it is executable
 RUN chmod +x /app/apiserver
@@ -1065,10 +1076,8 @@ RUN chmod +x /app/apiserver
 VOLUME ["/app/uploads"]
 
 # ------------------------------------------------------------------------------
-# Configuration
+# Configuration (Environment Defaults)
 # ------------------------------------------------------------------------------
-
-# 1. Non-Sensitive Defaults
 ENV PORT=8080
 ENV POOL_SIZE=24
 ENV IO_THREADS=4
@@ -1076,21 +1085,13 @@ ENV QUEUE_CAPACITY=500
 ENV CORS_ORIGINS="null,file://"
 ENV BLOB_PATH="/app/uploads"
 ENV JWT_TIMEOUT_SECONDS=300
-ENV REMOTE_API_URL="http://localhost:8080"
-
-# 2. Security Sensitive Variables (Empty for injection via K8s Secrets)
-ENV DB1=""
-ENV LOGINDB=""
-ENV JWT_SECRET=""
-ENV API_KEY=""
-ENV REMOTE_API_USER=""
-ENV REMOTE_API_PASS=""
+ENV REMOTE_API_URL="https://cppserver.com"
 
 # Expose port
 EXPOSE 8080
 
-# Switch to the existing non-root user 'ubuntu' (UID 1000)
-USER ubuntu
+# 5. Switch to Non-Root User
+USER 10001
 
 # Start the server
 CMD ["./apiserver"]
