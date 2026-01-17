@@ -8,6 +8,14 @@ sudo chown 10001:10001 /mnt/apiserver-data
 echo "[+] Updating the operating system, please wait..."
 sudo apt-get -qq update >/dev/null 
 sudo apt-get -qq upgrade -y >/dev/null
+echo "[+] Tuning sysctl for http clients..."
+cat <<EOF | sudo tee /etc/sysctl.d/99-microk8s-highperf.conf
+net.ipv4.ip_local_port_range = 10240 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 15
+EOF
+sudo sysctl --system >/dev/null
+echo "[✓] sysctl updated"
 echo "[+] Installing MicroK8s via snap..."
 sudo snap install microk8s --classic >/dev/null
 echo "[+] Waiting for MicroK8s to be ready..."
@@ -71,7 +79,7 @@ sudo microk8s kubectl apply -f apiserver2.yaml
 
 # --- Verify connectivity on port 443 for APIServer2 ---
 echo "[+] Waiting for APIServer2 Pods to be Ready..."
-sudo microk8s kubectl rollout status deployment/apiserver2 --timeout=300s >/dev/null
+sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 echo "[✓] APIServer2 deployment is ready."
 echo "[+] Testing APIServer2 connectivity..."
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
