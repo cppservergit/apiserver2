@@ -4,7 +4,7 @@ echo "This script will install MicroK8s and deploy APIServer2 on your system."
 echo "It may take between 5 and 10 minutes depending on your system and bandwidth."
 echo "---------------------------------------------------------------------------------"
 sudo mkdir -p /mnt/apiserver-data
-sudo chown 1000:1000 /mnt/apiserver-data
+sudo chown 10001:10001 /mnt/apiserver-data
 echo "[+] Updating the operating system, please wait..."
 sudo apt-get -qq update >/dev/null 
 sudo apt-get -qq upgrade -y >/dev/null

@@ -134,7 +134,7 @@ nginx-ingress-microk8s-controller-4l548   1/1     Running   0          74s
 
 Test APIServer2 diagnostics API, do it several times to see the different Pods responding:
 ```
-curl https://localhost/api/metrics -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
+curl https://localhost/api/metrics -ks -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 Expected output:
 ```
@@ -155,12 +155,12 @@ Expected output:
 If you execute several times the command above you will see a different Pod responding.
 From a remote machine you can use the VM DNS name or its IP address to connect to the API:
 ```
-curl https://mk8s.mshome.net/api/metrics -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
+curl https://mk8s.mshome.net/api/metrics -ks -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 
 Get APIServer2 version:
 ```
-curl https://localhost/api/version -ks -H "x-api-key: 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
+curl https://localhost/api/version -ks -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
 Expected output:
 ```

@@ -1,10 +1,11 @@
 # ==============================================================================
-# 1. SECRETS
+# 1. SECRETS 
 # ==============================================================================
 apiVersion: v1
 kind: Secret
 metadata:
   name: apiserver2-secrets
+  namespace: cppserver
 type: Opaque
 stringData:
   DB1: "Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
@@ -16,8 +17,7 @@ stringData:
 
 ---
 # ==============================================================================
-# 2. STORAGE (Universal PV + PVC)
-# Creates a bridge between K8s and the Host OS path /mnt/apiserver-data
+# 2. STORAGE 
 # ==============================================================================
 apiVersion: v1
 kind: PersistentVolume
@@ -32,15 +32,16 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/apiserver-data"   # The single standardized path on the host
+    path: "/mnt/apiserver-data"
 
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: apiserver2-pvc
+  namespace: cppserver
 spec:
-  storageClassName: manual        # Binds explicitly to the PV above
+  storageClassName: manual
   accessModes:
     - ReadWriteOnce
   resources:
@@ -49,13 +50,13 @@ spec:
 
 ---
 # ==============================================================================
-# 3. DEPLOYMENT
-# Configuration: "Golden Unit" (1 Core/Pod) + HA + Timezone Env
+# 3. DEPLOYMENT 
 # ==============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apiserver2
+  namespace: cppserver
   labels:
     app: apiserver2
 spec:
@@ -72,8 +73,12 @@ spec:
     metadata:
       labels:
         app: apiserver2
+      annotations:
+        # --- PROMETHEUS DISCOVERY ---
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metricsp"
     spec:
-      # --- HA CONFIGURATION ---
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -82,51 +87,46 @@ spec:
             matchLabels:
               app: apiserver2
 
-      # --- SECURITY CONTEXT ---
+      # --- POD SECURITY CONTEXT ---
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        runAsNonRoot: true            
+        seccompProfile:               
+          type: RuntimeDefault
 
-      # --- INIT CONTAINER (KERNEL TUNING) ---
-      initContainers:
-      - name: tune-sysctls
-        image: busybox:latest
-        imagePullPolicy: IfNotPresent
-        securityContext:
-          privileged: true
-          runAsUser: 0
-        command:
-        - /bin/sh
-        - -c
-        - |
-          sysctl -w net.core.somaxconn=4096
-          sysctl -w net.ipv4.tcp_max_syn_backlog=4096
-          sysctl -w net.ipv4.ip_local_port_range="10240 65535"
-          sysctl -w net.ipv4.tcp_tw_reuse=1
-          sysctl -w net.ipv4.tcp_fin_timeout=15
-
-      # --- MAIN CONTAINER ---
       containers:
       - name: apiserver2
-        image: cppserver/apiserver2:latest
+        image: cppserver/apiserver2:v1.1.7
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
 
-        # [FIX] Apply ulimit correctly before starting the app
-        command: ["/bin/sh", "-c"]
-        args: 
-        - "ulimit -n 65535 && exec ./apiserver"
+        # --- CONTAINER SECURITY CONTEXT ---
+        securityContext:
+          allowPrivilegeEscalation: false  
+          readOnlyRootFilesystem: true     
+          capabilities:
+            drop: ["ALL"]                  
 
-        # --- ESSENTIAL ENV VARS ---
+        # --- RESOURCE LIMITS ---
+        resources:
+          requests:
+            cpu: "1"        
+            memory: "32Mi" 
+          limits:
+            cpu: "1"        
+            memory: "512Mi" 
+
+        # --- ENV VARS ---
         env:
         - name: TZ
           value: "America/Caracas"
         - name: PORT
           value: "8080"
         - name: IO_THREADS
-          value: "1"  # Golden Unit
+          value: "1"
         - name: POOL_SIZE
           value: "4" 
         - name: QUEUE_CAPACITY
@@ -139,8 +139,8 @@ spec:
           value: "300"
         - name: REMOTE_API_URL
           value: "https://cppserver.com"
-          
-        # Secrets injection
+        
+        # Secrets
         - name: DB1
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: DB1 } }
         - name: LOGINDB
@@ -154,15 +154,6 @@ spec:
         - name: REMOTE_API_PASS
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: REMOTE_API_PASS } }
 
-        # --- RESOURCES (Golden Unit) ---
-        resources:
-          requests:
-            cpu: "1"        
-            memory: "32Mi" 
-          limits:
-            cpu: "1"        
-            memory: "512Mi" 
-
         # --- PROBES ---
         livenessProbe:
           httpGet: { path: /ping, port: 8080 }
@@ -173,7 +164,7 @@ spec:
           initialDelaySeconds: 2
           periodSeconds: 5
 
-        # --- VOLUME MOUNTS ---
+        # --- VOLUMES ---
         volumeMounts:
         - name: blob-storage
           mountPath: /app/uploads
@@ -185,29 +176,32 @@ spec:
 
 ---
 # ==============================================================================
-# 4. SERVICE
+# 4. SERVICE 
 # ==============================================================================
 apiVersion: v1
 kind: Service
 metadata:
   name: apiserver2-service
+  namespace: cppserver
 spec:
   selector:
     app: apiserver2
   ports:
-    - protocol: TCP
+    - name: http-api
+      protocol: TCP
       port: 8080
       targetPort: 8080
   type: ClusterIP
 
 ---
 # ==============================================================================
-# 5. INGRESS
+# 5. INGRESS 
 # ==============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: apiserver2-ingress
+  namespace: cppserver
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "5m"
     nginx.ingress.kubernetes.io/use-regex: "true"
@@ -229,21 +223,20 @@ spec:
 
 ---
 # ==============================================================================
-# 6. HPA
+# 6. HPA 
 # ==============================================================================
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: apiserver2-hpa
+  namespace: cppserver
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: apiserver2
-  
   minReplicas: 2
   maxReplicas: 3
-  
   metrics:
   - type: Resource
     resource:
