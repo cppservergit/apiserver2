@@ -66,7 +66,7 @@ fi
 echo "[+] Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml 
 echo "[+] Deploying APIserver2..."
-microk8s kubectl create namespace cppserver
+sudo microk8s kubectl create namespace cppserver
 sudo microk8s kubectl apply -f apiserver2.yaml
 
 # --- Verify connectivity on port 443 for APIServer2 ---
