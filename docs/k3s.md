@@ -6,7 +6,10 @@ Create a minimal VM with Multipass:
 ```
 multipass launch -n k3s -c 4 -m 4G -d 6g
 ```
-
+Enter the Linux terminal:
+```
+multipass shell k3s
+```
 Update OS and create host directory for blobs:
 ```
 sudo mkdir -p /mnt/apiserver-data
