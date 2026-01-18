@@ -8,28 +8,39 @@ sudo chown 10001:10001 /mnt/apiserver-data
 echo "[+] Updating the operating system, please wait..."
 sudo apt-get -qq update >/dev/null 
 sudo apt-get -qq upgrade -y >/dev/null
+
 echo "[+] Tuning sysctl for http clients..."
 cat <<EOF | sudo tee /etc/sysctl.d/99-microk8s-highperf.conf
+# --- Networking Tuning (High Performance API) ---
 net.ipv4.ip_local_port_range = 10240 65535
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.tcp_fin_timeout = 15
+
+# --- MicroK8s / CIS Hardening Requirements ---
+vm.panic_on_oom=0
+vm.overcommit_memory=1
+kernel.panic=10
+kernel.panic_on_oops=1
+kernel.keys.root_maxkeys=1000000
+kernel.keys.root_maxbytes=25000000
 EOF
 sudo sysctl --system >/dev/null
 echo "[✓] sysctl updated"
+
+echo "[+] Creating MicroK8s launch configuration..."
+curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/launch.sh && chmod +x launch.sh
+./launch.sh
+sudo mkdir -p /var/snap/microk8s/common/
+sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
+echo "[✓] Launch configuration installed."
+
 echo "[+] Installing MicroK8s via snap..."
 sudo snap install microk8s --classic >/dev/null
 echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
 echo "[✓] MicroK8s is ready."
 sudo microk8s kubectl version
-echo "[+] Installing add-ons: hostpath-storage"
-sudo microk8s enable hostpath-storage >/dev/null
-echo "[+] Installing add-ons: ingress"
-sudo microk8s enable ingress >/dev/null
-echo "[+] Installing add-ons: metrics-server"
-sudo microk8s enable metrics-server >/dev/null
-sudo microk8s status --wait-ready >/dev/null
-echo "[+] MicroK8s base system installed."
+echo "[✓] MicroK8s base system installed."
 
 echo "[+] Patching ingress controller to redirect HTTP to HTTPS..."
 sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
