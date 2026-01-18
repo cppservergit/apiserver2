@@ -32,6 +32,12 @@ curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/mic
 ./launch.sh
 sudo mkdir -p /var/snap/microk8s/common/
 sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
+
+echo "[+] Pre-loading APIServer2 container image into the MicroK8s container runtime..."
+curl -s -O https://cppserver.com/res/apiserver2.tar
+sudo mkdir -p /var/snap/microk8s/common/sideload
+sudo cp apiserver2.tar /var/snap/microk8s/common/sideload
+
 echo "[✓] Launch configuration installed."
 
 echo "[+] Installing MicroK8s via snap..."
