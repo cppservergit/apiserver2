@@ -244,6 +244,7 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+
 ---
 # ==============================================================================
 # 7. NETWORK POLICIES (CIS 5.3.2)
@@ -274,6 +275,11 @@ spec:
   policyTypes:
   - Ingress
   ingress:
-  - ports:
+  - from:
+    # Option A: Allow traffic from the ingress namespace
+    - namespaceSelector:
+        matchLabels:
+          name: ingress  # MicroK8s default label for the ingress ns
+    ports:
     - port: 8080
       protocol: TCP
