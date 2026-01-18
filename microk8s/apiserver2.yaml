@@ -276,10 +276,10 @@ spec:
   - Ingress
   ingress:
   - from:
-    # Option A: Allow traffic from the ingress namespace
+    # Allow traffic from the ingress namespace
     - namespaceSelector:
         matchLabels:
-          name: ingress  # MicroK8s default label for the ingress ns
+          kubernetes.io/metadata.name: ingress
     ports:
     - port: 8080
       protocol: TCP
