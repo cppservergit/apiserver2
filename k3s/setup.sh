@@ -31,6 +31,11 @@ sudo kubectl version
 kubectl get node -o wide
 echo "[✓] K3s base system installed."
 
+# --- Wait for ingress to be Ready --- 
+echo "[+] Waiting for the Ingress to be ready - this may take 1-2 minutes..."
+kubectl rollout status deployment/traefik -n kube-system --timeout=120s >/dev/null
+echo "[✓] Ingress deployed."
+
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
 if curl -s --max-time 5 http://localhost/ >/dev/null; then
