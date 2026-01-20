@@ -179,6 +179,25 @@ curl "https://localhost/api/customer" -ks --json '{"id":"ANATR"}' -H "Authorizat
 ```
 You should see the JSON response of the `/api/customer` endpoint.
 
+Test the upload API:
+```
+TOKEN=$(curl --json '{"username":"mcordova", "password":"basica"}' "https://localhost/api/login" -ks | jq -r '.id_token')
+curl https://localhost/api/upload -F "file1=@apiserver2.yaml" -F "title=My little YAML K8s deployment" -ks -H "Authorization: Bearer $TOKEN" | jq
+```
+Expected output (token will vary):
+```
+{
+  "originalFilename": "apiserver2.yaml",
+  "savedFilename": "4dde3f25-7d5a-4eb8-8279-d5e3d14ee74c.yaml",
+  "size": "8849",
+  "title": "My little YAML K8s deployment"
+}
+```
+To list the uploaded files:
+```
+ls /mnt/apiserver-data
+```
+
 Check the Ingress (load balancer) HTTP access logs:
 ```
 microk8s kubectl logs -n ingress daemonset/traefik
