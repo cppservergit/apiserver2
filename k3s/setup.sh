@@ -28,6 +28,7 @@ echo "[✓] sysctl updated"
 echo "[+] Installing K3s..."
 curl -sfL https://get.k3s.io | K3S_KUBECONFIG_MODE="644" sh -
 sudo kubectl version
+kubectl get node -o wide
 echo "[✓] K3s base system installed."
 
 # --- Verify connectivity on port 80 ---
@@ -46,13 +47,13 @@ fi
 echo "[+] Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml 
 echo "[+] Deploying APIserver2..."
-sudo microk8s kubectl create namespace cppserver > /dev/null
-sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
-sudo microk8s kubectl apply -f apiserver2.yaml > /dev/null
+kubectl create namespace cppserver > /dev/null
+kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
+kubectl apply -f apiserver2.yaml > /dev/null
 
 # --- Verify connectivity on port 443 for APIServer2 ---
 echo "[+] Waiting for APIServer2 Pods to be Ready..."
-sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
+kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 echo "[✓] APIServer2 deployment is ready."
 echo "[+] Testing APIServer2 connectivity..."
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
@@ -60,7 +61,7 @@ if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
 fi
 
 echo "[+] Waiting for all the Kubernetes pods to be ready..."
-sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
+kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
 echo "[✓] Pods are ready."
 
 echo ""
