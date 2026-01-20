@@ -185,18 +185,16 @@ microk8s kubectl logs -n ingress daemonset/traefik
 ```
 By default Traefik ingress does not log HTTP requests, the external Load Balancer at the edge (HAProxy) will keep those logs.
 
-APIServer2 Pods logs:
+APIServer2 Pods logs with server-generated timestamps:
 ```
 kubectl logs -l app=apiserver2 -c=apiserver2 -n cppserver --timestamps=true
 ```
 Expected output:
 ```
-2026-01-04T21:13:16.474527564-04:00 [  INFO  ] [Thread: 140638524725888] [--------] Application starting...
-2026-01-04T21:13:16.478812677-04:00 [  INFO  ] [Thread: 140638524725888] [--------] CORS enabled for 2 origin(s).
-2026-01-04T21:13:16.478819076-04:00 [  INFO  ] [Thread: 140638524725888] [--------] APIServer2 version 1.1.5 starting on port 8080 with 1 I/O threads and 4 total worker threads.
-2026-01-04T21:13:16.478820876-04:00 [  INFO  ] [Thread: 140638524725888] [--------] Assigning 4 worker threads per I/O worker.
-2026-01-04T21:25:56.326279372-04:00 [  INFO  ] [Thread: 140638435669696] [7bc3e1aa-e9d5-11f0-869f-5254008ff37c] Login OK for user 'mcordova': sessionId 7c7f67f5-61f6-4795-bb23-9b1e2d0ec26c - from 172.25.65.150
+2026-01-20T12:14:43.387514143-04:00 {"level": "INFO", "thread": "134920529121816", "req_id": "--------", "msg": "Application starting..."}
+2026-01-20T12:28:09.398627754-04:00 {"level": "INFO", "thread": "133067862985528", "req_id": "--------", "msg": "Login OK for user 'mcordova': sessionId 5c769d09-1262-49ae-a13b-0b5c58ee13f5 - from 172.28.158.79"}
 ```
+APIServer2 logs are in JSON format for cloud-native observability stacks, like Grafana Loki.
 The command above consolidates the last log entries from all the APIServer2 Pods. 
 For more control you can execute this to get all the available logs:
 ```
