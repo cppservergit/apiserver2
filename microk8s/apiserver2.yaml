@@ -327,7 +327,11 @@ spec:
   - Ingress
   ingress:
   - from:
-    # Allow traffic from the confirmed 'ingress' namespace
+    # 1. Allow traffic from K3s default Traefik namespace
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    # 2. Allow traffic from MicroK8s Ingress namespace (assuming 'ingress')
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ingress
