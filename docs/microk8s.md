@@ -200,7 +200,7 @@ Expected output, something like this:
 ```
 APIServer2 Pods logs:
 ```
-kubectl logs -l app=apiserver2 -c=apiserver2 --timestamps=true
+kubectl logs -l app=apiserver2 -c=apiserver2 -n cppserver --timestamps=true
 ```
 Expected output:
 ```
@@ -215,13 +215,13 @@ For more control you can execute this to get all the available logs:
 ```
 for pod in $(kubectl get pods -l app=apiserver2 -o name); do
   echo "=== Logs from $pod ==="
-  kubectl logs $pod -c apiserver2 --timestamps=true
+  kubectl logs $pod -c apiserver2 -n cppserver --timestamps=true
 done
 ```
 
 Check APIServer2 resource usage (cpu, memory):
 ```
-kubectl top pods
+kubectl top pods -n cppserver
 ```
 
 ## Step 4: Testing all APIs
@@ -267,7 +267,7 @@ If you want to reconfigure APIServer you change the YAML file, then run:
 ```
 kubectl apply -f apiserver2.yaml
 ```
-But that is not enough, to restart the container and read the new values from the environment you must restart-rollout the Pods:
+Restart the containers:
 ```
 kubectl rollout restart deployment
 ```
