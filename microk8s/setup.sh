@@ -9,14 +9,11 @@ echo "[+] Updating the operating system, please wait..."
 sudo apt-get -qq update >/dev/null 
 sudo apt-get -qq upgrade -y >/dev/null
 
-echo "[+] Tuning sysctl for http clients..."
-cat <<EOF | sudo tee /etc/sysctl.d/99-microk8s-highperf.conf
-# --- Networking Tuning (High Performance API) ---
+echo "[+] Tuning sysctl..."
+cat <<EOF | sudo tee /etc/sysctl.d/99-microk8s-highperf.conf > /dev/null
 net.ipv4.ip_local_port_range = 10240 65535
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.tcp_fin_timeout = 15
-
-# --- MicroK8s / CIS Hardening Requirements ---
 vm.panic_on_oom=0
 vm.overcommit_memory=1
 kernel.panic=10
@@ -32,6 +29,7 @@ curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/mic
 ./launch.sh
 sudo mkdir -p /var/snap/microk8s/common/
 sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
+sudo rm microk8s-config.yaml
 
 # OPTIONAL: preload your container image into MicroK8s, you MUST set [imagePullPolicy: Never] in apiserver2.yaml to make it work
 #echo "[+] Pre-loading APIServer2 container image into the MicroK8s container runtime..."
@@ -42,38 +40,16 @@ sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
 echo "[✓] Launch configuration installed."
 
 echo "[+] Installing MicroK8s via snap..."
-sudo snap install microk8s --classic >/dev/null
+sudo snap install microk8s --classic --channel=1.35/stable>/dev/null
 echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
 echo "[✓] MicroK8s is ready."
 sudo microk8s kubectl version
 echo "[✓] MicroK8s base system installed."
 
-echo "[+] Patching ingress controller to redirect HTTP to HTTPS..."
-sudo microk8s kubectl patch configmap nginx-load-balancer-microk8s-conf -n ingress \
-  --type merge -p '{"data":{"ssl-redirect":"true","force-ssl-redirect":"true"}}'
-
-echo "[+] Patching ingress controller to mount host /etc/localtime..."
-sudo microk8s kubectl patch daemonset nginx-ingress-microk8s-controller -n ingress --patch '
-spec:
-  template:
-    spec:
-      containers:
-      - name: nginx-ingress-microk8s
-        volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
-      volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
-          type: File
-'
-
-# --- Wait for ingress controller pods to be Ready --- 
-echo "[+] Waiting for the ingress controller pod to be ready - this may take 1-2 minutes..." 
-sudo microk8s kubectl rollout status daemonset/nginx-ingress-microk8s-controller -n ingress --timeout=120s >/dev/null
+# --- Wait for ingress to be Ready --- 
+echo "[+] Waiting for the Ingress to be ready - this may take 1-2 minutes..." 
+sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 echo "[✓] Ingress deployed."
 
 # --- Verify connectivity on port 80 ---
@@ -92,9 +68,9 @@ fi
 echo "[+] Retrieving APIserver2 deployment manifest..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml 
 echo "[+] Deploying APIserver2..."
-sudo microk8s kubectl create namespace cppserver
-sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted
-sudo microk8s kubectl apply -f apiserver2.yaml
+sudo microk8s kubectl create namespace cppserver > /dev/null
+sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
+sudo microk8s kubectl apply -f apiserver2.yaml > /dev/null
 
 # --- Verify connectivity on port 443 for APIServer2 ---
 echo "[+] Waiting for APIServer2 Pods to be Ready..."

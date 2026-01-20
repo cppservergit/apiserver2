@@ -7,11 +7,12 @@ cat <<EOF > microk8s-config.yaml
 ---
 version: 0.1.0
 addons:
+  - name: dns
   - name: rbac
-  - name: ingress
   - name: hostpath-storage
   - name: metrics-server
-
+  - name: ingress
+  
 extraKubeAPIServerArgs:
   --encryption-provider-config: "\$SNAP_DATA/args/encryption-config.yaml"
   --authorization-mode: RBAC,Node

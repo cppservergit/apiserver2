@@ -176,7 +176,7 @@ spec:
 
 ---
 # ==============================================================================
-# 4. SERVICE 
+# 4. SERVICE
 # ==============================================================================
 apiVersion: v1
 kind: Service
@@ -195,35 +195,89 @@ spec:
 
 ---
 # ==============================================================================
-# 5. INGRESS 
+# 5. TRAEFIK MIDDLEWARES
 # ==============================================================================
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
 metadata:
-  name: apiserver2-ingress
+  name: apiserver2-strip
   namespace: cppserver
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$1
-    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
-    nginx.ingress.kubernetes.io/compute-full-forwarded-for: "true"
 spec:
-  ingressClassName: public
-  rules:
-  - http:
-      paths:
-      - path: /api/(.+)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: apiserver2-service
-            port:
-              number: 8080
+  stripPrefix:
+    prefixes:
+      - /api
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apiserver2-limits
+  namespace: cppserver
+spec:
+  buffering:
+    maxRequestBodyBytes: 5242880 # 5MB limit
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apiserver2-redirect
+  namespace: cppserver
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
 
 ---
 # ==============================================================================
-# 6. HPA 
+# 6. INGRESS ROUTE (Traefik CRD)
+# ==============================================================================
+# ROUTE 1: HTTP -> HTTPS Redirect
+# Catches anything starting with /api on port 80 and forces HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: apiserver2-ingress-http
+  namespace: cppserver
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: PathPrefix(`/api`)
+      kind: Rule
+      services:
+        - name: apiserver2-service
+          port: 8080
+      middlewares:
+        - name: apiserver2-redirect
+
+---
+# ROUTE 2: HTTPS Traffic
+# Handles strict regex matching, prefix stripping, and limits
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: apiserver2-ingress
+  namespace: cppserver
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Strict Regex: Must start with /api/ followed by at least one char
+    # e.g. /api/login (match), /api/ (no match), /api (no match)
+    - match: PathRegexp(`^/api/.+`)
+      kind: Rule
+      services:
+        - name: apiserver2-service
+          port: 8080
+      middlewares:
+        - name: apiserver2-strip
+        - name: apiserver2-limits
+  tls: {}
+
+---
+# ==============================================================================
+# 7. HPA
 # ==============================================================================
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -247,9 +301,8 @@ spec:
 
 ---
 # ==============================================================================
-# 7. NETWORK POLICIES (CIS 5.3.2)
+# 8. NETWORK POLICIES
 # ==============================================================================
-# 1. Default Deny Ingress: Blocks all traffic to the namespace by default
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -261,8 +314,6 @@ spec:
   - Ingress
 
 ---
-# 2. Allow API Access: Explicitly allows traffic to port 8080
-# This is required so the Ingress Controller can reach the pod.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -276,7 +327,7 @@ spec:
   - Ingress
   ingress:
   - from:
-    # Allow traffic from the ingress namespace
+    # Allow traffic from the confirmed 'ingress' namespace
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ingress
