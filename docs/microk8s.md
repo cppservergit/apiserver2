@@ -152,10 +152,10 @@ Get APIServer2 version:
 ```
 curl https://localhost/api/version -ks -H "Authorization: Bearer 6976f434-d9c1-11f0-93b8-5254000f64af" | jq
 ```
-Expected output:
+Expected output (version may vary):
 ```
 {
-  "version": "1.1.6"
+  "version": "1.1.7"
 }
 ```
 
@@ -183,11 +183,8 @@ Check the Ingress (load balancer) HTTP access logs:
 ```
 microk8s kubectl logs -n ingress daemonset/traefik
 ```
-Expected output, something like this:
-```
-172.22.0.1 - - [22/Dec/2025:15:04:19 +0000] "GET /api/metrics HTTP/1.1" 200 487 "-" "curl/8.16.0" 139 0.000 [default-apiserver-service-8080] [] 10.1.252.18:8080 487 0.000 200 3b139f00a48827441ad43b695650ea77
-172.22.0.1 - - [22/Dec/2025:15:04:20 +0000] "GET /api/metrics HTTP/1.1" 200 487 "-" "curl/8.16.0" 139 0.001 [default-apiserver-service-8080] [] 10.1.252.18:8080 487 0.000 200 18fdaceca1238bb72e51ae7815a91cea
-```
+By default Traefik ingress does not log HTTP requests, the external Load Balancer at the edge (HAProxy) will keep those logs.
+
 APIServer2 Pods logs:
 ```
 kubectl logs -l app=apiserver2 -c=apiserver2 -n cppserver --timestamps=true
