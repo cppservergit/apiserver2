@@ -198,7 +198,7 @@ APIServer2 logs are in JSON format for cloud-native observability stacks, like G
 The command above consolidates the last log entries from all the APIServer2 Pods. 
 For more control you can execute this to get all the available logs:
 ```
-for pod in $(kubectl get pods -l app=apiserver2 -o name); do
+for pod in $(kubectl get pods -l app=apiserver2 -n cppserver -o name); do
   echo "=== Logs from $pod ==="
   kubectl logs $pod -c apiserver2 -n cppserver --timestamps=true
 done
@@ -254,7 +254,7 @@ kubectl apply -f apiserver2.yaml
 ```
 Restart the containers:
 ```
-kubectl rollout restart deployment
+kubectl rollout restart deployment -n cppserver
 ```
 Expected output:
 ```
@@ -262,7 +262,7 @@ deployment.apps/apiserver2 restarted
 ```
 After a few seconds the Pods will be renewed, the rules defined in the YAML file establish that service must not be interrupted, so while the new Pods get ready at least one of the old Pods keeps running until the new ones are ready to handle the load. Kubernetes takes care of this life-cycle issues, but enough resources must exist (CPU mostly) for this to happen, otherwise you will see some Pods in pending status, never starting. If the newewal of Pods went OK you will see fresh Pods running since a few seconds ago:
 ```
-kubectl get pods
+kubectl get pods -n cppserver
 ```
 Expected output:
 ```
@@ -279,15 +279,14 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: apiserver2-hpa
+  namespace: cppserver
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: apiserver2
-  
   minReplicas: 2
   maxReplicas: 3
-  
   metrics:
   - type: Resource
     resource:
@@ -300,7 +299,7 @@ In this case, if the CPU reaches 80% of utilization, a new Pod will be started r
 
 You can monitor the HPA activity with this command:
 ```
-kubectl get hpa
+kubectl get hpa -n cppserver
 ```
 Expected output:
 ```
@@ -315,57 +314,61 @@ kubectl get all --all-namespaces
 ```
 Expected output:
 ```
-NAMESPACE            NAME                                           READY   STATUS    RESTARTS   AGE
-container-registry   pod/registry-579865c76c-gsx8z                  1/1     Running   0          9h
-default              pod/apiserver2-7476ff954c-56bzh                1/1     Running   0          6h39m
-default              pod/apiserver2-7476ff954c-qkj4t                1/1     Running   0          6h39m
-ingress              pod/nginx-ingress-microk8s-controller-8vtr5    1/1     Running   0          9h
-kube-system          pod/calico-kube-controllers-5947598c79-gw9nh   1/1     Running   0          9h
-kube-system          pod/calico-node-gxj7p                          1/1     Running   0          9h
-kube-system          pod/coredns-79b94494c7-lnx9g                   1/1     Running   0          9h
-kube-system          pod/hostpath-provisioner-c778b7559-cjwbp       1/1     Running   0          9h
-kube-system          pod/metrics-server-7dbd8b5cc9-wxvtf            1/1     Running   0          9h
+NAME             REFERENCE               TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          21m
+ubuntu@mk8s:~$ kubectl get all --all-namespaces
+NAMESPACE     NAME                                           READY   STATUS    RESTARTS   AGE
+cppserver     pod/apiserver2-7f4ccb79b8-dpz8m                1/1     Running   0          86s
+cppserver     pod/apiserver2-7f4ccb79b8-z85h2                1/1     Running   0          78s
+ingress       pod/traefik-98hl2                              1/1     Running   0          22m
+kube-system   pod/calico-kube-controllers-676854dc5d-9fdmc   1/1     Running   0          23m
+kube-system   pod/calico-node-vl75f                          1/1     Running   0          23m
+kube-system   pod/coredns-78894c95f4-7bkks                   1/1     Running   0          23m
+kube-system   pod/hostpath-provisioner-7f665d64f6-lkqm8      1/1     Running   0          22m
+kube-system   pod/metrics-server-65556bc7f8-blh5w            1/1     Running   0          22m
 
-NAMESPACE            NAME                         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                  AGE
-container-registry   service/registry             NodePort    10.152.183.231   <none>        5000:32000/TCP           9h
-default              service/apiserver2-service   ClusterIP   10.152.183.92    <none>        8080/TCP                 9h
-default              service/kubernetes           ClusterIP   10.152.183.1     <none>        443/TCP                  9h
-kube-system          service/kube-dns             ClusterIP   10.152.183.10    <none>        53/UDP,53/TCP,9153/TCP   9h
-kube-system          service/metrics-server       ClusterIP   10.152.183.230   <none>        443/TCP                  9h
+NAMESPACE     NAME                         TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+cppserver     service/apiserver2-service   ClusterIP      10.152.183.88    <none>        8080/TCP                     22m
+default       service/kubernetes           ClusterIP      10.152.183.1     <none>        443/TCP                      23m
+ingress       service/traefik              LoadBalancer   10.152.183.200   <pending>     80:31484/TCP,443:30924/TCP   23m
+kube-system   service/kube-dns             ClusterIP      10.152.183.10    <none>        53/UDP,53/TCP,9153/TCP       23m
+kube-system   service/metrics-server       ClusterIP      10.152.183.192   <none>        443/TCP                      23m
 
-NAMESPACE     NAME                                               DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-ingress       daemonset.apps/nginx-ingress-microk8s-controller   1         1         1       1            1           <none>                   9h
-kube-system   daemonset.apps/calico-node                         1         1         1       1            1           kubernetes.io/os=linux   9h
+NAMESPACE     NAME                         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+ingress       daemonset.apps/traefik       1         1         1       1            1           <none>                   23m
+kube-system   daemonset.apps/calico-node   1         1         1       1            1           kubernetes.io/os=linux   23m
 
-NAMESPACE            NAME                                      READY   UP-TO-DATE   AVAILABLE   AGE
-container-registry   deployment.apps/registry                  1/1     1            1           9h
-default              deployment.apps/apiserver2                2/2     2            2           9h
-kube-system          deployment.apps/calico-kube-controllers   1/1     1            1           9h
-kube-system          deployment.apps/coredns                   1/1     1            1           9h
-kube-system          deployment.apps/hostpath-provisioner      1/1     1            1           9h
-kube-system          deployment.apps/metrics-server            1/1     1            1           9h
+NAMESPACE     NAME                                      READY   UP-TO-DATE   AVAILABLE   AGE
+cppserver     deployment.apps/apiserver2                2/2     2            2           22m
+kube-system   deployment.apps/calico-kube-controllers   1/1     1            1           23m
+kube-system   deployment.apps/coredns                   1/1     1            1           23m
+kube-system   deployment.apps/hostpath-provisioner      1/1     1            1           23m
+kube-system   deployment.apps/metrics-server            1/1     1            1           23m
 
-NAMESPACE            NAME                                                 DESIRED   CURRENT   READY   AGE
-container-registry   replicaset.apps/registry-579865c76c                  1         1         1       9h
-default              replicaset.apps/apiserver2-5dcd6864ff                0         0         0       9h
-default              replicaset.apps/apiserver2-7476ff954c                2         2         2       6h39m
-default              replicaset.apps/apiserver2-779f796c5                 0         0         0       7h30m
-kube-system          replicaset.apps/calico-kube-controllers-5947598c79   1         1         1       9h
-kube-system          replicaset.apps/coredns-79b94494c7                   1         1         1       9h
-kube-system          replicaset.apps/hostpath-provisioner-c778b7559       1         1         1       9h
-kube-system          replicaset.apps/metrics-server-7dbd8b5cc9            1         1         1       9h
+NAMESPACE     NAME                                                 DESIRED   CURRENT   READY   AGE
+cppserver     replicaset.apps/apiserver2-577858686f                0         0         0       22m
+cppserver     replicaset.apps/apiserver2-7f4ccb79b8                2         2         2       86s
+kube-system   replicaset.apps/calico-kube-controllers-676854dc5d   1         1         1       23m
+kube-system   replicaset.apps/coredns-78894c95f4                   1         1         1       23m
+kube-system   replicaset.apps/hostpath-provisioner-7f665d64f6      1         1         1       22m
+kube-system   replicaset.apps/metrics-server-65556bc7f8            1         1         1       22m
 
 NAMESPACE   NAME                                                 REFERENCE               TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
-default     horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          9h
+cppserver   horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          22m
 ```
 
 ## Additional notes about this installation script
 
 This installation script goes an extra-mile to save you manual configuration:
 
+* MicroK8s protects secrets with encryption, also complies with most CIS hardening rules.
+* APIServer2 deployment passes Trivy tests (security scanner) with 1 false possitive warning (docker hub not trusted).
+* APIServer2 Alpine based image size-optimized passes Trivy tests without warnings, no vulnerabilities.
 * Configures redirect from HTTP to HTTPS, this must be enabled in the Ingress ConfigMap and then configured in the APIServer2 ingress as a rule.
+* Ingress blocks requests bigger than 5MB (defined in apiserver2.yaml)
+* Ingress blocks requests to APIServer2 which do not start with `/api/` protecting APIServer2 against common HTTP attacks.
 * Sets the timezone for the Ingress logs to the timezone of the host machine, the timezone for APIServer2 can be set in apiserver2.yaml, it is an environment variable `TZ`.
 * It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or S3, without changing `apiserver2.yaml` or APIServer2 code.
-* It does install only the minimal set of MicroK8s add-ons: host-storage, ingress and metrics-server.
+* It does install only the minimal set of MicroK8s add-ons: host-storage, dns, ingress and metrics-server.
 * You can enable add-ons for tasks like automating observability using Grafana Stack, but keep in mind of the extra CPU load these add-ons may demand. APIServer2 exposes the endpoints `/metrics` for JSON consumers and `/metricsp` for Prometheus, you can recollect metrics via HTTPS using an API-Key (configured as a secret in apiserver2.yaml) without installing an additional module in the MicroK8s cluster.
 
