@@ -97,23 +97,29 @@ Exit the shell and enter again.
 
 List APIServer2 pods
 ```
-kubectl get pods -o wide -n cppserver
+kubectl get pods -n cppserver
 ```
 Expected output:
 ```
-NAME                                    READY   STATUS    RESTARTS   AGE     IP             NODE   NOMINATED NODE   READINESS GATES
-apiserver2-784bcb5449-6cs97   1/1     Running   0          5m12s   10.1.215.200   mk8s   <none>           <none>
-apiserver2-784bcb5449-mmctd   1/1     Running   0          5m12s   10.1.215.201   mk8s   <none>           <none>
+NAME                          READY   STATUS    RESTARTS   AGE
+apiserver2-577858686f-44l2j   1/1     Running   0          2m30s
+apiserver2-577858686f-wqt4s   1/1     Running   0          2m30s
 ```
 
-Check the Ingress pods (load balancer):
+Check the Ingress (load balancer):
 ```
-kubectl get pods -n ingress
+kubectl get all -n ingress
 ```
-Expected output (names may vary):
+Expected output (pod, service and daemonset should be listed):
 ```
-NAME                                      READY   STATUS    RESTARTS   AGE
-nginx-ingress-microk8s-controller-4l548   1/1     Running   0          74s
+NAME                READY   STATUS    RESTARTS   AGE
+pod/traefik-98hl2   1/1     Running   0          3m36s
+
+NAME              TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+service/traefik   LoadBalancer   10.152.183.200   <pending>     80:31484/TCP,443:30924/TCP   4m32s
+
+NAME                     DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+daemonset.apps/traefik   1         1         1       1            1           <none>          4m31s
 ```
 
 Test APIServer2 diagnostics API, do it several times to see the different Pods responding:
