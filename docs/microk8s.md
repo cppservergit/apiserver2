@@ -364,11 +364,10 @@ This installation script goes an extra-mile to save you manual configuration:
 * MicroK8s protects secrets with encryption, also complies with most CIS hardening rules.
 * APIServer2 deployment passes Trivy tests (security scanner) with 1 false possitive warning (docker hub not trusted).
 * APIServer2 Alpine based image size-optimized passes Trivy tests without warnings, no vulnerabilities.
-* Configures redirect from HTTP to HTTPS, this must be enabled in the Ingress ConfigMap and then configured in the APIServer2 ingress as a rule.
+* Configures redirect from HTTP to HTTPS.
 * Ingress blocks requests bigger than 5MB (defined in apiserver2.yaml)
 * Ingress blocks requests to APIServer2 which do not start with `/api/` protecting APIServer2 against common HTTP attacks.
-* Sets the timezone for the Ingress logs to the timezone of the host machine, the timezone for APIServer2 can be set in apiserver2.yaml, it is an environment variable `TZ`.
+* The timezone for APIServer2 can be set in apiserver2.yaml, it is an environment variable `TZ`.
 * It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or S3, without changing `apiserver2.yaml` or APIServer2 code.
 * It does install only the minimal set of MicroK8s add-ons: host-storage, dns, ingress and metrics-server.
 * You can enable add-ons for tasks like automating observability using Grafana Stack, but keep in mind of the extra CPU load these add-ons may demand. APIServer2 exposes the endpoints `/metrics` for JSON consumers and `/metricsp` for Prometheus, you can recollect metrics via HTTPS using an API-Key (configured as a secret in apiserver2.yaml) without installing an additional module in the MicroK8s cluster.
-
