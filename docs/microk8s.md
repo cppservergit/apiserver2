@@ -1,6 +1,6 @@
 # Running APIServer2 with MicroK8s on Ubuntu 24.04
 
-In this tutorial you will use APIServer2 docker image from DockerHub to build a single-node Kubernetes cluster with 2 Pods running the container and an integrated Load Balancer (Nginx Ingress) that will listen on ports 80/443 of the host’s public IP. This setup is scalable up to 3 pods using a very modest VM (4 cores, 4GB RAM), with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs, requires the same [DemoDB SQL Server container](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md) as the bare-metal tutorial, it assumes demodb.mshome.net as its default location, you can edit the APIServer2 YAML file to change the secrets and point to another database host. We recommend MicroK8s as the ideal way to use APIServer2 for OnPrem production, single-node or in high-availability (3+ VMs), depending on your resources.
+In this tutorial you will use APIServer2 docker image from DockerHub to build a single-node Kubernetes v1.35 cluster with 2 Pods running the container and an integrated Load Balancer (Traefik Ingress) that will listen on ports 80/443 of the host’s public IP. This setup is scalable up to 3 pods using a very modest VM (4 cores, 4GB RAM), with all the self-healing, auto-administration and scalability of MicroK8s Kubernets implementation, also Cloud-ready for serverless applications. In a few minutes you will have a complete Kubernetes system ready to roll. This APIServer2 image contains all the example APIs, requires the same [DemoDB SQL Server container](https://github.com/cppservergit/apiserver2/blob/main/docs/sqlserver.md) as the bare-metal tutorial, it assumes demodb.mshome.net as its default location, you can edit the APIServer2 YAML file to change the secrets and point to another database host. We recommend MicroK8s to use APIServer2 for OnPrem production, single-node or in high-availability (3+ VMs), depending on your resources.
 
 ```mermaid
 flowchart TD
@@ -191,7 +191,7 @@ You should see the JSON response of the `/api/customer` endpoint.
 
 Check the Ingress (load balancer) HTTP access logs:
 ```
-kubectl logs -n ingress -l name=nginx-ingress-microk8s
+microk8s kubectl logs -n ingress daemonset/traefik
 ```
 Expected output, something like this:
 ```
