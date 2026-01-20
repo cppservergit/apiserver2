@@ -361,6 +361,7 @@ cppserver   horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apis
 
 This installation script goes an extra-mile to save you manual configuration:
 
+* Installs `--channel=1.35/stable` which includes the new Ingress Traefik, The old nginx Ingress will be discontinued in March 2026.
 * MicroK8s protects secrets with encryption, also complies with most CIS hardening rules.
 * APIServer2 deployment passes Trivy tests (security scanner) with 1 false possitive warning (docker hub not trusted).
 * APIServer2 Alpine based image size-optimized passes Trivy tests without warnings, no vulnerabilities.
