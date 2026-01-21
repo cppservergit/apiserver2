@@ -20,15 +20,14 @@ sudo apt upgrade -y
 
 Install K3S on Ubuntu 24.04
 ```
-curl -sfL https://get.k3s.io | K3S_KUBECONFIG_MODE="644" sh -
+curl -sfL https://get.k3s.io | K3S_KUBECONFIG_MODE="644" INSTALL_K3S_VERSION=v1.35.0+k3s1 sh -
 ```
-This will take about 2-5 minutes to complete.
+This will take about 1-5 minutes to complete.
 Expected output:
 ```
-[INFO]  Finding release for channel stable
-[INFO]  Using v1.34.3+k3s1 as release
-[INFO]  Downloading hash https://github.com/k3s-io/k3s/releases/download/v1.34.3+k3s1/sha256sum-amd64.txt
-[INFO]  Downloading binary https://github.com/k3s-io/k3s/releases/download/v1.34.3+k3s1/k3s
+[INFO]  Using v1.35.0+k3s1 as release
+[INFO]  Downloading hash https://github.com/k3s-io/k3s/releases/download/v1.35.0+k3s1/sha256sum-amd64.txt
+[INFO]  Downloading binary https://github.com/k3s-io/k3s/releases/download/v1.35.0+k3s1/k3s
 [INFO]  Verifying binary download
 [INFO]  Installing k3s to /usr/local/bin/k3s
 [INFO]  Skipping installation of SELinux RPM
@@ -50,9 +49,9 @@ kubectl version
 ```
 Expected output (versions may vary)
 ```
-Client Version: v1.34.3+k3s1
+Client Version: v1.35.0+k3s1
 Kustomize Version: v5.7.1
-Server Version: v1.34.3+k3s1
+Server Version: v1.35.0+k3s1
 ```
 SHow node details:
 ```
@@ -61,7 +60,7 @@ kubectl get node -o wide
 Expected output (versions may vary)
 ```
 NAME   STATUS   ROLES           AGE     VERSION        INTERNAL-IP      EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION     CONTAINER-RUNTIME
-k3s    Ready    control-plane   2m40s   v1.34.3+k3s1   172.30.138.131   <none>        Ubuntu 24.04.3 LTS   6.8.0-90-generic   containerd://2.1.5-k3s1
+k3s    Ready    control-plane   2m31s   v1.35.0+k3s1   172.30.142.147   <none>        Ubuntu 24.04.3 LTS   6.8.0-90-generic   containerd://2.1.5-k3s1
 ```
 Test Ingress (the load balancer, it may take 1-2 minutes):
 ```
