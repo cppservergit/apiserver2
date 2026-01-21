@@ -63,9 +63,9 @@ Expected output (versions may vary)
 NAME   STATUS   ROLES           AGE     VERSION        INTERNAL-IP      EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION     CONTAINER-RUNTIME
 k3s    Ready    control-plane   2m40s   v1.34.3+k3s1   172.30.138.131   <none>        Ubuntu 24.04.3 LTS   6.8.0-90-generic   containerd://2.1.5-k3s1
 ```
-Test Ingress (load balancer):
+Test Ingress (the load balancer, it may take 1-2 minutes):
 ```
-kubectl rollout status deployment/traefik -n kube-system 
+kubectl rollout status deployment/traefik -n kube-system --timeout=120s
 ```
 Expected output:
 ```
