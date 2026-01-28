@@ -31,7 +31,7 @@ sudo mkdir -p /var/snap/microk8s/common/
 sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
 sudo rm microk8s-config.yaml
 
-# OPTIONAL: preload your container image into MicroK8s, you MUST set [imagePullPolicy: Never] in apiserver2.yaml to make it work
+# OPTIONAL: preload your container image from a trusted source into MicroK8s, you MUST set [imagePullPolicy: Never] in apiserver2.yaml to make it work
 #echo "[+] Pre-loading APIServer2 container image into the MicroK8s container runtime..."
 #curl -s -O https://cppserver.com/res/apiserver2.tar
 #sudo mkdir -p /var/snap/microk8s/common/sideload
@@ -51,6 +51,20 @@ echo "[✓] MicroK8s base system installed."
 echo "[+] Waiting for the Ingress to be ready - this may take 1-2 minutes..." 
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 echo "[✓] Ingress deployed."
+
+# OPTIONAL: patch the ingress to trust HAProxy IP address if using HAProxy as a load balancer in front of MicroK8s
+# change the HAPROXY_IP variable to match your HAProxy IP address. This patch is required to preserve client IP addresses in the ingress and pods logs.
+#HAPROXY_IP="172.31.173.60"
+#cat <<EOF > traefik-patch.json
+#[
+#  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.web.forwardedHeaders.trustedIPs=$HAPROXY_IP"},
+#  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.websecure.forwardedHeaders.trustedIPs=$HAPROXY_IP"}
+#]
+#EOF
+#sudo microk8s kubectl patch ds traefik -n ingress --type='json' --patch-file traefik-patch.json
+#rm traefik-patch.json
+#sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --field-selector=status.phase=Running
+#sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
 
 # --- Verify connectivity on port 80 ---
 echo "[+] Testing HTTP connectivity..."
