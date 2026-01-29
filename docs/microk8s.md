@@ -474,3 +474,11 @@ sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --
 
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
 ```
+
+## Uninstalling MicroK8s
+
+If your MicroK8s becomes unstable and for some reason it is hard to diagnose and fix it, do not waste time, uninstall and run again `setup.sh`, it takes about 5 minutes or less to complete.
+```
+sudo snap remove --purge microk8s
+```
+During development and testing when using Multipass on Windows 10/11, after a reboot of the host PC the Multipass VM may change its IP and then MicroK8s will start failing, this is such a case that justifies uninstalling and running `setup.sh` again, it will be faster that trying to fix MicroK8s configuration.
