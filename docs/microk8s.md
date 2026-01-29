@@ -391,3 +391,86 @@ This installation script goes an extra-mile to save you manual configuration:
 * It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or S3, without changing `apiserver2.yaml` or APIServer2 code.
 * It does install only the minimal set of MicroK8s add-ons: host-storage, dns, ingress and metrics-server.
 * You can enable add-ons for tasks like automating observability using Grafana Stack, but keep in mind of the extra CPU load these add-ons may demand. APIServer2 exposes the endpoints `/metrics` for JSON consumers and `/metricsp` for Prometheus, you can recollect metrics via HTTPS using an API-Key (configured as a secret in apiserver2.yaml) without installing an additional module in the MicroK8s cluster.
+
+## Production cluster with HAProxy on the TLS edge
+
+It is possible to deploy a high-availability cluster with little resources, combining HAProxy load balancer with a two independent single-node MicroK8s clusters, it is not high-availability in the sense of traditional kubernetes, which may be overkill for OnPrem, but this is very pragmatic and can easily manage the load for small-medium banks and other organizations, running the middleware for external Apps or serving inter-organization APIs.
+
+```mermaid
+flowchart LR
+    %% Define the entry point
+    Client(["External Apps"])
+
+    %% Define the HAProxy Node with Hardware Specs and Security Annotations
+    LB{{"**HAProxy VM**<br>(Load Balancer)<br>_2-cores, 4GB RAM_<br>-----------------------<br>🔒 JA4 fingerprint blacklist<br>📉 Rate-limits<br>🛡️ API Protection"}}
+
+    %% Backend Pool Subgraph
+    subgraph BackendPool ["Backend VMs"]
+        direction TB
+        
+        %% VM 1 with Specs
+        subgraph VM1 ["microk8s VM2 (5-cores, 4GB RAM)"]
+            direction LR
+            Ingress1[/"**Ingress Controller**<br>-----------------------<br>🔀 Path rules"\]
+            API1["**APIServer2 Pod**<br>-----------------------<br>🔑 JWT security"]
+            
+            %% Internal flow
+            Ingress1 --> API1
+        end
+
+        %% VM 2 with Specs
+        subgraph VM2 ["microk8s VM1 (5-cores, 4GB RAM)"]
+            direction LR
+            Ingress2[/"**Ingress Controller**<br>-----------------------<br>🔀 Path rules"\]
+            API2["**APIServer2 Pod**<br>-----------------------<br>🔑 JWT security"]
+            
+            %% Internal flow
+            Ingress2 --> API2
+        end
+    end
+
+    %% Define External connections
+    Client ==>|"TLS"| LB
+
+    %% Traffic distribution to the Ingress inside the VMs
+    LB -.->|"Distribute"| Ingress1
+    LB -.->|"Distribute"| Ingress2
+
+    %% Styling
+    style LB fill:#ffecb3,stroke:#f57f17,stroke-width:2px,color:#000
+    
+    %% VM Styling (Container box)
+    style VM1 fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000
+    style VM2 fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000
+    
+    %% Pod Styling
+    style Ingress1 fill:#ffffff,stroke:#333,stroke-width:1px
+    style Ingress2 fill:#ffffff,stroke:#333,stroke-width:1px
+    style API1 fill:#b2ebf2,stroke:#006064,stroke-width:1px
+    style API2 fill:#b2ebf2,stroke:#006064,stroke-width:1px
+```
+
+There is a single point of failure, the HAProxy VM, but it can be restored in seconds, and recreated from scratch in very few minutes.
+Very few resources are required for this setup, 12 cores and 12 GB of RAM distributed between 3 VMs, each MicroK8s cluster can start with 2 or 3 pods and scale up to 4 pods, providing the whole backend cluster with 8 pods if necessary, each Pod runs an APIServer2 multireactor EPOLL server, which is highly efficient for supporting thousands of concurrent connections.
+
+A multi-layer security approach is implemented in this setup, HAProxy provides rate-limits, JA4 fingerprints blacklist and API rules enforcement, transforming the load balancer into an API Gateway, protecting the ingress and the pods. The ingress implements path rules, nothing else, and the APIServer2 container implements the stateless JWT security model.
+
+Please note that you will need to patch the traefik Ingress so it can trust the IP of HAProxy allowing the containers to receive the real client IP:
+```
+HAPROXY_IP="172.31.173.60"
+
+cat <<EOF > traefik-patch.json
+[
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.web.forwardedHeaders.trustedIPs=$HAPROXY_IP"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.websecure.forwardedHeaders.trustedIPs=$HAPROXY_IP"}
+]
+EOF
+
+sudo microk8s kubectl patch ds traefik -n ingress --type='json' --patch-file traefik-patch.json
+
+rm traefik-patch.json
+
+sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --field-selector=status.phase=Running
+
+sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
+```
