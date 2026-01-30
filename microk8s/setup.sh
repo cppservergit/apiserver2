@@ -52,12 +52,11 @@ echo "[✓] MicroK8s base system installed."
 echo "[+] Waiting for the Ingress daemonset to be ready - this may take 1-2 minutes..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 echo "[✓] Ingress daemonset deployed."
-echo "[+] Waiting for the Ingress pod to be ready - this may take 1 minute..."
+echo "[+] Waiting for the Ingress pod to be ready - this may take 1-2 minutes..."
 sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
 echo "[✓] Ingress pod deployed."
 
 # --- Verify connectivity on port 443 ---
-sudo microk8s kubectl get all -n ingress
 echo "[+] Testing HTTPS connectivity..."
 if curl -sk --max-time 5 https://localhost/ >/dev/null; then
   echo "[✓] Ingress is serving HTTPS traffic at 443"
