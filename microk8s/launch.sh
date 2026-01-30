@@ -1,5 +1,4 @@
 #!/bin/bash
-HOST="$(hostname).mshome.net"
 SKEY=$(openssl rand -base64 32)
 
 # 2. Generate the Launch Configuration File
@@ -21,9 +20,6 @@ extraKubeAPIServerArgs:
   --audit-log-maxage: "30"
   --audit-log-maxbackup: "10"
   --audit-log-maxsize: "100"
-
-extraSANs:
-  - $HOST
 
 extraConfigFiles:
   encryption-config.yaml: |

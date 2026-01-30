@@ -48,32 +48,16 @@ echo "[✓] MicroK8s is ready."
 sudo microk8s kubectl version
 echo "[✓] MicroK8s base system installed."
 
-# --- Wait for ingress to be Ready --- 
-echo "[+] Waiting for the Ingress to be ready - this may take 1-2 minutes..." 
+# --- Wait for ingress to be Ready ---
+echo "[+] Waiting for the Ingress daemonset to be ready - this may take 1-2 minutes..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
-echo "[✓] Ingress deployed."
+echo "[✓] Ingress daemonset deployed."
+echo "[+] Waiting for the Ingress pod to be ready - this may take 1 minute..."
+sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
+echo "[✓] Ingress pod deployed."
 
-# OPTIONAL: patch the ingress to trust HAProxy IP address if using HAProxy as a load balancer in front of MicroK8s
-# change the HAPROXY_IP variable to match your HAProxy IP address. This patch is required to preserve client IP addresses in the ingress and pods logs.
-#HAPROXY_IP="172.31.173.60"
-#cat <<EOF > traefik-patch.json
-#[
-#  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.web.forwardedHeaders.trustedIPs=$HAPROXY_IP"},
-#  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--entryPoints.websecure.forwardedHeaders.trustedIPs=$HAPROXY_IP"}
-#]
-#EOF
-#sudo microk8s kubectl patch ds traefik -n ingress --type='json' --patch-file traefik-patch.json
-#rm traefik-patch.json
-#sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --field-selector=status.phase=Running
-#sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
-
-# --- Verify connectivity on port 80 ---
-echo "[+] Testing HTTP connectivity..."
-if curl -s --max-time 5 http://localhost/ >/dev/null; then
-   echo "[✓] Ingress is serving HTTP traffic at port 80"
-fi
-
-# --- Verify connectivity on port 443 (optional, requires TLS configured) ---
+# --- Verify connectivity on port 443 ---
+sudo microk8s kubectl get all -n ingress
 echo "[+] Testing HTTPS connectivity..."
 if curl -sk --max-time 5 https://localhost/ >/dev/null; then
   echo "[✓] Ingress is serving HTTPS traffic at 443"
