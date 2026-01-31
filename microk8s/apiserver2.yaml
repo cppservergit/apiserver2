@@ -98,7 +98,7 @@ spec:
 
       containers:
       - name: apiserver2
-        image: cppserver/apiserver2:v1.1.7
+        image: cppserver/apiserver2:v1.1.8
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
