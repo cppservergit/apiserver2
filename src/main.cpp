@@ -58,7 +58,7 @@ public:
 
         // Propagate x-request-id if present in the original request
         if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.try_emplace("x-request-id", std::string(*request_id_opt));
+            headers.try_emplace("x-request-id", *request_id_opt);
         }
 
         util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
@@ -109,7 +109,7 @@ private:
         std::map<std::string, std::string, std::less<>> headers = {{"Content-Type", "application/json"}};
         
         if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.try_emplace("x-request-id", std::string(*request_id_opt));
+            headers.try_emplace("x-request-id", *request_id_opt);
         }
 
         // Reuse the thread-local client member
