@@ -727,6 +727,15 @@ auto request::get_user() const noexcept -> std::string {
     return "not available";
 }
 
+auto request::get_sessionId() const noexcept -> std::string {
+    if (auto claims = jwt::get_claims(get_bearer_token().value_or("")); claims.has_value()) {
+        if (auto it = claims->find("sessionId"); it != claims->end()) {
+            return it->second;
+        }
+    }
+    return "not available";
+}
+
 // --- Explicit template instantiations ---
 template auto request::get_value<std::string>(std::string_view) const noexcept -> std::expected<std::optional<std::string>, param_error>;
 template auto request::get_value<std::string_view>(std::string_view) const noexcept -> std::expected<std::optional<std::string_view>, param_error>;

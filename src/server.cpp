@@ -176,6 +176,14 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
             return;
         }
 
+        if(endpoint->is_secure)
+            util::log::debug("Authenticated request by user '{}' with sessionId '{}' for path '{}' from {}",
+                request_ref.get_user(),
+                request_ref.get_sessionId(),
+                request_ref.get_path(),
+                request_ref.get_remote_ip()
+            );
+
         endpoint->validator(request_ref);
         endpoint->handler(request_ref, res);
 
@@ -411,9 +419,13 @@ void server::io_worker::process_request(int fd) {
     }
 
     http::request req(std::move(conn.parser), conn.remote_ip);
-    
+
+    const std::string request_id_str(req.get_header_value("x-request-id").value_or(""));
+    const util::log::request_id_scope rid_scope(request_id_str);    
+
     if (!cors::is_origin_allowed(req.get_header_value("Origin"), m_allowed_origins)) {
-        util::log::warn("CORS check failed for origin: {}", req.get_header_value("Origin").value_or("N/A"));
+        util::log::warn("CORS check failed for origin: {} for path '{}' from {}", 
+            req.get_header_value("Origin").value_or("N/A"), req.get_path(), req.get_remote_ip());
         http::response err_res;
         err_res.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
         m_response_queue->push({fd, std::move(err_res)});
@@ -430,6 +442,7 @@ void server::io_worker::process_request(int fd) {
     } else {
         const auto* endpoint = m_router.find_handler(req.get_path());
         if (!endpoint) {
+            util::log::warn("BOT-ALERT No handler found for path '{}' from {}", req.get_path(), req.get_remote_ip());
             res.set_body(http::status::not_found, R"({"error":"Not Found"})");
             m_response_queue->push({fd, std::move(res)});
         } else {

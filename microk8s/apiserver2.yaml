@@ -131,6 +131,8 @@ spec:
           value: "4" 
         - name: QUEUE_CAPACITY
           value: "1000"
+        - name: "MAX_REQUEST_SIZE"
+          value: "5242880"  # 5MB
         - name: CORS_ORIGINS
           value: "null,file://"
         - name: BLOB_PATH
