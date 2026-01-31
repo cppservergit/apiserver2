@@ -58,7 +58,7 @@ public:
 
         // Propagate x-request-id if present in the original request
         if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.emplace("x-request-id", std::string(*request_id_opt));
+            headers.try_emplace("x-request-id", std::string(*request_id_opt));
         }
 
         util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
@@ -93,13 +93,8 @@ private:
         if (!m_session.token.empty()) {
             const auto age = std::chrono::duration_cast<std::chrono::minutes>(now - m_session.created_at);
             if (age.count() < 3) {
-                util::log::debug("Using cached token for remote API.");
                 return m_session.token;
-            } else {
-                util::log::debug("Cached token expired (age: {} minutes). Re-authenticating.", age.count());
             }
-        } else {
-            util::log::debug("No cached token found. Authenticating with remote API.");
         }
 
         // --- Perform Login ---
@@ -114,7 +109,7 @@ private:
         std::map<std::string, std::string, std::less<>> headers = {{"Content-Type", "application/json"}};
         
         if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.emplace("x-request-id", std::string(*request_id_opt));
+            headers.try_emplace("x-request-id", std::string(*request_id_opt));
         }
 
         // Reuse the thread-local client member
