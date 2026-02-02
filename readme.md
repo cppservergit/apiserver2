@@ -1041,6 +1041,8 @@ This avoids pulling the image from Docker Hub or another registry, remember to s
 
 Please check the root directory of your project for the Dockerfile, this is a multi-stage Dockerfile, it will create a base image, compile an optimized APIServer2 and then will chisel the layers APIServer2 requires, creating a very slim image, it even builds a slim libcurl library to reduce surface attack and dependencies. It is not a simple Dockerfile, Ubuntu chiseled images are not that easy to produce for a C++ program with libcurl and ODBC API dependencies, but it works great and you do not need to edit this file, it is ready to use.
 
+To learn more about building enterprise-grade container images with Chisel and Docker please visit this Canonical's [tutorial](https://documentation.ubuntu.com/chisel/en/latest/how-to/use-chisel-in-dockerfile/).
+
 ## Kubernetes
 
 MicroK8s is the recommended way to deploy APIServer2 for production OnPrem, it is very flexible and will adapt nicely to your resources availability (VMs, cores, RAM, bare-metal, etc).
