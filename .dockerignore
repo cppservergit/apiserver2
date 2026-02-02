@@ -1,0 +1,24 @@
+# --- 1. The Poison (Host Build Artifacts) ---
+# MUST be ignored to force a fresh build inside Docker
+obj/
+apiserver
+
+# --- 2. Version Control & IDEs ---
+.git/
+.gitignore
+.vscode/
+
+# --- 3. Documentation & Kubernetes Configs ---
+docs/
+lxd/
+microk8s/
+readme.md
+
+# --- 4. Host Scripts (Not needed for compilation) ---
+git_update.sh
+run.sh
+unit-test/
+
+# --- 5. Container Configs (Optional) ---
+# You generally don't need the Dockerfile itself inside the image
+Dockerfile

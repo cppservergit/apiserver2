@@ -965,9 +965,10 @@ docker run -d \
   -e JWT_SECRET="B@asica2025*uuid0998554j93m722pQ" \
   -e JWT_TIMEOUT_SECONDS=300 \
   -e API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af" \
-  -e REMOTE_API_URL="http://localhost:8080" \
+  -e REMOTE_API_URL="https://cppserver.com" \
   -e REMOTE_API_USER="mcordova" \
   -e REMOTE_API_PASS="basica" \
+  -e TZ="America/Caracas" \
   cppserver/apiserver2:latest
 ```
 This image is intended to be used with Kubernetes and Cloud container services.
