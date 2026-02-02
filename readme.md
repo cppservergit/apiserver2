@@ -948,7 +948,6 @@ docker images
 
 ### **Running APIServer2 with Docker**
 
-
 If you want to run APIServer2 with the default API samples with docker, there is an image in dockerhub with the latest version, for a quick test:
 ```
 docker run -d \
@@ -972,7 +971,7 @@ docker run -d \
   cppserver/apiserver2:latest
 ```
 This image is intended to be used with Kubernetes and Cloud container services.
-When running on Kubernetes, all those security-sensitive environment variables will be stored as Kubernet secrets, this is transparent to APIServer2, it will always look for the value of the environment variable, if running the container on the Cloud using a serverless container service, you will probably use some kind of encrypted environment variables, again transparent to APIServer2.
+When running on Kubernetes, all those security-sensitive environment variables will be stored as Kubernet secrets, this is transparent to APIServer2, it will always look for the value of the environment variable, if running the container on the Cloud using a serverless container service, you will probably use some kind of encrypted environment variables, transparent to APIServer2.
 
 #### **Testing your cointainer**
 If you are running on your development machine and your current working directory is /apiserver2, use this command to run the unit tests using the CURL script:
@@ -1003,100 +1002,44 @@ If your server is on another port or machine pass the base URL to the `test.sh` 
 unit-test/test.sh http://yourVM:8080
 ```
 
-### **Building your own Docker image**
+### **Building your own (distroless) Docker image**
 
-First we create an optimized binary for the docker image:
-```
-make clean && make release
-```
+We provide a somewhat complex multi-stage Dockerfile that uses an Ubuntu 24.04 chiseled image, a distroless image with minimal size, reduced attack surface and enterprise-grade performance for C++ server applications. It has the benefits of Alpine or Google Distroless images but with the solid Ubuntu foundation.
 
-Now we create the image, The APIServer2 repo already includes a `Dockerfile` in the root folder of this project:
+The latest APIServer2 image that contains all the API examples:
 ```
+cppserver/apiserver2:v1.1.8          ce6b03a9b559       52.2MB         14.5MB
 docker build -t cppserver/apiserver2:latest .
 ```
-
-To export your Docker image to a compressed .tgz file that can be transferred to MicroK8s, run this command in your terminal:
+This image reports no vulnerabilities when scanned with Trivy:
 ```
-docker save cppserver/apiserver2:latest > apiserver2.tar
+Report Summary
+
+┌────────────────────────────────────────────┬────────┬─────────────────┬─────────┐
+│                   Target                   │  Type  │ Vulnerabilities │ Secrets │
+├────────────────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ cppserver/apiserver2:v1.1.8 (ubuntu 24.04) │ ubuntu │        0        │    -    │
+└────────────────────────────────────────────┴────────┴─────────────────┴─────────┘
+```
+
+You can build your own professional-grade image using the same Dockerfile:
+```
+docker build --no-cache -t YourRepoName/apiserver2:latest .
+```
+
+To export your Docker image to a compressed file that can be transferred to MicroK8s, run this command in your terminal:
+```
+docker save YourRepoName/apiserver2:latest > apiserver2.tar
 ```
 Once you have the file, you can import it directly into the MicroK8s registry:
 ```
 microk8s images import apiserver2.tar
 ```
-This avoids the need to push to Docker Hub if your MicroK8s cluster is local or has access to the file.
+This avoids pulling the image from Docker Hub or another registry, remember to set `imagePullPolicy: Never` to use the local image.
 
 ### **Dockerfile**
-```
-FROM ubuntu:24.04
 
-# Prevent interactive prompts during build
-ENV DEBIAN_FRONTEND=noninteractive
-
-# 1. Install Runtime Dependencies & Harden Image
-# CRITICAL FIX: We must run 'autoremove' and 'clean' BEFORE we purge 'tar' and 'gpgv'.
-# Once 'tar' is removed, apt/dpkg become unstable, so that must be the final step.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libcurl4 \
-    libssl3 \
-    libuuid1 \
-    libjson-c5 \
-    liboath0t64 \
-    unixodbc \
-    tdsodbc \
-    tzdata \
-    tzdata-legacy \
-    # 1. Clean up apt caches while the package manager still works
-    && apt-get autoremove -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    # 2. --- HARDENING START ---
-    # Now that apt is done, we forcibly remove the dangerous tools.
-    # We use '|| true' to ensure the build succeeds even if 'git' or 'wget' 
-    # were never installed in the first place.
-    && (dpkg --purge --force-all gnupg gpgv tar wget git mount || true)
-    # --- HARDENING END ---
-
-# 2. Create the Non-Root User (UID 10001)
-RUN groupadd -g 10001 cppserver && \
-    useradd -u 10001 -g cppserver -s /bin/false -m cppserver
-
-# Set working directory
-WORKDIR /app
-
-# 3. Setup Permissions
-RUN mkdir -p /app/uploads && chown 10001:10001 /app/uploads
-
-# 4. Copy the Binary
-COPY --chown=10001:10001 apiserver /app/apiserver
-
-# Ensure it is executable
-RUN chmod +x /app/apiserver
-
-# Define the mount point for Kubernetes PVCs
-VOLUME ["/app/uploads"]
-
-# ------------------------------------------------------------------------------
-# Configuration (Environment Defaults)
-# ------------------------------------------------------------------------------
-ENV PORT=8080
-ENV POOL_SIZE=24
-ENV IO_THREADS=4
-ENV QUEUE_CAPACITY=500
-ENV CORS_ORIGINS="null,file://"
-ENV BLOB_PATH="/app/uploads"
-ENV JWT_TIMEOUT_SECONDS=300
-ENV REMOTE_API_URL="https://cppserver.com"
-
-# Expose port
-EXPOSE 8080
-
-# 5. Switch to Non-Root User
-USER 10001
-
-# Start the server
-CMD ["./apiserver"]
-```
+Please check the root directory of your project for the Dockerfile, this is a multi-stage Dockerfile, it will create a base image, compile an optimized APIServer2 and then will chisel the layers APIServer2 requires, creating a very slim image, it even builds a slim libcurl library to reduce surface attack and dependencies. It is not a simple Dockerfile, Ubuntu chiseled images are not that easy to produce for a C++ program with libcurl and ODBC API dependencies, but it works great and you do not need to edit this file, it is ready to use.
 
 ## Kubernetes
 
