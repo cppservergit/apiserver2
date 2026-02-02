@@ -927,9 +927,7 @@ void get_remote_customer(const http::request& req, http::response& res) {
     res.set_body(ok, customer_response.body);
 }
 ```
-The intent of this code is to serve as a good-enough template to call remote APIs via HTTP(S), providing the basic required building blocks, like login and JWT token extraction and thread-safe reuse.
-
-For certain exceptions, like `env::error` you may want to log it as `critical` as in the code above, because this signals a server configuration error that should not happen.
+The intent of this code is for the class `RemoteCustomerService` to serve as a good-enough template to call remote APIs via HTTP(S), providing the basic required building blocks, like login and JWT token extraction and thread-safe reuse.
 
 Now we have to register this API in `main()`:
 ```
@@ -940,11 +938,11 @@ We are reusing the same `customer_validator` from the previous example of the `/
 We need to configure `run.sh` to add server location and login credentials:
 ```
 # remote api configuration
-export REMOTE_API_URL="http://localhost:8080"
+export REMOTE_API_URL="https://cppserver.com"
 export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
 ```
-Remember that these security-sensitive environment variables can be managed with public/private key pair encryption.
+Remember that these security-sensitive environment variables can be managed with public/private key pair encryption when running BareMetal.
 
 For testing the API use your qtest.sh script to make it easier, just change the last line that invokes the API with curl:
 ```

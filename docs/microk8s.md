@@ -474,6 +474,33 @@ sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --
 
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
 ```
+A brief interruption of service will be required to reload a new Pod, because we are deleting the existing pod ti free the ports for the new pod.
+
+## Upgrading Traefik
+MicroK8s v1.35 includes Traefik as the Ingress to replace Nginx, which is going to be discontinued in March 2026. The Traefik version installed by the MicroK8s snap is 3.62, you can migrate to the latest version 3.67, a brief interruption of service will be required to reload a new Pod.
+
+How to check your current Traefik version:
+```
+kubectl exec -n ingress daemonset/traefik -- traefik version
+```
+Update the traefik daemonset:
+```
+kubectl set image daemonset/traefik traefik=traefik:v3.6.7 -n ingress
+sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --field-selector=status.phase=Running
+kubectl rollout status daemonset/traefik -n ingress
+```
+Check the Traefik version again:
+```
+kubectl exec -n ingress daemonset/traefik -- traefik version
+```
+Expected output:
+```
+Version:      3.6.7
+Codename:     ramequin
+Go version:   go1.24.11
+Built:        2026-01-14T14:04:03Z
+OS/Arch:      linux/amd64
+```
 
 ## Uninstalling MicroK8s
 
