@@ -803,36 +803,67 @@ class RemoteCustomerService {
 public:
     /**
      * @brief Fetches customer information from the remote API.
+     * @param req The incoming HTTP request (used to extract tracing headers like x-request-id).
+     * @param customer_id The ID of the customer to fetch.
      */
-    static http_response get_customer_info(std::string_view customer_id) {
-        const std::string uri = "/customer";
-        const std::string token = login_and_get_token();
+    static http_response get_customer_info(const http::request& req, std::string_view customer_id) {
+        const std::string uri = "/api/customer";
+        
+        // This will use the cached token if valid
+        const std::string token = login_and_get_token(req);
+        
         const std::map<std::string, std::string, std::less<>> payload = {
             {"id", std::string(customer_id)}
         };
         const std::string body = json::json_parser::build(payload);
-        const std::map<std::string, std::string, std::less<>> headers = {
+        
+        std::map<std::string, std::string, std::less<>> headers = {
             {"Authorization", std::format("Bearer {}", token)},
             {"Content-Type", "application/json"}
         };
 
+        // Propagate x-request-id if present in the original request
+        if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
+            headers.try_emplace("x-request-id", *request_id_opt);
+        }
+
         util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
         
-        // Create a transient http_client for this specific request.
-        http_client client;
-        const auto response = client.post(get_url() + uri, body, headers);
+        // Use thread-local client member to reuse connections (Keep-Alive)
+        const auto response = m_client.post(get_url() + uri, body, headers);
         if (response.status_code != 200) {
             util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
+            // If we get a 401, we might want to invalidate the cache, but for now simple error handling
+            if (response.status_code == 401) {
+                m_session.token.clear(); // Force re-login next time
+            }
             throw RemoteServiceError("Remote service invocation failed.");
         }
         return response;
     }
 
 private:
+    struct Session {
+        std::string token;
+        std::chrono::steady_clock::time_point created_at;
+    };
+
     /**
-     * @brief Authenticates with the remote API and returns a JWT.
+     * @brief Authenticates with the remote API and returns a JWT. 
+     * Uses a lock-free thread_local cache to store the token for 3 minutes.
      */
-    static std::string login_and_get_token() {
+    static std::string login_and_get_token(const http::request& req) {
+        const auto now = std::chrono::steady_clock::now();
+
+        // Check cache: if token exists and is younger than 3 minutes, return it.
+        if (!m_session.token.empty()) {
+            const auto age = std::chrono::duration_cast<std::chrono::minutes>(now - m_session.created_at);
+            if (age.count() < 3) {
+                return m_session.token;
+            }
+        }
+
+        // --- Perform Login ---
         const std::map<std::string, std::string, std::less<>> login_payload = {
             {"username", get_user()},
             {"password", get_pass()}
@@ -841,9 +872,14 @@ private:
 
         util::log::debug("Logging into remote API at {}", get_url());
 
-        // Create a transient http_client for the login request.
-        http_client client;
-        const http_response login_response = client.post(get_url() + "/login", login_body, {{"Content-Type", "application/json"}});
+        std::map<std::string, std::string, std::less<>> headers = {{"Content-Type", "application/json"}};
+        
+        if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
+            headers.try_emplace("x-request-id", *request_id_opt);
+        }
+
+        // Reuse the thread-local client member
+        const http_response login_response = m_client.post(get_url() + "/api/login", login_body, headers);
 
         if (login_response.status_code != 200) {
             util::log::error("Remote API login failed with status {}: {}", login_response.status_code, login_response.body);
@@ -857,8 +893,21 @@ private:
             util::log::error("Remote API login response did not contain an id_token.");
             throw RemoteServiceError("Invalid response from remote authentication service.");
         }
+
+        // Update thread-local cache
+        m_session.token = id_token;
+        m_session.created_at = now;
+
         return id_token;
     }
+
+    // --- Thread-Safe Persistent Client Member (C++17 inline static) ---
+    // This avoids the "function-local static" warning and provides a clean thread-local instance per thread.
+    static inline thread_local http_client m_client{};
+    
+    // --- Thread-Safe Session Cache ---
+    // Stores the token and its creation time per thread to avoid mutexes.
+    static inline thread_local Session m_session{};
 
     // --- Configuration Getters using thread-safe function-local statics ---
     static const std::string& get_url()  { static const std::string url = env::get<std::string>("REMOTE_API_URL"); return url; }
@@ -873,27 +922,12 @@ Now we need to define the API function implementation:
 void get_remote_customer(const http::request& req, http::response& res) {
     const auto customer_id = **req.get_value<std::string>("id");
 
-    try {
-        // No instance is needed; call the static method directly on the class.
-        const http_response customer_response = RemoteCustomerService::get_customer_info(customer_id);
-        res.set_body(ok, customer_response.body);
-
-    } catch (const env::error& e) {
-        util::log::critical("Missing environment variables for remote API: {}", e.what());
-        res.set_body(internal_server_error, R"({"error":"Remote API is not configured on the server."})");
-    } catch (const curl_exception& e) {
-        util::log::error("HTTP client error while calling remote API: {}", e.what());
-        res.set_body(internal_server_error, R"({"error":"A communication error occurred with a remote service."})");
-    } catch (const json::parsing_error& e) {
-        util::log::error("Failed to parse JSON response from remote API: {}", e.what());
-        res.set_body(internal_server_error, R"({"error":"Received an invalid response from a remote service."})");
-    } catch (const RemoteServiceError& e) {
-        util::log::error("A remote service logic error occurred: {}", e.what());
-        res.set_body(internal_server_error, R"({"error":"A logic error occurred while communicating with a remote service."})");
-    }
+    // Exception handling is delegated to the worker thread in server.cpp
+    const http_response customer_response = RemoteCustomerService::get_customer_info(req, customer_id);
+    res.set_body(ok, customer_response.body);
 }
 ```
-As you can see, most of the code is dedicated to catching potential errors, leaving detailed log traces and sending an appropiate response to the client. The intent of this code is to serve as a good-enough template to call remote APIs via HTTP(S), providing the basic required building blocks, like login and JWT token extraction, and the actual call to the API with error checking.
+The intent of this code is to serve as a good-enough template to call remote APIs via HTTP(S), providing the basic required building blocks, like login and JWT token extraction and thread-safe reuse.
 
 For certain exceptions, like `env::error` you may want to log it as `critical` as in the code above, because this signals a server configuration error that should not happen.
 
