@@ -1036,12 +1036,13 @@ unit-test/test.sh http://yourVM:8080
 
 ### **Building your own (distroless) Docker image**
 
-We provide a somewhat complex multi-stage Dockerfile that uses an Ubuntu 24.04 chiseled image, a distroless image with minimal size, reduced attack surface and enterprise-grade performance for C++ server applications. It has the benefits of Alpine or Google Distroless images but with the solid Ubuntu foundation.
+We provide a somewhat complex multi-stage Dockerfile that uses an Ubuntu 24.04 chiseled image, a distroless image with minimal size, reduced attack surface and enterprise-grade performance for C++ server applications. It has the benefits of Alpine or Google Distroless images but with the solid Ubuntu foundation for security and performance.
 
 The latest APIServer2 image that contains all the API examples:
 ```
-cppserver/apiserver2:v1.1.8          ce6b03a9b559       52.2MB         14.5MB
-docker build -t cppserver/apiserver2:latest .
+IMAGE                         ID             DISK USAGE   CONTENT SIZE
+cppserver/apiserver2:latest   cd523a16f29a       26.7MB         7.14MB        
+cppserver/apiserver2:v1.1.8   cd523a16f29a       26.7MB         7.14MB  
 ```
 This image reports no vulnerabilities when scanned with Trivy:
 ```
@@ -1053,6 +1054,7 @@ Report Summary
 │ cppserver/apiserver2:v1.1.8 (ubuntu 24.04) │ ubuntu │        0        │    -    │
 └────────────────────────────────────────────┴────────┴─────────────────┴─────────┘
 ```
+This Dockerfile compiles APIServer2 and its main dependencies: odbc, tds odbc drivers and libcurl to remove the excess baggage and optimize the binaries.
 
 You can build your own professional-grade image using the same Dockerfile:
 ```
@@ -1065,7 +1067,7 @@ docker save YourRepoName/apiserver2:latest > apiserver2.tar
 ```
 Once you have the file, you can import it directly into the MicroK8s registry:
 ```
-microk8s images import apiserver2.tar
+microk8s ctr image import - < apiserver2.tar
 ```
 This avoids pulling the image from Docker Hub or another registry, remember to set `imagePullPolicy: Never` to use the local image.
 

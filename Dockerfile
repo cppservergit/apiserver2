@@ -12,20 +12,60 @@ ENV TERM=xterm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential g++-14 make ca-certificates wget git pkg-config \
     libssl-dev zlib1g-dev libjson-c-dev uuid-dev liboath-dev tzdata \
-    unixodbc-dev tdsodbc freetds-common freetds-bin \
-    netbase
+    netbase binutils libltdl-dev
+
+# ------------------------------------------------------------------------------
+# GLOBAL OPTIMIZATION FLAGS
+# -O2:        High optimization (Standard for production)
+# -flto=auto: Parallel Link Time Optimization (Uses all cores for faster builds)
+# ------------------------------------------------------------------------------
+ENV CFLAGS="-O2 -flto=auto" \
+    CXXFLAGS="-O2 -flto=auto" \
+    LDFLAGS="-O2 -flto=auto" \
+    AR=gcc-ar \
+    NM=gcc-nm \
+    RANLIB=gcc-ranlib
 
 # 2. COMPILE MINIMAL LIBCURL
 WORKDIR /tmp/curl
 RUN wget https://github.com/curl/curl/releases/download/curl-8_5_0/curl-8.5.0.tar.gz -O curl.tar.gz \
     && tar -xvf curl.tar.gz --strip-components=1 \
-    && ./configure --prefix=/usr --with-ssl --with-zlib --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap --disable-ldap --disable-ldaps --disable-mqtt --disable-pop3 --disable-rtsp --disable-smb --disable-smtp --disable-telnet --disable-tftp --without-libssh2 --without-librtmp --without-libidn2 --without-nghttp2 --without-brotli --without-zstd \
+    && ./configure --prefix=/usr --with-ssl --with-zlib \
+       --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap \
+       --disable-ldap --disable-ldaps --disable-mqtt --disable-pop3 --disable-rtsp \
+       --disable-smb --disable-smtp --disable-telnet --disable-tftp \
+       --without-libssh2 --without-librtmp --without-libidn2 --without-nghttp2 \
+       --without-brotli --without-zstd \
     && make -j$(nproc) && make install
 
-# 3. COMPILE APPLICATION
+# 3. COMPILE MINIMAL UNIXODBC
+WORKDIR /tmp/unixodbc
+RUN wget https://www.unixodbc.org/unixODBC-2.3.12.tar.gz -O unixodbc.tar.gz \
+    && tar -xvf unixodbc.tar.gz --strip-components=1 \
+    && ./configure --prefix=/usr --sysconfdir=/etc --disable-gui --disable-readline \
+       --enable-iconv --with-iconv-char-enc=UTF8 --with-iconv-ucode-enc=UTF16LE \
+    && make -j$(nproc) && make install
+
+# 4. COMPILE MINIMAL FREETDS
+WORKDIR /tmp/freetds
+RUN wget https://www.freetds.org/files/stable/freetds-1.4.10.tar.gz -O freetds.tar.gz \
+    && tar -xvf freetds.tar.gz --strip-components=1 \
+    && ./configure --prefix=/usr --with-unixodbc=/usr --with-openssl=/usr \
+       --enable-msdblib --disable-libiconv --disable-krb5 --disable-gssapi \
+       --disable-apps --disable-server --disable-pool \
+    && make -j$(nproc) && make install
+
+# 5. COMPILE APPLICATION
 WORKDIR /src
 COPY . .
+# We inherit the -flto=auto flags from ENV, making the link step faster here too
 RUN make release CXX=g++-14
+
+# 6. STRIP BINARIES
+RUN strip --strip-unneeded /usr/lib/libtdsodbc.so \
+    && strip --strip-unneeded /usr/lib/libodbc.so.2 \
+    && strip --strip-unneeded /usr/lib/libodbcinst.so.2 \
+    && strip --strip-unneeded /usr/lib/x86_64-linux-gnu/libjson-c.so.5
 
 # ==============================================================================
 # STAGE 2: CHISELER
@@ -48,61 +88,41 @@ RUN chisel cut --release ubuntu-$UBUNTU_RELEASE --root /rootfs \
     base-files_base base-files_release-info base-files_chisel ca-certificates_data \
     libgcc-s1_libs libc6_libs libstdc++6_libs libssl3t64_libs zlib1g_libs
 
-# 3. Manual Harvest (Libs)
-COPY --from=builder /usr/lib/x86_64-linux-gnu /usr/lib/staging
-COPY --from=builder /usr/lib/libcurl.so.4 /usr/lib/staging/custom_libcurl.so.4
-
-# 4. Manual Harvest (System Files)
+# 3. Manual Harvest
 COPY --from=builder /etc/services /rootfs/etc/services
 COPY --from=builder /etc/protocols /rootfs/etc/protocols
 COPY --from=builder /etc/ssl/certs /rootfs/etc/ssl/certs
-
-# 5. GCONV (Optimized)
+# GCONV (Optimized)
 COPY --from=builder /usr/lib/x86_64-linux-gnu/gconv /rootfs/usr/lib/x86_64-linux-gnu/gconv
-# Diet Plan: Remove unused character sets to save space
 RUN cd /rootfs/usr/lib/x86_64-linux-gnu/gconv && \
-    find . -type f \
-    -not -name 'gconv-modules*' \
-    -not -name 'ISO8859-1.so' \
-    -not -name 'UTF-16.so' \
-    -not -name 'UTF-32.so' \
-    -not -name 'UNICODE.so' \
-    -delete
+    find . -type f -not -name 'gconv-modules*' -not -name 'ISO8859-1.so' -not -name 'UTF-16.so' -not -name 'UTF-32.so' -not -name 'UNICODE.so' -delete
 
-# 6. COPY LIBRARIES (Flattened)
+# 4. COPY CUSTOM LIBRARIES
+COPY --from=builder /usr/lib/libodbc.so.2 /rootfs/usr/lib/x86_64-linux-gnu/libodbc.so.2
+COPY --from=builder /usr/lib/libodbcinst.so.2 /rootfs/usr/lib/x86_64-linux-gnu/libodbcinst.so.2
+COPY --from=builder /usr/lib/libtdsodbc.so /rootfs/usr/lib/x86_64-linux-gnu/libtdsodbc.so
+COPY --from=builder /usr/lib/libcurl.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libcurl.so.4
+
+# 5. PRE-COPY SYSTEM LIBRARIES
+COPY --from=builder \
+    /usr/lib/x86_64-linux-gnu/libltdl.so.7 \
+    /usr/lib/x86_64-linux-gnu/libjson-c.so.5 \
+    /usr/lib/x86_64-linux-gnu/liboath.so.0 \
+    /usr/lib/x86_64-linux-gnu/
+
+# 6. CONSOLIDATE
 RUN cp -v -L \
-    /usr/lib/staging/odbc/libtdsodbc.so \
-    /usr/lib/staging/libodbc*.so* \
-    /usr/lib/staging/libltdl.so* \
-    /usr/lib/staging/libgmp.so* \
-    /usr/lib/staging/libgnutls.so* \
-    /usr/lib/staging/libhogweed.so* \
-    /usr/lib/staging/libnettle.so* \
-    /usr/lib/staging/libp11-kit.so* \
-    /usr/lib/staging/libtasn1.so* \
-    /usr/lib/staging/libffi.so* \
-    /usr/lib/staging/libidn2.so* \
-    /usr/lib/staging/libunistring.so* \
-    /usr/lib/staging/libgssapi_krb5.so* \
-    /usr/lib/staging/libkrb5.so* \
-    /usr/lib/staging/libk5crypto.so* \
-    /usr/lib/staging/libkrb5support.so* \
-    /usr/lib/staging/libcom_err.so* \
-    /usr/lib/staging/libkeyutils.so* \
-    /usr/lib/staging/libnss_dns.so* \
-    /usr/lib/staging/libnss_files.so* \
-    /usr/lib/staging/libresolv.so* \
-    /usr/lib/staging/libjson-c.so.5 \
-    /usr/lib/staging/libuuid.so.1 \
-    /usr/lib/staging/liboath.so.0 \
-    /usr/lib/staging/custom_libcurl.so.4 \
-    /rootfs/usr/lib/x86_64-linux-gnu/ \
-    && mv /rootfs/usr/lib/x86_64-linux-gnu/custom_libcurl.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libcurl.so.4
+    /usr/lib/x86_64-linux-gnu/libltdl.so* \
+    /usr/lib/x86_64-linux-gnu/libjson-c.so.5 \
+    /usr/lib/x86_64-linux-gnu/liboath.so.0 \
+    /usr/lib/x86_64-linux-gnu/libuuid.so.1 \
+    /usr/lib/x86_64-linux-gnu/libnss_dns.so* \
+    /usr/lib/x86_64-linux-gnu/libnss_files.so* \
+    /usr/lib/x86_64-linux-gnu/libresolv.so* \
+    /rootfs/usr/lib/x86_64-linux-gnu/
 
 # 7. CONFIGURATION
-COPY --from=builder /usr/share/freetds /rootfs/usr/share/freetds
 RUN mkdir -p /rootfs/etc/freetds \
-    && ln -s /usr/share/freetds /rootfs/usr/share/tdsodbc \
     && echo "hosts: files dns" > /rootfs/etc/nsswitch.conf \
     && printf "[FreeTDS]\nDescription=FreeTDS\nDriver=/usr/lib/x86_64-linux-gnu/libtdsodbc.so\nUsageCount=1\n" > /rootfs/etc/odbcinst.ini \
     && printf "[global]\n\ttext size = 64512\n\tclient charset = UTF-8\n" > /rootfs/etc/freetds/freetds.conf
