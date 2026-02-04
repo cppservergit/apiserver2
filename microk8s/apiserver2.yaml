@@ -99,6 +99,7 @@ spec:
       containers:
       - name: apiserver2
         image: cppserver/apiserver2:v1.1.8
+        tty: true # non-buffered stdout logs - prints immediately
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
