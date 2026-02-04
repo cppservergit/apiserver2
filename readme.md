@@ -1069,7 +1069,12 @@ Once you have the file, you can import it directly into the MicroK8s registry:
 ```
 microk8s ctr image import - < apiserver2.tar
 ```
-This avoids pulling the image from Docker Hub or another registry, remember to set `imagePullPolicy: Never` to use the local image.
+This avoids pulling the image from Docker Hub or another registry, but please note that it only works if `imagePullPolicy: Never` in your YAML manifest.
+
+To check the imported image in MicroK8s registry (use your repository's name):
+```
+microk8s ctr images ls | grep cppserver
+```
 
 ### **Dockerfile**
 

@@ -376,6 +376,18 @@ NAMESPACE   NAME                                                 REFERENCE      
 cppserver   horizontalpodautoscaler.autoscaling/apiserver2-hpa   Deployment/apiserver2   cpu: 0%/80%   2         3         2          22m
 ```
 
+## Check the image used for APIServer2 deployment
+
+Execute:
+```
+kubectl get deployments -n cppserver -o custom-columns=DEPLOYMENT:.metadata.name,IMAGE:.spec.template.spec.containers[*].image
+```
+Expected output (image version may vary):
+```
+DEPLOYMENT   IMAGE
+apiserver2   cppserver/apiserver2:v1.1.8
+```
+
 ## Additional notes about this installation script
 
 This installation script goes an extra-mile to save you manual configuration:
@@ -383,12 +395,11 @@ This installation script goes an extra-mile to save you manual configuration:
 * Installs `--channel=1.35/stable` which includes the new Ingress Traefik, The old nginx Ingress will be discontinued in March 2026.
 * MicroK8s protects secrets with encryption, also complies with most CIS hardening rules.
 * APIServer2 deployment passes Trivy tests (security scanner) with 1 false possitive warning (docker hub not trusted).
-* APIServer2 Alpine based image size-optimized passes Trivy tests without warnings, no vulnerabilities.
+* APIServer2 production-grade OCI image based on Ubuntu 24.04 chisel, size-optimized and passes Trivy tests without warnings, no vulnerabilities.
 * Configures redirect from HTTP to HTTPS.
-* Ingress blocks requests bigger than 5MB (defined in apiserver2.yaml)
 * Ingress blocks requests to APIServer2 which do not start with `/api/` protecting APIServer2 against common HTTP attacks.
 * The timezone for APIServer2 can be set in apiserver2.yaml, it is an environment variable `TZ`.
-* It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or S3, without changing `apiserver2.yaml` or APIServer2 code.
+* It creates a local directory on the host VM `/mnt/apiserver-data`, in the most simple configuration (single-node) the uploaded blobs will be stored here, but this directory can be configured as a `mount point` using OS drivers to redirect I/O to other shared storage systems like NFS or MinIO S3, without changing `apiserver2.yaml` or APIServer2 code.
 * It does install only the minimal set of MicroK8s add-ons: host-storage, dns, ingress and metrics-server.
 * You can enable add-ons for tasks like automating observability using Grafana Stack, but keep in mind of the extra CPU load these add-ons may demand. APIServer2 exposes the endpoints `/metrics` for JSON consumers and `/metricsp` for Prometheus, you can recollect metrics via HTTPS using an API-Key (configured as a secret in apiserver2.yaml) without installing an additional module in the MicroK8s cluster.
 
