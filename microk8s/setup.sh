@@ -47,6 +47,8 @@ sudo microk8s status --wait-ready >/dev/null
 echo "[✓] MicroK8s is ready."
 sudo microk8s kubectl version
 echo "[✓] MicroK8s base system installed."
+# set snap refresh time window to off-peak hours
+sudo snap set system refresh.timer=01:00-04:00 >/dev/null
 
 # --- Wait for ingress to be Ready ---
 echo "[+] Waiting for the Ingress daemonset to be ready - this may take 1-2 minutes..."
