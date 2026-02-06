@@ -60,7 +60,7 @@ metadata:
   labels:
     app: apiserver2
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: apiserver2

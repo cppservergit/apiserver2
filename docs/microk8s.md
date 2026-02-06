@@ -492,17 +492,17 @@ MicroK8s v1.35 includes Traefik as the Ingress to replace Nginx, which is going 
 
 How to check your current Traefik version:
 ```
-kubectl exec -n ingress daemonset/traefik -- traefik version
+sudo microk8s kubectl exec -n ingress daemonset/traefik -- traefik version
 ```
 Update the traefik daemonset:
 ```
-kubectl set image daemonset/traefik traefik=traefik:v3.6.7 -n ingress
+sudo microk8s kubectl set image daemonset/traefik traefik=traefik:v3.6.7 -n ingress
 sudo microk8s kubectl delete pod -n ingress -l app.kubernetes.io/name=traefik --field-selector=status.phase=Running
-kubectl rollout status daemonset/traefik -n ingress
+sudo microk8s kubectl rollout status daemonset/traefik -n ingress
 ```
 Check the Traefik version again:
 ```
-kubectl exec -n ingress daemonset/traefik -- traefik version
+sudo microk8s kubectl exec -n ingress daemonset/traefik -- traefik version
 ```
 Expected output:
 ```
