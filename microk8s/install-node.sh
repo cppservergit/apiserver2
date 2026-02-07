@@ -8,20 +8,25 @@ YELLOW='\033[33m'
 BLINK='\033[5m'
 
 # --- SCRIPT CONFIGURATION ---
-# Dynamically extract the IP from eth1 (the bridged interface)
+# Dynamically extract the IP from eth1
 NODE_IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
-# If extraction fails, exit to prevent a broken installation
+BASE_URL="http://demodb:8080"
+SNAP_MICROK8S="$BASE_URL/microk8s_8612.snap"
+ASSERT_MICROK8S="$BASE_URL/microk8s_8612.assert"
+APISERVER_IMAGE="$BASE_URL/apiserver2.tar"
+
+HAPROXY_IP="192.168.0.200"        
+SKEY=$(openssl rand -base64 32)    
+
 if [ -z "$NODE_IP" ]; then
-    echo -e "${YELLOW}[!] ERROR: Could not find an IP on eth1. Check your bridge.${RESET}"
+    echo -e "${YELLOW}[!] ERROR: Could not find an IP on eth1. Check bridge.${RESET}"
     exit 1
 fi
 
-HAPROXY_IP="192.168.0.200"        # Target fixed IP for the load balancer
-SKEY=$(openssl rand -base64 32)   # Encryption key for secrets
-
 echo "---------------------------------------------------------------------------------"
-echo -e "Starting Immortal Single-Node Setup on ${BLUE}$NODE_IP${RESET}"
+echo -e "Starting Immortal MicroK8s Single-Node Setup on ${BLUE}$NODE_IP${RESET}"
+echo -e "Source Repository: ${BLUE}$BASE_URL${RESET}"
 echo "---------------------------------------------------------------------------------"
 
 echo "[+] STEP 1: Mounting upload directory..."
@@ -29,7 +34,7 @@ sudo mkdir -p /mnt/apiserver-data
 sudo chown 10001:10001 /mnt/apiserver-data
 echo -e "${BLUE}[✓] mount directory ready${RESET}"
 
-echo "[+] STEP 2: Updating the operating system, please wait..."
+echo "[+] STEP 2: Updating the operating system..."
 sudo DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null
 echo -e "${BLUE}[✓] system updated${RESET}"
 
@@ -73,9 +78,7 @@ extraConfigFiles:
     apiVersion: apiserver.config.k8s.io/v1
     kind: EncryptionConfiguration
     resources:
-      - resources:
-          - secrets
-          - configmaps
+      - resources: ["secrets", "configmaps"]
         providers:
           - aescbc:
               keys:
@@ -104,25 +107,25 @@ sudo rm microk8s-config.yaml
 echo -e "${BLUE}[✓] Launch configuration installed (Fixed IP: $NODE_IP)${RESET}"
 
 echo "[+] STEP 5: Side-loading APIServer2 container image..."
-curl -s -O demodb:8080/apiserver2.tar
+curl -s -O "$APISERVER_IMAGE"
 sudo mkdir -p /var/snap/microk8s/common/sideload
 sudo mv apiserver2.tar /var/snap/microk8s/common/sideload
 echo -e "${BLUE}[✓] APIServer2 container image pre-installed.${RESET}"
 
-echo "[+] STEP 6: Downloading snaps from local network repository..."
-curl -s demodb:8080/microk8s_8612.snap -O
-curl -s demodb:8080/microk8s_8612.assert -O
+echo "[+] STEP 6: Downloading snaps..."
+curl -s "$SNAP_MICROK8S" -O
+curl -s "$ASSERT_MICROK8S" -O
 echo -e "${BLUE}[✓] Snaps ready.${RESET}"
 
-echo "[+] STEP 7: Installing MicroK8s via local snap packages..."
+echo "[+] STEP 7: Installing MicroK8s..."
 sudo snap ack microk8s_8612.assert > /dev/null
 sudo snap install microk8s_8612.snap --classic
 echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
-echo -e "${BLUE}[✓] MicroK8s base system installed on fixed IP interface.${RESET}"
+echo -e "${BLUE}[✓] MicroK8s base system installed.${RESET}"
 sudo rm microk8s_8612.assert microk8s_8612.snap
 
-echo "[+] STEP 8: Installing traefik ingress via helm chart..."
+echo "[+] STEP 8: Installing traefik ingress..."
 cat <<EOF > traefik-values.yaml
 deployment:
   kind: DaemonSet
@@ -152,9 +155,14 @@ sudo microk8s helm install traefik traefik/traefik --namespace ingress --values 
 rm traefik-values.yaml
 echo -e "${BLUE}[✓] traefik installed.${RESET}"
 
-echo "[+] STEP 9: Waiting for the Ingress pod to be ready..."
+echo "[+] STEP 9: Waiting for the Ingress pod..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 echo -e "${BLUE}[✓] Ingress pod deployed.${RESET}"
+
+echo "[+] STEP 10: Testing HTTPS connectivity..."
+if curl -sk --max-time 5 https://localhost/ >/dev/null; then
+  echo -e "${BLUE}[✓] Ingress is serving HTTPS traffic at 443${RESET}"
+fi
 
 echo "[+] STEP 11: Deploying APIserver2..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2-ha.yaml
@@ -162,11 +170,10 @@ sudo microk8s kubectl create namespace cppserver > /dev/null
 sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
 sudo microk8s kubectl apply -f apiserver2-ha.yaml > /dev/null
 
-echo "[+] STEP 12: Waiting for APIServer2 Pods to be Ready..."
+echo "[+] STEP 12: Waiting for APIServer2 Pods..."
 sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 echo -e "${BLUE}[✓] APIServer2 deployment is ready.${RESET}"
 
-# --- RESTORED STEP 13 ---
 echo "[+] STEP 13: Testing APIServer2 connectivity..."
 if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
   echo -e "${BLUE}[✓] APIServer2 is ready to accept requests at port 443${RESET}"
