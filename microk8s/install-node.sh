@@ -1,6 +1,9 @@
 #!/bin/bash
 clear
 
+# Start timer
+START_TIME=$(date +%s)
+
 # --- COLORS ---
 BLUE='\033[94m'
 RESET='\033[0m'
@@ -27,6 +30,7 @@ fi
 echo "---------------------------------------------------------------------------------"
 echo -e "Starting Immortal MicroK8s Single-Node Setup on ${BLUE}$NODE_IP${RESET}"
 echo -e "Source Repository: ${BLUE}$BASE_URL${RESET}"
+echo -e "Load Balancer IP : ${BLUE}$HAPROXY_IP${RESET}"
 echo "---------------------------------------------------------------------------------"
 
 echo "[+] STEP 1: Mounting upload directory..."
@@ -187,5 +191,11 @@ echo "[+] STEP 15: Finalizing configuration..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 
-echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed.${RESET}"
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+MINUTES=$((DURATION / 60))
+SECONDS=$((DURATION % 60))
+
+echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed in ${MINUTES}m ${SECONDS}s.${RESET}"
 echo -e "${YELLOW}${BLINK} →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←${RESET}"
