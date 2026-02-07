@@ -18,7 +18,7 @@ if [ -z "$NODE_IP" ]; then
 fi
 
 HAPROXY_IP="192.168.0.200"        # Target fixed IP for the load balancer
-SKEY=$(openssl rand -base64 32)    # Encryption key for secrets
+SKEY=$(openssl rand -base64 32)   # Encryption key for secrets
 
 echo "---------------------------------------------------------------------------------"
 echo -e "Starting Immortal Single-Node Setup on ${BLUE}$NODE_IP${RESET}"
