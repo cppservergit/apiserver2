@@ -161,6 +161,7 @@ echo -e "${BLUE}[✓] traefik installed.${RESET}"
 
 echo "[+] STEP 9: Waiting for the Ingress pod..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
+sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
 echo -e "${BLUE}[✓] Ingress pod deployed.${RESET}"
 
 echo "[+] STEP 10: Testing HTTPS connectivity..."
