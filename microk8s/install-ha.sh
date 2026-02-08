@@ -12,7 +12,7 @@ BLINK='\033[5m'
 
 # --- CONFIGURATION ---
 # Dynamically extract this VM's IP from eth1
-HA_IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+HA_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
 # Backend Kubernetes Nodes (Fixed IPs from provision-vms.ps1)
 NODE1_IP="172.22.124.70"
