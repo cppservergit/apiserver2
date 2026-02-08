@@ -15,8 +15,8 @@ BLINK='\033[5m'
 HA_IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
 # Backend Kubernetes Nodes (Fixed IPs from provision-vms.ps1)
-NODE1_IP="192.168.0.201"
-NODE2_IP="192.168.0.202"
+NODE1_IP="172.22.124.70"
+NODE2_IP="172.22.123.137"
 
 # JA4 Fingerprint Plugin URL
 JA4_LUA_URL="https://raw.githubusercontent.com/O-X-L/haproxy-ja4-fingerprint/latest/ja4.lua"
