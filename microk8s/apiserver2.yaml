@@ -214,16 +214,6 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: apiserver2-limits
-  namespace: cppserver
-spec:
-  buffering:
-    maxRequestBodyBytes: 5242880 # 5MB limit
-
----
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
   name: apiserver2-redirect
   namespace: cppserver
 spec:
@@ -275,7 +265,6 @@ spec:
           port: 8080
       middlewares:
         - name: apiserver2-strip
-        - name: apiserver2-limits
   tls: {}
 
 ---

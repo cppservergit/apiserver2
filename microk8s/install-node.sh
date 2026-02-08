@@ -14,12 +14,13 @@ BLINK='\033[5m'
 # Dynamically extract the IP from eth1
 NODE_IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
-BASE_URL="http://demodb:8080"
+# Use local pre-downloaded local snaps and container image to speed up installation
+BASE_URL="http://demodb:8080" # CONFIGURE THIS TO MATCH YOUR REPO SERVER URL
 SNAP_MICROK8S="$BASE_URL/microk8s_8612.snap"
 ASSERT_MICROK8S="$BASE_URL/microk8s_8612.assert"
 APISERVER_IMAGE="$BASE_URL/apiserver2.tar"
 
-HAPROXY_IP="192.168.0.200"        
+HAPROXY_IP="172.22.127.161"  # CONFIGURE THIS TO MATCH YOUR HAPROXY IP
 SKEY=$(openssl rand -base64 32)    
 
 if [ -z "$NODE_IP" ]; then
