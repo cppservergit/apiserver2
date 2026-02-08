@@ -12,7 +12,7 @@ BLINK='\033[5m'
 
 # --- SCRIPT CONFIGURATION ---
 # Dynamically extract the IP from eth1
-NODE_IP=$(ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+NODE_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
 # Use local pre-downloaded local snaps and container image to speed up installation
 BASE_URL="http://demodb:8080" # CONFIGURE THIS TO MATCH YOUR REPO SERVER URL
