@@ -80,6 +80,7 @@ inline void response::set_body(status s, std::string_view body, std::string_view
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
         "{}"
         "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n"
+        "Content-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n"
         "X-Frame-Options: SAMEORIGIN\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "Referrer-Policy: no-referrer\r\n"
@@ -89,7 +90,9 @@ inline void response::set_body(status s, std::string_view body, std::string_view
         "Content-Length: {}\r\n"
         "\r\n"
         "{}";
-    const auto cors_header = m_origin ? std::format("Access-Control-Allow-Origin: {}\r\n", *m_origin) : "";
+
+    const auto cors_header = m_origin ? std::format("Access-Control-Allow-Origin: {}\r\nvary: Origin\r\n", *m_origin) : "";
+    
     std::format_to(
         std::back_inserter(m_buffer),
         format_template,
@@ -112,6 +115,7 @@ inline void response::set_blob(std::string_view blob_data, std::string_view cont
         "{}"
         "Access-Control-Expose-Headers: Content-Disposition\r\n"
         "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n"
+        "Content-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n"
         "X-Frame-Options: SAMEORIGIN\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "Referrer-Policy: no-referrer\r\n"
@@ -121,7 +125,7 @@ inline void response::set_blob(std::string_view blob_data, std::string_view cont
         "Content-Disposition: {}\r\n"
         "Content-Length: {}\r\n"
         "\r\n";
-    const auto cors_header = m_origin ? std::format("Access-Control-Allow-Origin: {}\r\n", *m_origin) : "";
+    const auto cors_header = m_origin ? std::format("Access-Control-Allow-Origin: {}\r\nvary: Origin\r\n", *m_origin) : "";
     std::format_to(
         std::back_inserter(m_buffer),
         format_template,
@@ -142,7 +146,7 @@ inline void response::set_options() {
         "Date: {:%a, %d %b %Y %H:%M:%S GMT}\r\n"
         "{}"
         "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type, Authorization, x-api-key\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
         "Access-Control-Max-Age: 86400\r\n"
         "Connection: keep-alive\r\n"
         "Content-Length: 0\r\n"

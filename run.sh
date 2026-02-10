@@ -12,7 +12,7 @@ export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UI
 export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
 
 # cors configuration
-export CORS_ORIGINS="null,file://"
+export CORS_ORIGINS="null,file://,http://xxx.mydomain.com"
 
 # blobs storage configuration
 export BLOB_PATH="/home/ubuntu/uploads"

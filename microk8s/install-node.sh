@@ -1,6 +1,8 @@
 #!/bin/bash
 clear
 
+HAPROXY_IP="172.22.127.161"  # CONFIGURE THIS TO MATCH YOUR HAPROXY IP
+
 # Start timer
 START_TIME=$(date +%s)
 
@@ -19,8 +21,6 @@ BASE_URL="http://demodb:8080" # CONFIGURE THIS TO MATCH YOUR REPO SERVER URL
 SNAP_MICROK8S="$BASE_URL/microk8s_8612.snap"
 ASSERT_MICROK8S="$BASE_URL/microk8s_8612.assert"
 APISERVER_IMAGE="$BASE_URL/apiserver2.tar"
-
-HAPROXY_IP="172.22.127.161"  # CONFIGURE THIS TO MATCH YOUR HAPROXY IP
 SKEY=$(openssl rand -base64 32)    
 
 if [ -z "$NODE_IP" ]; then
@@ -129,6 +129,9 @@ echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
 echo -e "${BLUE}[✓] MicroK8s base system installed.${RESET}"
 sudo rm microk8s_8612.assert microk8s_8612.snap
+
+# Allowed refresh time to off-hours to avoid unexpected reboots
+sudo snap set system refresh.timer=01:00-04:00 >/dev/null
 
 echo "[+] STEP 8: Installing traefik ingress..."
 cat <<EOF > traefik-values.yaml
