@@ -124,12 +124,13 @@ SECONDS=$((DURATION % 60))
 echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed in ${MINUTES}m ${SECONDS}s.${RESET}"
 
 echo ""
-echo "[+] STEP EXTRA: Waiting for all Pods to be running - it may take a few minutes..."
+echo "[+] EXTRA: Waiting for all Pods to be running - it may take a few minutes..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
 sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
-echo "[✓] Pods are ready."
+echo "${BLUE}[✓] Pods are ready.${RESET}"
 echo  ""
 sudo microk8s kubectl get all -A
-echo -e "${YELLOW}${BLINK} →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←${RESET}"
+echo -e "${YELLOW}${BLINK} →→ Please LOG LOG BACK IN for group changes to take effect. ←←${RESET}"
+exit
