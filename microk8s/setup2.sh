@@ -125,6 +125,9 @@ echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed in ${MINUTES}m ${SECON
 
 echo ""
 echo "[+] STEP EXTRA: Waiting for all Pods to be running - it may take a few minutes..."
+sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
+sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
+sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
 echo "[✓] Pods are ready."
 echo  ""

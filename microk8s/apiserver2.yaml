@@ -165,7 +165,7 @@ spec:
         # --- PROBES ---
         livenessProbe:
           httpGet: { path: /ping, port: 8080 }
-          initialDelaySeconds: 5
+          initialDelaySeconds: 2
           periodSeconds: 10
         readinessProbe:
           httpGet: { path: /ping, port: 8080 }
