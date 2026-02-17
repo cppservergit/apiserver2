@@ -100,7 +100,7 @@ spec:
       - name: apiserver2
         image: cppserver/apiserver2:v1.1.9
         tty: true # non-buffered stdout logs - prints immediately
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: IfNotPresent # for side-loaded images, change to Always if you want to pull every time
         ports:
         - containerPort: 8080
 
@@ -141,7 +141,7 @@ spec:
         - name: JWT_TIMEOUT_SECONDS
           value: "300"
         - name: JWT_MFA_TIMEOUT_SECONDS
-          value: "120"
+          value: "60"
         - name: REMOTE_API_URL
           value: "https://cppserver.com"
         - name: MFA_URI
@@ -272,29 +272,29 @@ spec:
         - name: apiserver2-strip
   tls: {}
 
----
+#---
 # ==============================================================================
 # 7. HPA
 # ==============================================================================
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: apiserver2-hpa
-  namespace: cppserver
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: apiserver2
-  minReplicas: 2
-  maxReplicas: 3
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 80
+#apiVersion: autoscaling/v2
+#kind: HorizontalPodAutoscaler
+#metadata:
+#  name: apiserver2-hpa
+#  namespace: cppserver
+#spec:
+#  scaleTargetRef:
+#    apiVersion: apps/v1
+#    kind: Deployment
+#    name: apiserver2
+#  minReplicas: 2
+#  maxReplicas: 3
+#  metrics:
+#  - type: Resource
+#    resource:
+#      name: cpu
+#      target:
+#        type: Utilization
+#        averageUtilization: 80
 
 ---
 # ==============================================================================
