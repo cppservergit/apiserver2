@@ -104,12 +104,11 @@ sudo microk8s helm install traefik traefik/traefik --namespace ingress --values 
 rm traefik-values.yaml
 echo -e "${BLUE}[✓] traefik installed.${RESET}"
 
-
 echo "[+] STEP 6: Deploying APIserver2..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2.yaml
 sudo microk8s kubectl create namespace cppserver > /dev/null
 sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
-sudo microk8s kubectl apply -f apiserver2-ha.yaml > /dev/null
+sudo microk8s kubectl apply -f apiserver2.yaml > /dev/null
 echo -e "${BLUE}[✓] APIServer2 deployment is ready.${RESET}"
 
 echo "[+] STEP 15: Finalizing configuration..."
