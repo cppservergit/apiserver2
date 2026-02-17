@@ -129,7 +129,7 @@ sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s
 sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
 sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
-echo "${BLUE}[✓] Pods are ready.${RESET}"
+echo -e "${BLUE}[✓] Pods are ready.${RESET}"
 echo  ""
 sudo microk8s kubectl get all -A
 echo -e "${YELLOW}${BLINK} →→ Please LOG LOG BACK IN for group changes to take effect. ←←${RESET}"
