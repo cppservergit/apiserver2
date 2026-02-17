@@ -3,7 +3,7 @@ clear
 
 # --- SCRIPT CONFIGURATION ---
 HAPROXY_IP="172.22.127.161" # external HAProxy IP
-$SECRETKEY=$(openssl rand -base64 32) # for encrypted secrets
+SECRETKEY=$(openssl rand -base64 32) # for encrypted secrets
 
 echo "----------------------------------------------------------------"
 echo " Express MicroK8s single-node setup for APIServer2"
