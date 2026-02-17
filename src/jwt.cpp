@@ -91,8 +91,9 @@ namespace { // Anonymous namespace for private helpers
 
 } // anonymous namespace
 
-service::service(std::string secret, std::chrono::seconds timeout)
-    : m_secret{std::move(secret)}, m_timeout{timeout} {
+// Constructor updated to initialize m_mfa_timeout
+service::service(std::string secret, std::chrono::seconds timeout, std::chrono::seconds mfa_timeout)
+    : m_secret{std::move(secret)}, m_timeout{timeout}, m_mfa_timeout{mfa_timeout} {
     if (m_secret.empty()) throw std::invalid_argument("jwt secret cannot be empty.");
 }
 
@@ -108,8 +109,15 @@ std::expected<std::string, error_code> service::get_token(const claims_map& clai
     static const std::string header_b64 = base64url_encode(R"({"alg":"HS256","typ":"JWT"})");
     auto claims_copy = claims;
     const auto now = std::chrono::system_clock::now();
+    
+    // Determine expiration based on 'preauth' claim
+    std::chrono::seconds duration = m_timeout;
+    if (auto it = claims.find("preauth"); it != claims.end() && it->second == "true") {
+        duration = m_mfa_timeout;
+    }
+
     claims_copy["iat"] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
-    claims_copy["exp"] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>((now + m_timeout).time_since_epoch()).count());
+    claims_copy["exp"] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>((now + duration).time_since_epoch()).count());
     
     std::string payload_str;
     try {
@@ -145,7 +153,6 @@ std::expected<claims_map, error_code> service::validate_and_decode(std::string_v
     auto claims = *claims_result;
 
     if (verify_signature) {
-        // FIX: Remove unused variable 'first_dot'.
         const auto second_dot = token.rfind('.');
         // Note: format has already been checked by decode_claims_unvalidated
         const std::string_view signing_input = token.substr(0, second_dot);
@@ -184,7 +191,9 @@ namespace {
         static std::unique_ptr<detail::service> g_jwt_service = []{
             auto secret = env::get<std::string>("JWT_SECRET", "a-secure-secret-key-that-is-at-least-32-bytes-long");
             auto timeout = env::get<long>("JWT_TIMEOUT_SECONDS", 3600);
-            return std::make_unique<detail::service>(std::move(secret), std::chrono::seconds(timeout));
+            // Default MFA timeout to 300 seconds (5 minutes)
+            auto mfa_timeout = env::get<long>("JWT_MFA_TIMEOUT_SECONDS", 300);
+            return std::make_unique<detail::service>(std::move(secret), std::chrono::seconds(timeout), std::chrono::seconds(mfa_timeout));
         }();
         return *g_jwt_service;
     }

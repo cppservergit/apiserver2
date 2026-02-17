@@ -41,7 +41,8 @@ $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(2))
 endef
 
 # --- Libraries to Link ---
-LIBS = -lcurl -ljson-c -lcrypto -lstdc++exp -lbacktrace -lodbc -luuid
+LIBS_COMMON = -lcurl -ljson-c -lcrypto -lodbc
+LIBS_DEBUG = $(LIBS_COMMON) -lstdc++exp -lbacktrace
 
 # --- User-Facing Commands ---
 .PHONY: all release debug server run run_server clean help \
@@ -128,28 +129,32 @@ help:
 # --- Linking Rules (for build artifacts) ---
 $(TARGET_SERVER_RELEASE): $(call GET_OBJS,release,$(SERVER_SRCS)) $(call GET_OBJS,release,$(COMMON_LIB_SRCS)) $(call GET_OBJS,release,$(SERVER_LIB_SRCS))
 	@echo "==> Linking release server: $@"
-	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_RELEASE) -o $@ $^ $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_RELEASE) -o $@ $^ $(LIBS_COMMON)
 	@echo "==> Stripping symbols..."
 	strip $@
 
 $(TARGET_SERVER_DEBUG): $(call GET_OBJS,debug,$(SERVER_SRCS)) $(call GET_OBJS,debug,$(COMMON_LIB_SRCS)) $(call GET_OBJS,debug,$(SERVER_LIB_SRCS))
 	@echo "==> Linking debug server: $@"
-	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_DEBUG) -o $@ $^ $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_DEBUG) -o $@ $^ $(LIBS_DEBUG)
 
 # FIX: Add new linking rule for the perflog server
 $(TARGET_SERVER_PERFLOG): $(call GET_OBJS,perflog,$(SERVER_SRCS)) $(call GET_OBJS,perflog,$(COMMON_LIB_SRCS)) $(call GET_OBJS,perflog,$(SERVER_LIB_SRCS))
 	@echo "==> Linking performance log server: $@"
-	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_PERFLOG) -o $@ $^ $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_PERFLOG) -o $@ $^ $(LIBS_COMMON)
 	@echo "==> Stripping symbols..."
 	strip $@
 
+$(TARGET_SERVER_SANITIZER_ADDRESS): $(call GET_OBJS,sanitize_address,$(SERVER_SRCS)) $(call GET_OBJS,sanitize_address,$(COMMON_LIB_SRCS)) $(call GET_OBJS,sanitize_address,$(SERVER_LIB_SRCS))
+	@echo "==> Linking address sanitizer server: $@"
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_ADDRESS) $(LDFLAGS_SANITIZER_ADDRESS) -o $@ $^ $(LIBS_COMMON)
+
 $(TARGET_SERVER_SANITIZER_THREAD): $(call GET_OBJS,sanitize_thread,$(SERVER_SRCS)) $(call GET_OBJS,sanitize_thread,$(COMMON_LIB_SRCS)) $(call GET_OBJS,sanitize_thread,$(SERVER_LIB_SRCS))
 	@echo "==> Linking thread sanitizer server: $@"
-	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_THREAD) $(LDFLAGS_SANITIZER_THREAD) -o $@ $^ $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_THREAD) $(LDFLAGS_SANITIZER_THREAD) -o $@ $^ $(LIBS_COMMON)
 
 $(TARGET_SERVER_SANITIZER_LEAK): $(call GET_OBJS,sanitize_leak,$(SERVER_SRCS)) $(call GET_OBJS,sanitize_leak,$(COMMON_LIB_SRCS)) $(call GET_OBJS,sanitize_leak,$(SERVER_LIB_SRCS))
 	@echo "==> Linking leak sanitizer server: $@"
-	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_LEAK) $(LDFLAGS_SANITIZER_LEAK) -o $@ $^ $(LIBS)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_LEAK) $(LDFLAGS_SANITIZER_LEAK) -o $@ $^ $(LIBS_COMMON)
 
 # --- Generic Compilation Rules ---
 $(OBJ_DIR)/release/%.o: $(SRC_DIR)/%.cpp
@@ -176,5 +181,3 @@ $(OBJ_DIR)/sanitize_thread/%.o: $(SRC_DIR)/%.cpp
 $(OBJ_DIR)/sanitize_leak/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_LEAK) -c $< -o $@
-
-

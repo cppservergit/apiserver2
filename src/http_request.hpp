@@ -103,6 +103,31 @@ public:
     template <typename t>
     [[nodiscard]] auto get_value(std::string_view param_name) const noexcept -> std::expected<std::optional<t>, param_error>;
 
+    // --- New Safe Parameter Accessors ---
+
+    /**
+     * @brief Retrieves a required parameter. Throws exception if missing or invalid.
+     * Use this only when a validator has guaranteed the parameter's existence.
+     * The exception will likely be caught by the framework as a 500 Internal Server Error
+     * (because if the validator passed, it SHOULD be there).
+     */
+    template <typename T>
+    [[nodiscard]] auto get_required_param(std::string_view param_name) const -> T {
+        // unwraps expected (throws if error) -> unwraps optional (throws if empty)
+        return get_value<T>(param_name).value().value();
+    }
+
+    /**
+     * @brief Retrieves an optional parameter. Returns std::nullopt if missing or invalid format.
+     */
+    template <typename T>
+    [[nodiscard]] auto get_optional_param(std::string_view param_name) const -> std::optional<T> {
+        if (auto result = get_value<T>(param_name); result.has_value()) {
+            return *result;
+        }
+        return std::nullopt;
+    }
+
     [[nodiscard]] auto get_user() const noexcept -> std::string;
     [[nodiscard]] auto get_sessionId() const noexcept -> std::string;
     

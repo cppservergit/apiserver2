@@ -141,6 +141,8 @@ private:
 
         // API Key for internal endpoints
         std::string m_api_key;
+        // MFA endpoint URI
+        std::string m_mfa_uri;        
     };
 
     static inline constexpr int MAX_EVENTS = 8192;

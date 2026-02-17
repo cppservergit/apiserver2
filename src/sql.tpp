@@ -9,9 +9,20 @@
 #include <vector>
 #include <chrono>
 #include <format>
+#include <optional> // Required for std::optional logic
 
 namespace sql {
 namespace detail {
+
+// --- Type Traits Helper ---
+template <typename T>
+struct is_optional : std::false_type {};
+
+template <typename T>
+struct is_optional<std::optional<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_optional_v = is_optional<T>::value;
 
 // --- New, more robust parameter processing ---
 
@@ -21,7 +32,12 @@ namespace detail {
 template<typename T>
 auto convert_for_binding(T&& value) {
     using DecayedT = std::decay_t<T>;
-    if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
+    
+    // Pass std::optional through as-is, so we can check has_value() in bind_one
+    if constexpr (is_optional_v<DecayedT>) {
+        return std::forward<T>(value);
+    } 
+    else if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
         // This handles const char*, std::string, and std::string_view
         return std::string(std::forward<T>(value)); // Create a std::string copy
     } else if constexpr (std::is_same_v<DecayedT, size_t>) {
@@ -48,27 +64,52 @@ auto make_binding_tuple(Args&&... args) {
 template<typename TupleType>
 void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array<SQLLEN, std::tuple_size_v<TupleType>>& indicators) {
 
-    auto bind_one = [&stmt, &indicators](int index, const auto& value) {
-        using T = std::decay_t<decltype(value)>;
+    auto bind_one = [&stmt, &indicators](int index, const auto& param_value) {
+        using T = std::decay_t<decltype(param_value)>;
         
-        if constexpr (std::is_same_v<T, std::string>) {
-            indicators[index - 1] = SQL_NTS; // Use Null-Terminated String indicator
-            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
-                                           value.length(), 0, (SQLPOINTER)value.c_str(), 0, &indicators[index - 1]);
-            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
-        } else if constexpr (std::is_same_v<T, int>) {
-            // Pass by address for correctness and portability
-            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&value, 0, nullptr);
-            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
-        } else if constexpr (std::is_same_v<T, long> || std::is_same_v<T, long long>) {
-            // Pass by address for correctness and portability
-            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&value, 0, nullptr);
-            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
-        } else if constexpr (std::is_same_v<T, double>) {
-            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&value, 0, nullptr);
-            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
+        if constexpr (is_optional_v<T>) {
+             if (!param_value.has_value()) {
+                indicators[index - 1] = SQL_NULL_DATA;
+                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 1, 0, nullptr, 0, &indicators[index - 1]);
+                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (NULL)");
+             } else {
+                 auto converted = convert_for_binding(param_value.value());
+                 auto bind_final = [&](const auto& final_val) {
+                     using V = std::decay_t<decltype(final_val)>;
+                     if constexpr (std::is_same_v<V, std::string>) {
+                        indicators[index - 1] = SQL_NTS; 
+                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
+                                                    final_val.length(), 0, (SQLPOINTER)final_val.c_str(), 0, &indicators[index - 1]);
+                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
+                    } else if constexpr (std::is_same_v<V, int>) {
+                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
+                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
+                    } else if constexpr (std::is_same_v<V, long> || std::is_same_v<V, long long>) {
+                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
+                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
+                    } else if constexpr (std::is_same_v<V, double>) {
+                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
+                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
+                    }
+                 };
+                 bind_final(converted);
+             }
         } else {
-            static_assert(sizeof(T) == 0, "Unsupported type for SQL parameter binding");
+            if constexpr (std::is_same_v<T, std::string>) {
+                indicators[index - 1] = SQL_NTS; 
+                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
+                                               param_value.length(), 0, (SQLPOINTER)param_value.c_str(), 0, &indicators[index - 1]);
+                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
+            } else if constexpr (std::is_same_v<T, int>) {
+                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
+                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
+            } else if constexpr (std::is_same_v<T, long> || std::is_same_v<T, long long>) {
+                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
+                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
+            } else if constexpr (std::is_same_v<T, double>) {
+                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
+                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
+            }
         }
     };
 

@@ -98,9 +98,9 @@ spec:
 
       containers:
       - name: apiserver2
-        image: cppserver/apiserver2:v1.1.8
+        image: cppserver/apiserver2:v1.1.9
         tty: true # non-buffered stdout logs - prints immediately
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
 
@@ -140,9 +140,14 @@ spec:
           value: "/app/uploads"
         - name: JWT_TIMEOUT_SECONDS
           value: "300"
+        - name: JWT_MFA_TIMEOUT_SECONDS
+          value: "120"
         - name: REMOTE_API_URL
           value: "https://cppserver.com"
-        
+        - name: MFA_URI
+          value: "/validate/totp"
+        - name: MFA_ENABLED
+          value: "0"
         # Secrets
         - name: DB1
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: DB1 } }

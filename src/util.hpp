@@ -12,6 +12,9 @@
 #include <stdexcept>
 #include <new> // For std::bad_alloc
 #include <memory>
+#include <chrono>
+#include <format>
+#include <cstdint>
 
 // Includes for POSIX/networking functions
 #include <unistd.h>
@@ -19,9 +22,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <climits> // For HOST_NAME_MAX
-#include <uuid/uuid.h> // For UUID generation
 
-// OpenSSL headers for Base64 decoding
+#include <openssl/rand.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
@@ -48,6 +50,22 @@ struct string_equal {
     }
 };
 
+/**
+ * @brief Get the current calendar date (year, month, day).
+ *
+ * Obtains the current time from `std::chrono::system_clock`, floors it to
+ * whole days, and constructs a `std::chrono::year_month_day` representing
+ * the current date according to the system clock.
+ *
+ * @note This relies on the C++20 `std::chrono::year_month_day` and
+ *       `std::chrono::floor` utilities declared in <chrono>.
+ *
+ * @return A `std::chrono::year_month_day` holding today's date.
+ */
+inline auto today() {
+    using namespace std::chrono;
+    return year_month_day{floor<days>(system_clock::now())};
+}
 
 /**
  * @brief Decodes a standard Base64 encoded string into a binary string.
@@ -188,18 +206,38 @@ struct string_equal {
  * @brief Generates a new version 4 UUID.
  * @return The UUID as a standard formatted string.
  */
-[[nodiscard]] inline std::string get_uuid() noexcept
-{
-    try {
-        std::array<unsigned char, 16> out;
-        uuid_generate(out.data());
-        std::array<char, 37> uuid_str;
-        uuid_unparse(out.data(), uuid_str.data());
-        return std::string(uuid_str.data());
-    } catch (const std::bad_alloc& e) {
-        // FIX: Explicitly return from the catch block to satisfy SonarCloud.
-        return "uuid_generation_failed";
-    }
+[[nodiscard]] inline std::string get_uuid() noexcept {
+        // A UUID is 16 bytes (128 bits)
+        std::array<uint8_t, 16> bytes;
+
+        // 1. Generate 16 random bytes using OpenSSL
+        // RAND_bytes returns 1 on success, 0 on failure (e.g., not enough entropy)
+        if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+            return "uuid_generation_failed";
+        }
+
+        // 2. Set the Version (4) -> xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx
+        // Mask out high nibble (0x0F) and OR in 0x40.
+        bytes[6] = (bytes[6] & 0x0F) | 0x40;
+
+        // 3. Set the Variant (RFC 4122, Variant 1) -> xxxxxxxx-xxxx-xxxx-8xxx-xxxxxxxxxxxx
+        // Mask out top 2 bits (0x3F) and OR in 0x80.
+        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+
+        // 4. Format to string
+        try {
+            return std::format("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                bytes[0], bytes[1], bytes[2], bytes[3],
+                bytes[4], bytes[5],
+                bytes[6], bytes[7],
+                bytes[8], bytes[9],
+                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+            );
+        } catch (/* NOSONAR */ const std::exception& e) {
+            // SonarCloud Fix: Catch specific exception (std::exception) 
+            // even if we just return a fallback. Ideally, log 'e.what()' if you have a logger.
+            return "uuid_generation_failed";
+        }
 }
 
 

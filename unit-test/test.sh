@@ -8,6 +8,7 @@ BASE_URL="${1:-$DEFAULT_BASE_URL}"
 API_PREFIX="${2:-$DEFAULT_API_PREFIX}"
 LOGIN_PAYLOAD='{"username":"mcordova","password":"basica"}'
 API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
+TOTP_SECRET="FLVSIZNN3JF2Z3US"
 
 amber="\e[38;5;214m"
 red="\e[31m"
@@ -25,7 +26,7 @@ function show_result {
   [[ "$status" != "200" ]] && echo -e "${body}\n"
 }
 
-login_response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
+login_response=$(curl -ks -w "%{http_code}" -H "Content-Type: application/json" \
   -d "$LOGIN_PAYLOAD" "${BASE_URL}${API_PREFIX}/login")
 
 login_body="${login_response::-3}"
@@ -37,11 +38,16 @@ if [[ "$login_status" != "200" ]]; then
   exit 1
 fi
 
-TOKEN=$(echo "$login_body" | jq -r '.id_token')
-if [[ "$TOKEN" == "null" || -z "$TOKEN" ]]; then
+TOKEN1=$(echo "$login_body" | jq -r '.id_token')
+if [[ "$TOKEN1" == "null" || -z "$TOKEN1" ]]; then
   echo -e "${red}Token extraction failed${reset}"
   exit 1
 fi
+
+# Generate TOTP code for MFA
+TOTP=$(oathtool --base32 --totp "FLVSIZNN3JF2Z3US")
+# validate TOTP with stage-1 token and get stage-2 token
+TOKEN2=$(curl --json '{"totp":"'$TOTP'"}' "${BASE_URL}${API_PREFIX}/validate/totp" -ks -H "Authorization: Bearer $TOKEN1" | jq -r '.id_token')
 
 endpoints=(
   "GET $API_PREFIX/shippers"
@@ -70,7 +76,7 @@ for entry in "${endpoints[@]}"; do
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN" \
+      -H "Authorization: Bearer $TOKEN2" \
       -d "$payload" "${BASE_URL}${uri}")
   else
     # send API_KEY for diagnostic endpoints
@@ -78,7 +84,7 @@ for entry in "${endpoints[@]}"; do
       response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $API_KEY" \
       "${BASE_URL}${uri}")
     else
-      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN2" \
       "${BASE_URL}${uri}")
     fi
   fi

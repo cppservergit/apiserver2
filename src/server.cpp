@@ -42,6 +42,9 @@ server::io_worker::io_worker(uint16_t port,
     m_response_queue = std::make_unique<shared_queue<response_item>>(queue_capacity * 2); 
     
     m_api_key = env::get<std::string>("API_KEY", "");
+
+    // Default to strict convention if not set, but allowing override via env
+    m_mfa_uri = env::get<std::string>("MFA_URI", "/validate/totp");    
 }
 
 server::io_worker::~io_worker() noexcept {
@@ -150,14 +153,46 @@ bool server::io_worker::validate_token(const http::request& req) const {
                       req.get_remote_ip());
         return false;
     }
-        
-    if (auto validation_result = jwt::is_valid(*token_opt); !validation_result) {
+    
+    // Store expected result to keep it alive
+    auto validation_result = jwt::is_valid(*token_opt);
+    
+    if (!validation_result) {
         util::log::warn("JWT validation failed for user '{}' on request {} from {}: {}",
                       req.get_user(),
                       req.get_path(),
                       req.get_remote_ip(),
                       jwt::to_string(validation_result.error()));
         return false;
+    }
+
+    // --- NEW: MFA Flow Enforcement ---
+    const auto& claims = *validation_result;
+    bool is_preauth = false;
+    std::string user = "unknown";
+    
+    if (auto it = claims.find("user"); it != claims.end()) {
+        user = it->second;
+    }
+
+    if (auto it = claims.find("preauth"); it != claims.end() && it->second == "true") {
+        is_preauth = true;
+    }
+
+    // Is this request targeting the MFA validation endpoint?
+    bool is_target_mfa = (req.get_path() == m_mfa_uri);
+
+    // Rule 1: Pre-auth tokens can ONLY access the MFA URI.
+    if (is_preauth && !is_target_mfa) {
+        util::log::warn("Security Alert: Attempt to use pre-auth token for user '{}' on '{}' from {}. Access Denied.", 
+            user, req.get_path(), req.get_remote_ip());
+        return false;
+    }
+
+    // Rule 2: Fully authenticated tokens should not re-access the MFA URI
+    if (!is_preauth && is_target_mfa) {
+        util::log::warn("Security Alert: Fully authenticated token for user '{}' attempting to re-access MFA URI from {}. Access Denied.", user, req.get_remote_ip());
+        return false; 
     }
 
     return true;
@@ -452,33 +487,18 @@ void server::io_worker::process_request(int fd) {
 }
 
 bool server::io_worker::validate_bearer_token(const http::request& req, std::string_view path) const {
-    using namespace std::string_view_literals;
-
     if (m_api_key.empty()) return true;
 
-    auto header_val = req.get_header_value("Authorization");
+    // Simplified token retrieval using the http_request helper
+    const auto token_opt = req.get_bearer_token();
 
-    // 1. Check existence and minimum length
-    if (!header_val || header_val->size() < 7) {
-        util::log::warn("Unauthorized (missing Bearer) to {} from {}", path, req.get_remote_ip());
+    if (!token_opt) {
+        util::log::warn("Unauthorized (missing or malformed Bearer header) to {} from {}", path, req.get_remote_ip());
         return false;
     }
 
-    auto prefix = header_val->substr(0, 7);
-
-    // 2. Case-insensitive prefix check (Scoped to the if-block)
-    if (bool is_bearer = std::ranges::equal(prefix, "bearer "sv, 
-            [](unsigned char a, unsigned char b) { 
-                return std::tolower(a) == std::tolower(b); 
-            }); !is_bearer) {
-        
-        util::log::warn("Unauthorized (invalid scheme: {}) to {} from {}", prefix, path, req.get_remote_ip());
-        return false;
-    }
-
-    // 3. Extract token and compare
-    if (std::string_view token = std::string_view(*header_val).substr(7); token != m_api_key) {
-        util::log::warn("Unauthorized (invalid token) to {} from {}", path, req.get_remote_ip());
+    if (*token_opt != m_api_key) {
+        util::log::warn("Unauthorized (token mismatch) to {} from {}", path, req.get_remote_ip());
         return false;
     }
 

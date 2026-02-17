@@ -1,8 +1,6 @@
 #!/bin/bash
 clear
 
-HAPROXY_IP="172.22.127.161"  # CONFIGURE THIS TO MATCH YOUR HAPROXY IP
-
 # Start timer
 START_TIME=$(date +%s)
 
@@ -20,8 +18,18 @@ NODE_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 BASE_URL="http://demodb:8080" # CONFIGURE THIS TO MATCH YOUR REPO SERVER URL
 SNAP_MICROK8S="$BASE_URL/microk8s_8612.snap"
 ASSERT_MICROK8S="$BASE_URL/microk8s_8612.assert"
+SNAP_CORE="$BASE_URL/core22_2292.snap"
+ASSERT_CORE="$BASE_URL/core22_2292.assert"
+TRAEFIK_IMAGE="$BASE_URL/traefik.tar"
 APISERVER_IMAGE="$BASE_URL/apiserver2.tar"
-SKEY=$(openssl rand -base64 32)    
+CALICO1_IMAGE="$BASE_URL/calico1.tar"
+CALICO2_IMAGE="$BASE_URL/calico2.tar"
+CALICO3_IMAGE="$BASE_URL/calico3.tar"
+COREDNS_IMAGE="$BASE_URL/coredns.tar"
+HOSTPATH_IMAGE="$BASE_URL/hostpath.tar"
+
+HAPROXY_IP="172.22.127.161"  # CONFIGURE THIS TO MATCH YOUR HAPROXY IP
+SKEY=$(openssl rand -base64 32)
 
 if [ -z "$NODE_IP" ]; then
     echo -e "${YELLOW}[!] ERROR: Could not find an IP on eth1. Check bridge.${RESET}"
@@ -62,11 +70,20 @@ echo "[+] STEP 4: Creating MicroK8s Fixed-IP Launch configuration..."
 cat <<EOF > microk8s-config.yaml
 ---
 version: 0.1.0
+# This section ensures these images are imported FIRST
+sideload:
+  - /var/snap/microk8s/common/sideload/apiserver2.tar
+  - /var/snap/microk8s/common/sideload/traefik.tar
+  - /var/snap/microk8s/common/sideload/calico1.tar
+  - /var/snap/microk8s/common/sideload/calico2.tar
+  - /var/snap/microk8s/common/sideload/calico3.tar
+  - /var/snap/microk8s/common/sideload/coredns.tar
+  - /var/snap/microk8s/common/sideload/hostpath.tar
+---
+version: 0.1.0
 addons:
   - name: dns
-  - name: rbac
   - name: hostpath-storage
-  - name: metrics-server
 
 extraKubeAPIServerArgs:
   --advertise-address: "$NODE_IP"
@@ -111,27 +128,36 @@ sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
 sudo rm microk8s-config.yaml
 echo -e "${BLUE}[✓] Launch configuration installed (Fixed IP: $NODE_IP)${RESET}"
 
-echo "[+] STEP 5: Side-loading APIServer2 container image..."
+echo "[+] STEP 5: Side-loading container images..."
 curl -s -O "$APISERVER_IMAGE"
+curl -s -O "$TRAEFIK_IMAGE"
+curl -s -O "$CALICO1_IMAGE"
+curl -s -O "$CALICO2_IMAGE"
+curl -s -O "$CALICO3_IMAGE"
+curl -s -O "$HOSTPATH_IMAGE"
+curl -s -O "$COREDNS_IMAGE"
 sudo mkdir -p /var/snap/microk8s/common/sideload
-sudo mv apiserver2.tar /var/snap/microk8s/common/sideload
-echo -e "${BLUE}[✓] APIServer2 container image pre-installed.${RESET}"
+sudo mv apiserver2.tar traefik.tar calico1.tar calico2.tar calico3.tar coredns.tar hostpath.tar /var/snap/microk8s/common/sideload
+echo -e "${BLUE}[✓] Container images pre-installed.${RESET}"
 
 echo "[+] STEP 6: Downloading snaps..."
+curl -s "$SNAP_CORE" -O
+curl -s "$ASSERT_CORE" -O
 curl -s "$SNAP_MICROK8S" -O
 curl -s "$ASSERT_MICROK8S" -O
 echo -e "${BLUE}[✓] Snaps ready.${RESET}"
 
 echo "[+] STEP 7: Installing MicroK8s..."
-sudo snap ack microk8s_8612.assert > /dev/null
+sudo snap ack core22_2292.assert #> /dev/null
+sudo snap ack microk8s_8612.assert #> /dev/null
+sudo snap install core22_2292.snap
 sudo snap install microk8s_8612.snap --classic
+#sudo snap install microk8s --classic --channel=1.35/stable
 echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
 echo -e "${BLUE}[✓] MicroK8s base system installed.${RESET}"
 sudo rm microk8s_8612.assert microk8s_8612.snap
-
-# Allowed refresh time to off-hours to avoid unexpected reboots
-sudo snap set system refresh.timer=01:00-04:00 >/dev/null
+sudo rm core22_2292.assert core22_2292.snap
 
 echo "[+] STEP 8: Installing traefik ingress..."
 cat <<EOF > traefik-values.yaml
@@ -145,7 +171,7 @@ ports:
     port: 8443
     hostPort: 443
 service:
-  type: LoadBalancer
+  type: ClusterIP
 additionalArguments:
   - "--entryPoints.web.forwardedHeaders.trustedIPs=$HAPROXY_IP"
   - "--entryPoints.websecure.forwardedHeaders.trustedIPs=$HAPROXY_IP"
@@ -163,15 +189,15 @@ sudo microk8s helm install traefik traefik/traefik --namespace ingress --values 
 rm traefik-values.yaml
 echo -e "${BLUE}[✓] traefik installed.${RESET}"
 
-echo "[+] STEP 9: Waiting for the Ingress pod..."
-sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
-sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
-echo -e "${BLUE}[✓] Ingress pod deployed.${RESET}"
+#echo "[+] STEP 9: Waiting for the Ingress pod..."
+#sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
+#sudo microk8s kubectl wait --namespace ingress --for=condition=ready pod  --selector=app.kubernetes.io/name=traefik --timeout=120s >/dev/null
+#echo -e "${BLUE}[✓] Ingress pod deployed.${RESET}"
 
-echo "[+] STEP 10: Testing HTTPS connectivity..."
-if curl -sk --max-time 5 https://localhost/ >/dev/null; then
-  echo -e "${BLUE}[✓] Ingress is serving HTTPS traffic at 443${RESET}"
-fi
+#echo "[+] STEP 10: Testing HTTPS connectivity..."
+#if curl -sk --max-time 5 https://localhost/ >/dev/null; then
+#  echo -e "${BLUE}[✓] Ingress is serving HTTPS traffic at 443${RESET}"
+#fi
 
 echo "[+] STEP 11: Deploying APIserver2..."
 curl -s -O -L https://raw.githubusercontent.com/cppservergit/apiserver2/main/microk8s/apiserver2-ha.yaml
@@ -179,18 +205,18 @@ sudo microk8s kubectl create namespace cppserver > /dev/null
 sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/enforce=restricted > /dev/null
 sudo microk8s kubectl apply -f apiserver2-ha.yaml > /dev/null
 
-echo "[+] STEP 12: Waiting for APIServer2 Pods..."
-sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
-echo -e "${BLUE}[✓] APIServer2 deployment is ready.${RESET}"
+#echo "[+] STEP 12: Waiting for APIServer2 Pods..."
+#sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
+#echo -e "${BLUE}[✓] APIServer2 deployment is ready.${RESET}"
 
-echo "[+] STEP 13: Testing APIServer2 connectivity..."
-if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
-  echo -e "${BLUE}[✓] APIServer2 is ready to accept requests at port 443${RESET}"
-fi
+#echo "[+] STEP 13: Testing APIServer2 connectivity..."
+#if curl -sk --max-time 5 https://localhost/api/ping >/dev/null; then
+#  echo -e "${BLUE}[✓] APIServer2 is ready to accept requests at port 443${RESET}"
+#fi
 
-echo "[+] STEP 14: Waiting for all pods to be ready..."
-sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
-echo -e "${BLUE}[✓] Pods are ready.${RESET}"
+#echo "[+] STEP 14: Waiting for all pods to be ready..."
+#sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
+#echo -e "${BLUE}[✓] Pods are ready.${RESET}"
 
 echo "[+] STEP 15: Finalizing configuration..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube

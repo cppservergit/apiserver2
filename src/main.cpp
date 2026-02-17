@@ -7,6 +7,8 @@
 #include "json_parser.hpp"
 #include "jwt.hpp"
 #include "http_client.hpp"
+#include "otp.hpp" 
+#include "restclient.hpp" // for  get_remote_customer() API handler
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -21,134 +23,6 @@ using namespace validation;
 using enum http::status;
 using enum http::method;
 
-/**
- * @brief Custom exception for errors originating from the RemoteCustomerService.
- */
-class RemoteServiceError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-
-/**
- * @class RemoteCustomerService
- * @brief A stateless service class to interact with a remote customer API.
- */
-class RemoteCustomerService {
-public:
-    /**
-     * @brief Fetches customer information from the remote API.
-     * @param req The incoming HTTP request (used to extract tracing headers like x-request-id).
-     * @param customer_id The ID of the customer to fetch.
-     */
-    static http_response get_customer_info(const http::request& req, std::string_view customer_id) {
-        const std::string uri = "/api/customer";
-        
-        // This will use the cached token if valid
-        const std::string token = login_and_get_token(req);
-        
-        const std::map<std::string, std::string, std::less<>> payload = {
-            {"id", std::string(customer_id)}
-        };
-        const std::string body = json::json_parser::build(payload);
-        
-        std::map<std::string, std::string, std::less<>> headers = {
-            {"Authorization", std::format("Bearer {}", token)},
-            {"Content-Type", "application/json"}
-        };
-
-        // Propagate x-request-id if present in the original request
-        if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.try_emplace("x-request-id", *request_id_opt);
-        }
-
-        util::log::debug("Fetching remote customer info from {} with payload {}", uri, body);
-        
-        // Use thread-local client member to reuse connections (Keep-Alive)
-        const auto response = m_client.post(get_url() + uri, body, headers);
-        if (response.status_code != 200) {
-            util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
-            // If we get a 401, we might want to invalidate the cache, but for now simple error handling
-            if (response.status_code == 401) {
-                m_session.token.clear(); // Force re-login next time
-            }
-            throw RemoteServiceError("Remote service invocation failed.");
-        }
-        return response;
-    }
-
-private:
-    struct Session {
-        std::string token;
-        std::chrono::steady_clock::time_point created_at;
-    };
-
-    /**
-     * @brief Authenticates with the remote API and returns a JWT. 
-     * Uses a lock-free thread_local cache to store the token for 3 minutes.
-     */
-    static std::string login_and_get_token(const http::request& req) {
-        const auto now = std::chrono::steady_clock::now();
-
-        // Check cache: if token exists and is younger than 3 minutes, return it.
-        if (!m_session.token.empty()) {
-            const auto age = std::chrono::duration_cast<std::chrono::minutes>(now - m_session.created_at);
-            if (age.count() < 3) {
-                return m_session.token;
-            }
-        }
-
-        // --- Perform Login ---
-        const std::map<std::string, std::string, std::less<>> login_payload = {
-            {"username", get_user()},
-            {"password", get_pass()}
-        };
-        const std::string login_body = json::json_parser::build(login_payload);
-
-        util::log::debug("Logging into remote API at {}", get_url());
-
-        std::map<std::string, std::string, std::less<>> headers = {{"Content-Type", "application/json"}};
-        
-        if (auto request_id_opt = req.get_header_value("x-request-id"); request_id_opt) {
-            headers.try_emplace("x-request-id", *request_id_opt);
-        }
-
-        // Reuse the thread-local client member
-        const http_response login_response = m_client.post(get_url() + "/api/login", login_body, headers);
-
-        if (login_response.status_code != 200) {
-            util::log::error("Remote API login failed with status {}: {}", login_response.status_code, login_response.body);
-            throw RemoteServiceError("Failed to authenticate with remote service.");
-        }
-
-        json::json_parser token_parser(login_response.body);
-        const std::string id_token(token_parser.get_string("id_token"));
-
-        if (id_token.empty()) {
-            util::log::error("Remote API login response did not contain an id_token.");
-            throw RemoteServiceError("Invalid response from remote authentication service.");
-        }
-
-        // Update thread-local cache
-        m_session.token = id_token;
-        m_session.created_at = now;
-
-        return id_token;
-    }
-
-    // --- Thread-Safe Persistent Client Member (C++17 inline static) ---
-    // This avoids the "function-local static" warning and provides a clean thread-local instance per thread.
-    static inline thread_local http_client m_client{};
-    
-    // --- Thread-Safe Session Cache ---
-    // Stores the token and its creation time per thread to avoid mutexes.
-    static inline thread_local Session m_session{};
-
-    // --- Configuration Getters using thread-safe function-local statics ---
-    static const std::string& get_url()  { static const std::string url = env::get<std::string>("REMOTE_API_URL"); return url; }
-    static const std::string& get_user() { static const std::string user = env::get<std::string>("REMOTE_API_USER"); return user; }
-    static const std::string& get_pass() { static const std::string pass = env::get<std::string>("REMOTE_API_PASS"); return pass; }
-};
-
 // --- Custom Exception for File Operations ---
 class file_system_error : public std::runtime_error {
 public:
@@ -157,7 +31,7 @@ public:
 
 
 // --- Validators ---
-const validator customer_validator{
+const validator customer_validator {
     rule<std::string>{"id", requirement::required, 
         [](std::string_view s) {
             return s.length() == 5 && std::ranges::all_of(s, [](unsigned char c){ return std::isalpha(c); });
@@ -166,20 +40,23 @@ const validator customer_validator{
     }
 };
 
-const validator login_validator{
+const validator login_validator {
     rule<std::string>{"username", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "User must be at least 6 characters long and contain no spaces."},
     rule<std::string>{"password", requirement::required, [](std::string_view s) { return s.length() >= 6 && !s.contains(' '); }, "Password must be at least 6 characters long and contain no spaces."}
 };
 
-const validator sales_validator{
+const validator totp_validator {
+    rule<std::string>{"totp", requirement::required, [](std::string_view s) { return s.length() >= 6 && s.length() <= 8 && std::ranges::all_of(s, ::isdigit); }, "TOTP must be 6 to 8 digits."}
+};
+
+const validator sales_validator {
     rule<std::chrono::year_month_day>{"start_date", requirement::required},
     rule<std::chrono::year_month_day>{"end_date", requirement::required}
 };
 
-const validator upload_validator{
+const validator upload_validator {
     rule<std::string>{"title", requirement::required}
 };
-
 
 // --- User-Defined API Handlers ---
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
@@ -195,7 +72,7 @@ void get_products([[maybe_unused]] const http::request& req, http::response& res
 }
 
 void get_customer(const http::request& req, http::response& res) {
-    auto customer_id = **req.get_value<std::string>("id");
+    auto customer_id = req.get_required_param<std::string>("id");
     const auto json_result = sql::get("DB1", "{CALL sp_customer_get(?)}", customer_id);
     res.set_body(
         json_result ? ok : not_found,
@@ -204,8 +81,8 @@ void get_customer(const http::request& req, http::response& res) {
 }
 
 void login(const http::request& req, http::response& res) {
-    const auto user = **req.get_value<std::string>("username");
-    const auto password = **req.get_value<std::string>("password");
+    const auto user = req.get_required_param<std::string>("username");
+    const auto password = req.get_required_param<std::string>("password");
     const std::string session_id = util::get_uuid();
     const std::string_view remote_ip = req.get_remote_ip();
 
@@ -227,13 +104,20 @@ void login(const http::request& req, http::response& res) {
         const std::string display_name = row.get_value<std::string>("displayname");
         const std::string role_names = row.get_value<std::string>("rolenames");
 
-        auto token_result = jwt::get_token({
+        jwt::claims_map claims = {
             {"user", user},
             {"email", email},
             {"roles", role_names},
             {"sessionId", session_id}
-        });
+        };
 
+        // Conditionally enable MFA based on environment variable
+        // This allows dynamic toggling of the authentication flow.
+        if (static const bool mfa_enabled = env::get<bool>("MFA_ENABLED", false); mfa_enabled) {
+            claims.try_emplace("preauth", "true");
+        }
+        
+        auto token_result = jwt::get_token(claims);
         if (!token_result) {
             util::log::error("JWT creation failed for user '{}': {}", user, jwt::to_string(token_result.error()));
             res.set_body(internal_server_error, R"({"error":"Could not generate session token."})");
@@ -254,15 +138,14 @@ void login(const http::request& req, http::response& res) {
 }
 
 void get_sales_by_category(const http::request& req, http::response& res) {
-    auto start_date = **req.get_value<std::chrono::year_month_day>("start_date");
-    auto end_date = **req.get_value<std::chrono::year_month_day>("end_date");
+    auto start_date = req.get_required_param<std::chrono::year_month_day>("start_date");
+    auto end_date = req.get_required_param<std::chrono::year_month_day>("end_date");
 
     if (start_date >= end_date) {
         res.set_body(bad_request, R"({"error":"start_date must be before end_date"})");
         return;
     }
 
-    // FIX (Issue #11): Simplify optional handling with value_or.
     res.set_body(ok, sql::get("DB1", "{CALL sp_sales_by_category(?,?)}", start_date, end_date).value_or("[]"));
 }
 
@@ -282,7 +165,7 @@ void upload_file(const http::request& req, http::response& res) {
         return;
     }
     
-    const auto title = **req.get_value<std::string>("title");
+    const auto title = req.get_required_param<std::string>("title");
 
     try {
         std::filesystem::create_directories(blob_path);
@@ -294,13 +177,11 @@ void upload_file(const http::request& req, http::response& res) {
 
         std::ofstream out_file(dest_path, std::ios::binary);
         if (!out_file) {
-            // FIX (Issue #12): Throw the dedicated exception type.
             throw file_system_error(std::format("Could not open destination file for writing: {}", util::str_error_cpp(errno)));
         }
         
         out_file.write(file_part->content.data(), file_part->content.size());
         if (!out_file) {
-            // FIX (Issue #12): Throw the dedicated exception type.
             throw file_system_error(std::format("An error occurred while writing to the destination file: {}", util::str_error_cpp(errno)));
         }
         
@@ -333,12 +214,73 @@ void upload_file(const http::request& req, http::response& res) {
 
 //invokes remote REST API to get customer info
 void get_remote_customer(const http::request& req, http::response& res) {
-    const auto customer_id = **req.get_value<std::string>("id");
+    const auto customer_id = req.get_required_param<std::string>("id");
 
     // Updated to pass the request object
     // Exception handling is delegated to the worker thread in server.cpp
     const http_response customer_response = RemoteCustomerService::get_customer_info(req, customer_id);
     res.set_body(ok, customer_response.body);
+}
+
+void validate_totp(const http::request& req, http::response& res) {
+
+    // Check specific claim 'preauth' == 'true'
+    auto claims_result = jwt::get_claims(*req.get_bearer_token());
+    if (!claims_result) {
+        util::log::warn("TOTP validation failed: Invalid token from IP {}.", req.get_remote_ip());
+        res.set_body(unauthorized, R"({"error":"Invalid token"})");
+        return;
+    }
+
+    const auto& claims = *claims_result;
+    
+    if (auto it = claims.find("preauth"); it == claims.end() || it->second != "true") {
+        util::log::warn("TOTP validation failed: Token does not have preauth claim for user {} from IP {}.", req.get_user(), req.get_remote_ip());
+        res.set_body(forbidden, R"({"error":"Invalid token"})");
+        return;
+    }
+
+    // 2. Get User from claims
+    if (auto user_it = claims.find("user"); user_it == claims.end()) {
+        util::log::warn("TOTP validation failed from IP {}: cannot find user in claims.", req.get_remote_ip());
+        res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
+    } else {
+        const std::string& user = user_it->second;
+        const std::string totp_val = req.get_required_param<std::string>("totp");
+
+        // 4. Retrieve Secret from Database
+        if (auto rs = sql::query("LOGINDB", "{CALL cpp_get_secret(?)}", user); rs.empty()) {
+            util::log::error("TOTP validation failed: for user {} from IP {}: no secret found in database", user, req.get_remote_ip());
+            res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
+        } else if (const std::string secret = rs.at(0).get_value<std::string>("totp_secret"); secret.empty()) {
+            util::log::error("TOTP validation failed: for user {} from IP {}: empty secret found.", user, req.get_remote_ip());
+            res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
+        } else {
+            // 5. Validate TOTP (30 second step)
+            if (auto result = otp::is_valid_token(30, totp_val, secret); !result) {
+                util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
+                res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
+            } else {
+                util::log::info("TOTP validated successfully for user {} from IP {}", user, req.get_remote_ip());
+                
+                // --- MFA Success: Generate Final Token ---
+                // Create new claims map EXCLUDING 'preauth' so the new token gets the standard timeout.
+                jwt::claims_map new_claims;
+                if (auto it = claims.find("user"); it != claims.end()) new_claims.try_emplace("user", it->second);
+                if (auto it = claims.find("email"); it != claims.end()) new_claims.try_emplace("email", it->second);
+                if (auto it = claims.find("roles"); it != claims.end()) new_claims.try_emplace("roles", it->second);
+                if (auto it = claims.find("sessionId"); it != claims.end()) new_claims.try_emplace("sessionId", it->second);
+
+                auto token_result = jwt::get_token(new_claims);
+                if (token_result) {
+                    res.set_body(ok, std::format(R"({{"status":"valid", "id_token":"{}", "token_type":"bearer"}})", *token_result));
+                } else {
+                    util::log::error("Failed to generate final system token for user {}", user);
+                    res.set_body(internal_server_error, R"({{"error":"System error during token generation"}})");
+                }
+            }
+        }
+    }
 }
 
 int main() {
@@ -356,12 +298,11 @@ int main() {
         s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
         s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
-        
+        s.register_api(webapi_path{"/validate/totp"}, post, totp_validator, &validate_totp, true);
         s.start();
 
         util::log::info("Application shutting down gracefully.");
 
-    // FIX (Issue #16): Catch the more specific, dedicated exception.
     } catch (const file_system_error& e) {
         util::log::critical("A critical file system error occurred: {}", e.what());
         return 1;

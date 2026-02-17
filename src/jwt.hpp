@@ -14,6 +14,7 @@
  * This module initializes itself from environment variables:
  * - JWT_SECRET: The secret key for signing.
  * - JWT_TIMEOUT_SECONDS: The token's validity duration.
+ * - JWT_MFA_TIMEOUT_SECONDS: The validity duration for pre-auth (MFA) tokens.
  */
 
 namespace jwt {
@@ -78,7 +79,8 @@ using claims_map = std::map<std::string, std::string, std::less<>>;
 namespace detail {
     class service {
     public:
-        service(std::string secret, std::chrono::seconds timeout);
+        // Updated constructor to accept both standard and MFA timeouts
+        service(std::string secret, std::chrono::seconds timeout, std::chrono::seconds mfa_timeout);
         // *** SONARCLOUD FIX ***
         // Destructors should never throw. Added the noexcept specifier.
         ~service() noexcept;
@@ -96,6 +98,7 @@ namespace detail {
         [[nodiscard]] std::expected<claims_map, error_code> validate_and_decode(std::string_view token, bool verify_signature) const;
         const std::string m_secret;
         const std::chrono::seconds m_timeout;
+        const std::chrono::seconds m_mfa_timeout; // New member for pre-auth token duration
     };
 } // namespace detail
 

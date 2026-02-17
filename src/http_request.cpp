@@ -632,7 +632,8 @@ auto request::get_path() const noexcept -> std::string_view { return m_path; }
 auto request::get_file_parts() const noexcept -> const std::vector<multipart_item>& { return m_fileParts; }
 
 auto request::get_bearer_token() const noexcept -> std::optional<std::string_view> {
-    if (auto it = m_headers.find("Authorization"); it != m_headers.end() && it->second.starts_with("Bearer "sv)) {
+    if (auto it = m_headers.find("Authorization"); 
+        it != m_headers.end() && (it->second.starts_with("Bearer "sv) || it->second.starts_with("bearer "sv))) {
         return it->second.substr(7);
     }    
     return std::nullopt;
@@ -680,7 +681,6 @@ auto parse_chrono_type(std::string_view sv) -> std::optional<T> {
     return std::nullopt;
 }
 
-
 template <typename t>
 auto request::get_value(std::string_view param_name) const noexcept -> std::expected<std::optional<t>, param_error> {
     std::optional<std::string_view> value_sv_opt;
@@ -701,7 +701,13 @@ auto request::get_value(std::string_view param_name) const noexcept -> std::expe
         return std::optional{std::string(value_sv)};
     } else if constexpr (std::is_same_v<t, std::string_view>) {
         return std::optional{value_sv};
-    } else if constexpr (is_chrono_type<t>) {
+    } 
+    // FIX: Treat empty strings as nullopt/missing for non-string types (int, date, etc.)
+    // This allows parameters like "cdate":"" to be treated as not provided by validators.
+    else if (value_sv.empty()) {
+        return std::optional<t>{};
+    }
+    else if constexpr (is_chrono_type<t>) {
         if (auto parsed_value = parse_chrono_type<t>(value_sv)) {
             return std::optional{parsed_value};
         } else {

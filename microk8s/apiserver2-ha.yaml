@@ -140,6 +140,14 @@ spec:
           value: "/app/uploads"
         - name: JWT_TIMEOUT_SECONDS
           value: "300"
+        - name: JWT_MFA_TIMEOUT_SECONDS
+          value: "120"
+        - name: REMOTE_API_URL
+          value: "https://cppserver.com"
+        - name: MFA_URI
+          value: "/validate/totp"
+        - name: MFA_ENABLED
+          value: "0"          
         - name: REMOTE_API_URL
           value: "https://cppserver.com"
         
