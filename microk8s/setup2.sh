@@ -66,7 +66,7 @@ EOF
 sudo mkdir -p /var/snap/microk8s/common/
 sudo cp microk8s-config.yaml /var/snap/microk8s/common/.microk8s.yaml
 sudo rm microk8s-config.yaml
-echo -e "${BLUE}[✓] Launch configuration installed (Fixed IP: $NODE_IP)${RESET}"
+echo -e "${BLUE}[✓] Launch configuration installed.${RESET}"
 
 echo "[+] STEP 4: Installing MicroK8s..."
 sudo snap install microk8s --classic --channel=1.35/stable
@@ -111,7 +111,7 @@ sudo microk8s kubectl label --overwrite ns cppserver pod-security.kubernetes.io/
 sudo microk8s kubectl apply -f apiserver2.yaml > /dev/null
 echo -e "${BLUE}[✓] APIServer2 deployment is ready.${RESET}"
 
-echo "[+] STEP 15: Finalizing configuration..."
+echo "[+] STEP 7: Finalizing configuration..."
 sudo usermod -a -G microk8s $USER && mkdir -p ~/.kube && chmod 0700 ~/.kube
 echo "alias kubectl='microk8s kubectl'" >> ~/.bash_aliases
 
@@ -122,4 +122,11 @@ MINUTES=$((DURATION / 60))
 SECONDS=$((DURATION % 60))
 
 echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed in ${MINUTES}m ${SECONDS}s.${RESET}"
+
+echo ""
+echo "[+] STEP EXTRA: Waiting for all Pods to be running - it may take a few minutes..."
+sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
+echo "[✓] Pods are ready."
+echo  ""
+sudo microk8s kubectl get all -A
 echo -e "${YELLOW}${BLINK} →→ Please LOG OUT AND LOG BACK IN for group changes to take effect. ←←${RESET}"
