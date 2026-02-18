@@ -248,8 +248,7 @@ void validate_totp(const http::request& req, http::response& res) {
     }
 
     // 4. Validate TOTP (30 second step)
-    auto result = otp::is_valid_token(30, totp_val, *secret_opt);
-    if (!result.has_value()) {
+    if (auto result = otp::is_valid_token(30, totp_val, *secret_opt); !result.has_value()) {
         util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
         res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
         return;
