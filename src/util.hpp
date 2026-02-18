@@ -208,29 +208,25 @@ inline auto today() {
  * @return The UUID as a standard formatted string.
  */
 [[nodiscard]] inline std::string get_uuid() noexcept {
-    // A UUID is 16 bytes (128 bits)
-    // Fix: Use std::byte to satisfy "byte-oriented data manipulation" rule
+    // 1. Use std::byte to satisfy SonarCloud "byte-oriented data" rule
     std::array<std::byte, 16> bytes;
 
-    // 1. Generate 16 random bytes using OpenSSL
-    // RAND_bytes returns 1 on success, 0 on failure.
-    // Cast to unsigned char* because OpenSSL C-API expects it.
+    // 2. OpenSSL RAND_bytes expects unsigned char*, so we must cast.
+    // This is safe because std::byte and unsigned char have the same layout.
     if (RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()), static_cast<int>(bytes.size())) != 1) {
         return "uuid_generation_failed";
     }
 
-    // 2. Set the Version (4) -> xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx
-    // Mask out high nibble (0x0F) and OR in 0x40.
-    // std::byte supports bitwise operators directly in C++17+
+    // 3. Set Version (4)
+    // std::byte supports bitwise operators (&, |) directly in C++17
     bytes[6] = (bytes[6] & std::byte{0x0F}) | std::byte{0x40};
 
-    // 3. Set the Variant (RFC 4122, Variant 1) -> xxxxxxxx-xxxx-xxxx-8xxx-xxxxxxxxxxxx
-    // Mask out top 2 bits (0x3F) and OR in 0x80.
+    // 4. Set Variant (RFC 4122)
     bytes[8] = (bytes[8] & std::byte{0x3F}) | std::byte{0x80};
 
-    // 4. Format to string
+    // 5. Format to string
+    // std::format requires arithmetic types for {:x}, so we cast to integer.
     try {
-        // Use std::to_integer to convert std::byte to integer for formatting
         return std::format("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
             std::to_integer<unsigned char>(bytes[0]), std::to_integer<unsigned char>(bytes[1]), 
             std::to_integer<unsigned char>(bytes[2]), std::to_integer<unsigned char>(bytes[3]),
@@ -241,11 +237,10 @@ inline auto today() {
             std::to_integer<unsigned char>(bytes[12]), std::to_integer<unsigned char>(bytes[13]), 
             std::to_integer<unsigned char>(bytes[14]), std::to_integer<unsigned char>(bytes[15])
         );
-    } catch (/* NOSONAR */ const std::exception& e) {
+    } catch (/* NOSONAR */ const std::exception&) {
         return "uuid_generation_failed";
     }
 }
-
 
 namespace detail {
     /**
