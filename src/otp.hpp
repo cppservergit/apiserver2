@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <format>
 #include <cmath>
+#include <cstddef> // For std::byte
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
@@ -28,8 +29,9 @@ namespace otp {
             15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1  // 112-127 (p-z)
         };
 
-        inline std::expected<std::vector<uint8_t>, std::string> decode_base32(std::string_view input) {
-            std::vector<uint8_t> output;
+        // Use std::byte for raw binary data
+        inline std::expected<std::vector<std::byte>, std::string> decode_base32(std::string_view input) {
+            std::vector<std::byte> output;
             output.reserve(input.length() * 5 / 8);
 
             int buffer = 0;
@@ -39,7 +41,6 @@ namespace otp {
                 if (c == '=' || std::isspace(c)) continue;
 
                 // FIX: Cast to unsigned char to safely handle all ranges (0-255)
-                // This eliminates the signed/unsigned compiler warning.
                 unsigned char uc = static_cast<unsigned char>(c);
 
                 // Now we check if it's out of bounds (>= 128) OR invalid in the table (-1)
@@ -51,7 +52,7 @@ namespace otp {
                 bits_left += 5;
 
                 if (bits_left >= 8) {
-                    output.push_back(static_cast<uint8_t>((buffer >> (bits_left - 8)) & 0xFF));
+                    output.push_back(static_cast<std::byte>((buffer >> (bits_left - 8)) & 0xFF));
                     bits_left -= 8;
                 }
             }
@@ -59,7 +60,7 @@ namespace otp {
         }
 
         inline std::expected<std::string, std::string> generate_hotp(
-            const std::vector<uint8_t>& key, 
+            const std::vector<std::byte>& key, 
             uint64_t counter, 
             int digits) 
         {
@@ -69,22 +70,29 @@ namespace otp {
                 reinterpret_cast<uint8_t*>(&counter_be)[i] = (counter >> ((7 - i) * 8)) & 0xFF;
             }
 
-            unsigned char hash[EVP_MAX_MD_SIZE];
+            // Using std::byte for the hash buffer
+            std::array<std::byte, EVP_MAX_MD_SIZE> hash{};
             unsigned int hash_len = 0;
 
             // Using OpenSSL HMAC (SHA1 for standard TOTP/Google Authenticator)
+            // Note: key.data() returns std::byte*, which implicitly converts to void* required by HMAC.
+            // We must cast hash.data() (std::byte*) to unsigned char* for OpenSSL.
             if (!HMAC(EVP_sha1(), key.data(), static_cast<int>(key.size()),
                       reinterpret_cast<const unsigned char*>(&counter_be), sizeof(counter_be),
-                      hash, &hash_len)) {
+                      reinterpret_cast<unsigned char*>(hash.data()), &hash_len)) {
                 return std::unexpected("OpenSSL HMAC calculation failed");
             }
 
             // RFC 4226 Truncation
-            int offset = hash[hash_len - 1] & 0x0F;
-            int binary = ((hash[offset] & 0x7f) << 24) |
-                         ((hash[offset + 1] & 0xff) << 16) |
-                         ((hash[offset + 2] & 0xff) << 8) |
-                         (hash[offset + 3] & 0xff);
+            // Use std::to_integer to extract values from std::byte for arithmetic/indexing
+            int offset = std::to_integer<int>(hash[hash_len - 1] & std::byte{0x0F});
+            
+            // Extract 32-bit integer from the hash at the calculated offset
+            // We cast each byte to int before shifting
+            int binary = (std::to_integer<int>(hash[offset] & std::byte{0x7f}) << 24) |
+                         (std::to_integer<int>(hash[offset + 1] & std::byte{0xff}) << 16) |
+                         (std::to_integer<int>(hash[offset + 2] & std::byte{0xff}) << 8) |
+                         (std::to_integer<int>(hash[offset + 3] & std::byte{0xff}));
 
             int otp = binary % static_cast<int>(std::pow(10, digits));
             
@@ -120,7 +128,7 @@ namespace otp {
         try {
             // 1. Decode Secret
             auto secret_bytes = detail::decode_base32(secretb32);
-            if (!secret_bytes) {
+            if (!secret_bytes.has_value()) {
                 return std::unexpected("Base32 decode failed: " + secret_bytes.error());
             }
 
@@ -134,7 +142,7 @@ namespace otp {
             for (uint64_t step = current_step - 1; step <= current_step + 1; ++step) {
                 auto generated_otp = detail::generate_hotp(*secret_bytes, step, digits);
                 
-                if (!generated_otp) {
+                if (!generated_otp.has_value()) {
                     return std::unexpected(generated_otp.error());
                 }
 

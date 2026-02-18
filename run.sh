@@ -23,7 +23,7 @@ export JWT_TIMEOUT_SECONDS=300
 export JWT_MFA_TIMEOUT_SECONDS=120
 
 # MFA configuration
-export MFA_ENABLED=0
+export MFA_ENABLED=1
 export MFA_URI="/validate/totp"
 
 # api key for diagnostics

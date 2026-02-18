@@ -15,6 +15,7 @@
 #include <chrono>
 #include <format>
 #include <cstdint>
+#include <cstddef>
 
 // Includes for POSIX/networking functions
 #include <unistd.h>
@@ -207,37 +208,42 @@ inline auto today() {
  * @return The UUID as a standard formatted string.
  */
 [[nodiscard]] inline std::string get_uuid() noexcept {
-        // A UUID is 16 bytes (128 bits)
-        std::array<uint8_t, 16> bytes;
+    // A UUID is 16 bytes (128 bits)
+    // Fix: Use std::byte to satisfy "byte-oriented data manipulation" rule
+    std::array<std::byte, 16> bytes;
 
-        // 1. Generate 16 random bytes using OpenSSL
-        // RAND_bytes returns 1 on success, 0 on failure (e.g., not enough entropy)
-        if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
-            return "uuid_generation_failed";
-        }
+    // 1. Generate 16 random bytes using OpenSSL
+    // RAND_bytes returns 1 on success, 0 on failure.
+    // Cast to unsigned char* because OpenSSL C-API expects it.
+    if (RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()), static_cast<int>(bytes.size())) != 1) {
+        return "uuid_generation_failed";
+    }
 
-        // 2. Set the Version (4) -> xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx
-        // Mask out high nibble (0x0F) and OR in 0x40.
-        bytes[6] = (bytes[6] & 0x0F) | 0x40;
+    // 2. Set the Version (4) -> xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx
+    // Mask out high nibble (0x0F) and OR in 0x40.
+    // std::byte supports bitwise operators directly in C++17+
+    bytes[6] = (bytes[6] & std::byte{0x0F}) | std::byte{0x40};
 
-        // 3. Set the Variant (RFC 4122, Variant 1) -> xxxxxxxx-xxxx-xxxx-8xxx-xxxxxxxxxxxx
-        // Mask out top 2 bits (0x3F) and OR in 0x80.
-        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+    // 3. Set the Variant (RFC 4122, Variant 1) -> xxxxxxxx-xxxx-xxxx-8xxx-xxxxxxxxxxxx
+    // Mask out top 2 bits (0x3F) and OR in 0x80.
+    bytes[8] = (bytes[8] & std::byte{0x3F}) | std::byte{0x80};
 
-        // 4. Format to string
-        try {
-            return std::format("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                bytes[0], bytes[1], bytes[2], bytes[3],
-                bytes[4], bytes[5],
-                bytes[6], bytes[7],
-                bytes[8], bytes[9],
-                bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-            );
-        } catch (/* NOSONAR */ const std::exception& e) {
-            // SonarCloud Fix: Catch specific exception (std::exception) 
-            // even if we just return a fallback. Ideally, log 'e.what()' if you have a logger.
-            return "uuid_generation_failed";
-        }
+    // 4. Format to string
+    try {
+        // Use std::to_integer to convert std::byte to integer for formatting
+        return std::format("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            std::to_integer<unsigned char>(bytes[0]), std::to_integer<unsigned char>(bytes[1]), 
+            std::to_integer<unsigned char>(bytes[2]), std::to_integer<unsigned char>(bytes[3]),
+            std::to_integer<unsigned char>(bytes[4]), std::to_integer<unsigned char>(bytes[5]),
+            std::to_integer<unsigned char>(bytes[6]), std::to_integer<unsigned char>(bytes[7]),
+            std::to_integer<unsigned char>(bytes[8]), std::to_integer<unsigned char>(bytes[9]),
+            std::to_integer<unsigned char>(bytes[10]), std::to_integer<unsigned char>(bytes[11]), 
+            std::to_integer<unsigned char>(bytes[12]), std::to_integer<unsigned char>(bytes[13]), 
+            std::to_integer<unsigned char>(bytes[14]), std::to_integer<unsigned char>(bytes[15])
+        );
+    } catch (/* NOSONAR */ const std::exception& e) {
+        return "uuid_generation_failed";
+    }
 }
 
 

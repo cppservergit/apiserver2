@@ -8,6 +8,7 @@
 #include "jwt.hpp"
 #include "http_client.hpp"
 #include "otp.hpp" 
+#include "mfa.hpp" // for TOTP validation handler
 #include "restclient.hpp" // for  get_remote_customer() API handler
 #include <functional>
 #include <algorithm> 
@@ -223,63 +224,44 @@ void get_remote_customer(const http::request& req, http::response& res) {
 }
 
 void validate_totp(const http::request& req, http::response& res) {
-
-    // Check specific claim 'preauth' == 'true'
-    auto claims_result = jwt::get_claims(*req.get_bearer_token());
-    if (!claims_result) {
-        util::log::warn("TOTP validation failed: Invalid token from IP {}.", req.get_remote_ip());
-        res.set_body(unauthorized, R"({"error":"Invalid token"})");
-        return;
-    }
-
+    auto claims_result = jwt::get_claims(req.get_bearer_token().value_or(""));
     const auto& claims = *claims_result;
     
-    if (auto it = claims.find("preauth"); it == claims.end() || it->second != "true") {
+    // Check specific claim 'preauth' == 'true'
+    if (auto preauth_it = claims.find("preauth"); preauth_it == claims.end() || preauth_it->second != "true") {
         util::log::warn("TOTP validation failed: Token does not have preauth claim for user {} from IP {}.", req.get_user(), req.get_remote_ip());
         res.set_body(forbidden, R"({"error":"Invalid token"})");
         return;
     }
 
     // 2. Get User from claims
-    if (auto user_it = claims.find("user"); user_it == claims.end()) {
-        util::log::warn("TOTP validation failed from IP {}: cannot find user in claims.", req.get_remote_ip());
+    auto user_it = claims.find("user");
+    const auto& user = user_it->second;
+    const auto totp_val = req.get_required_param<std::string>("totp");
+
+    // 3. Retrieve Secret from Database (using helper from mfa.hpp)
+    auto secret_opt = fetch_user_secret(user);
+    if (!secret_opt.has_value()) {
+        util::log::error("TOTP validation failed: for user {} from IP {}: no secret found or empty.", user, req.get_remote_ip());
         res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
+        return;
+    }
+
+    // 4. Validate TOTP (30 second step)
+    auto result = otp::is_valid_token(30, totp_val, *secret_opt);
+    if (!result.has_value()) {
+        util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
+        res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
+        return;
+    }
+
+    util::log::info("TOTP validated successfully for user {} from IP {}", user, req.get_remote_ip());
+    
+    // 5. Generate Final Token (using helper from mfa.hpp)
+    if (auto token_str = generate_post_auth_token(claims, user); token_str.has_value()) {
+        res.set_body(ok, std::format(R"({{"status":"valid", "id_token":"{}", "token_type":"bearer"}})", *token_str));
     } else {
-        const std::string& user = user_it->second;
-        const std::string totp_val = req.get_required_param<std::string>("totp");
-
-        // 4. Retrieve Secret from Database
-        if (auto rs = sql::query("LOGINDB", "{CALL cpp_get_secret(?)}", user); rs.empty()) {
-            util::log::error("TOTP validation failed: for user {} from IP {}: no secret found in database", user, req.get_remote_ip());
-            res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
-        } else if (const std::string secret = rs.at(0).get_value<std::string>("totp_secret"); secret.empty()) {
-            util::log::error("TOTP validation failed: for user {} from IP {}: empty secret found.", user, req.get_remote_ip());
-            res.set_body(unauthorized, R"({"error":"Cannot validate token"})");
-        } else {
-            // 5. Validate TOTP (30 second step)
-            if (auto result = otp::is_valid_token(30, totp_val, secret); !result) {
-                util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
-                res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
-            } else {
-                util::log::info("TOTP validated successfully for user {} from IP {}", user, req.get_remote_ip());
-                
-                // --- MFA Success: Generate Final Token ---
-                // Create new claims map EXCLUDING 'preauth' so the new token gets the standard timeout.
-                jwt::claims_map new_claims;
-                if (auto it = claims.find("user"); it != claims.end()) new_claims.try_emplace("user", it->second);
-                if (auto it = claims.find("email"); it != claims.end()) new_claims.try_emplace("email", it->second);
-                if (auto it = claims.find("roles"); it != claims.end()) new_claims.try_emplace("roles", it->second);
-                if (auto it = claims.find("sessionId"); it != claims.end()) new_claims.try_emplace("sessionId", it->second);
-
-                auto token_result = jwt::get_token(new_claims);
-                if (token_result) {
-                    res.set_body(ok, std::format(R"({{"status":"valid", "id_token":"{}", "token_type":"bearer"}})", *token_result));
-                } else {
-                    util::log::error("Failed to generate final system token for user {}", user);
-                    res.set_body(internal_server_error, R"({{"error":"System error during token generation"}})");
-                }
-            }
-        }
+        res.set_body(internal_server_error, R"({{"error":"System error during token generation"}})");
     }
 }
 
