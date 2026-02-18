@@ -213,7 +213,7 @@ inline auto today() {
 
     // 2. OpenSSL RAND_bytes expects unsigned char*, so we must cast.
     // This is safe because std::byte and unsigned char have the same layout.
-    if (RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()), static_cast<int>(bytes.size())) != 1) {
+    if (/* NOSONAR */ RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()), static_cast<int>(bytes.size())) != 1) {
         return "uuid_generation_failed";
     }
 
