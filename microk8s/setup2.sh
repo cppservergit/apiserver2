@@ -72,6 +72,7 @@ echo "[+] STEP 4: Installing MicroK8s..."
 sudo snap install microk8s --classic --channel=1.35/stable
 echo "[+] Waiting for MicroK8s to be ready..."
 sudo microk8s status --wait-ready >/dev/null
+sudo snap set system refresh.timer=01:00-04:00 >/dev/null
 echo -e "${BLUE}[✓] MicroK8s base system installed.${RESET}"
 
 echo "[+] STEP 5: Installing traefik ingress..."
@@ -124,12 +125,11 @@ SECONDS=$((DURATION % 60))
 echo -e "${BLUE}[✓] MicroK8s/APIServer2 setup completed in ${MINUTES}m ${SECONDS}s.${RESET}"
 
 echo ""
-echo "[+] EXTRA: Waiting for all Pods to be running - it may take a few minutes..."
+echo "[+] EXTRA step: Waiting for all Pods to be running - it may take a few minutes..."
 sudo microk8s kubectl rollout status daemonset/traefik -n ingress --timeout=120s >/dev/null
 sudo microk8s kubectl rollout status deployment/apiserver2 -n cppserver --timeout=300s >/dev/null
 sudo microk8s kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=600s >/dev/null
 echo -e "${BLUE}[✓] Pods are ready.${RESET}"
 echo  ""
-sudo microk8s kubectl get all -A
 echo -e "${YELLOW}${BLINK} →→ Please LOG LOG BACK IN for group changes to take effect. ←←${RESET}"
 

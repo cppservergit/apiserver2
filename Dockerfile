@@ -50,7 +50,7 @@ RUN wget https://www.unixodbc.org/unixODBC-2.3.14.tar.gz -O unixodbc.tar.gz \
 
 # 4. COMPILE MINIMAL FREETDS (v1.5.10)
 WORKDIR /tmp/freetds
-RUN wget https://www.freetds.org/files/stable/freetds-1.5.10.tar.gz -O freetds.tar.gz \
+RUN wget https://www.freetds.org/files/stable/freetds-1.5.13.tar.gz -O freetds.tar.gz \
     && tar -xvf freetds.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-unixodbc=/usr --with-openssl=/usr \
        --enable-msdblib --disable-libiconv --disable-krb5 --disable-gssapi \
