@@ -995,6 +995,9 @@ docker run -d \
   -e CORS_ORIGINS="null,file://" \
   -e JWT_SECRET="B@asica2025*uuid0998554j93m722pQ" \
   -e JWT_TIMEOUT_SECONDS=300 \
+  -e JWT_MFA_TIMEOUT_SECONDS=60 \
+  -e MFA_URI="/validate/totp" \
+  -e MFA_ENABLED=0 \
   -e API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af" \
   -e REMOTE_API_URL="https://cppserver.com" \
   -e REMOTE_API_USER="mcordova" \
@@ -1041,8 +1044,8 @@ We provide a somewhat complex multi-stage Dockerfile that uses an Ubuntu 24.04 c
 The latest APIServer2 image that contains all the API examples:
 ```
 IMAGE                         ID             DISK USAGE   CONTENT SIZE
-cppserver/apiserver2:latest   cd523a16f29a       26.7MB         7.14MB        
-cppserver/apiserver2:v1.1.8   cd523a16f29a       26.7MB         7.14MB  
+cppserver/apiserver2:latest   f618714927c6       26.8MB         7.19MB
+cppserver/apiserver2:v1.1.9   f618714927c6       26.8MB         7.19MB
 ```
 This image reports no vulnerabilities when scanned with Trivy:
 ```
@@ -1051,7 +1054,7 @@ Report Summary
 ┌────────────────────────────────────────────┬────────┬─────────────────┬─────────┐
 │                   Target                   │  Type  │ Vulnerabilities │ Secrets │
 ├────────────────────────────────────────────┼────────┼─────────────────┼─────────┤
-│ cppserver/apiserver2:v1.1.8 (ubuntu 24.04) │ ubuntu │        0        │    -    │
+│ cppserver/apiserver2:v1.1.9 (ubuntu 24.04) │ ubuntu │        0        │    -    │
 └────────────────────────────────────────────┴────────┴─────────────────┴─────────┘
 ```
 This Dockerfile compiles APIServer2 and its main dependencies: odbc, tds odbc drivers and libcurl to remove the excess baggage and optimize the binaries.
