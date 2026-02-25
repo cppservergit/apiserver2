@@ -45,9 +45,9 @@ if [[ "$TOKEN1" == "null" || -z "$TOKEN1" ]]; then
 fi
 
 # Generate TOTP code for MFA
-TOTP=$(oathtool --base32 --totp "FLVSIZNN3JF2Z3US")
+#TOTP=$(oathtool --base32 --totp "FLVSIZNN3JF2Z3US")
 # validate TOTP with stage-1 token and get stage-2 token
-TOKEN2=$(curl --json '{"totp":"'$TOTP'"}' "${BASE_URL}${API_PREFIX}/validate/totp" -ks -H "Authorization: Bearer $TOKEN1" | jq -r '.id_token')
+#TOKEN2=$(curl --json '{"totp":"'$TOTP'"}' "${BASE_URL}${API_PREFIX}/validate/totp" -ks -H "Authorization: Bearer $TOKEN1" | jq -r '.id_token')
 
 endpoints=(
   "GET $API_PREFIX/shippers"
@@ -76,7 +76,7 @@ for entry in "${endpoints[@]}"; do
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN2" \
+      -H "Authorization: Bearer $TOKEN1" \
       -d "$payload" "${BASE_URL}${uri}")
   else
     # send API_KEY for diagnostic endpoints
@@ -84,7 +84,7 @@ for entry in "${endpoints[@]}"; do
       response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $API_KEY" \
       "${BASE_URL}${uri}")
     else
-      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN2" \
+      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN1" \
       "${BASE_URL}${uri}")
     fi
   fi
