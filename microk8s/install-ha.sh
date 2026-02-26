@@ -15,8 +15,8 @@ BLINK='\033[5m'
 HA_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 
 # Backend Kubernetes Nodes (Fixed IPs from provision-vms.ps1)
-NODE1_IP="172.22.124.70"
-NODE2_IP="172.22.123.137"
+NODE1_IP="172.27.113.14"
+NODE2_IP="172.27.121.1"
 
 # JA4 Fingerprint Plugin URL
 JA4_LUA_URL="https://raw.githubusercontent.com/O-X-L/haproxy-ja4-fingerprint/latest/ja4.lua"
@@ -28,7 +28,7 @@ if [ -z "$HA_IP" ]; then
 fi
 
 echo "---------------------------------------------------------------------------------"
-echo -e "Starting HAProxy 3.2 Advanced Security Setup on ${BLUE}$HA_IP${RESET}"
+echo -e "Starting HAProxy 3.2 setup on ${BLUE}$HA_IP${RESET}"
 echo -e "Target Backends: ${BLUE}$NODE1_IP, $NODE2_IP${RESET}"
 echo "---------------------------------------------------------------------------------"
 
@@ -266,4 +266,4 @@ MINUTES=$((DURATION / 60))
 SECONDS=$((DURATION % 60))
 
 echo -e "${BLUE}[✓] HAProxy installation completed in ${MINUTES}m ${SECONDS}s.${RESET}"
-echo -e "${YELLOW}${BLINK} →→ Advanced Security Proxy is Active at $HA_IP ←←${RESET}"
+echo -e "${YELLOW}${BLINK} →→ HAProxy is Active at $HA_IP ←←${RESET}"
