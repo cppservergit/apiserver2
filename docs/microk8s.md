@@ -423,6 +423,8 @@ Very few resources are required for this setup, 12 cores and 12 GB of RAM distri
 
 A multi-layer security approach is implemented in this setup, HAProxy provides rate-limits, JA4 fingerprints blacklist and API rules enforcement, transforming the load balancer into an API Gateway, protecting the ingress and the pods. The ingress implements path rules, nothing else, and the APIServer2 container implements the stateless JWT security model.
 
+Please check our [recipe](https://github.com/cppservergit/apiserver2/blob/main/docs/haproxy-cluster.md) for installing such a cluster.
+
 ## Upgrading Traefik
 Installing Traefil via helm charts will usually install the latest stable version most of the time, but it may happen that the maintainers of the Traefik Helm chart haven't yet released a new Chart version that points to the very latest stable App version as the default.
 
@@ -468,3 +470,7 @@ If your MicroK8s becomes unstable and for some reason it is hard to diagnose and
 sudo snap remove --purge microk8s
 ```
 During development and testing when using Multipass on Windows 10/11, after a reboot of the host PC the Multipass VM may change its IP and then MicroK8s will start failing, this is such a case that justifies uninstalling and running `setup.sh` again, it will be faster that trying to fix MicroK8s configuration.
+
+## Tuning container runtime
+
+MicroK8s uses containerd/runc to manage and run your containers, you can replace runc and use CRun, an OCI container runtime written in C which is smaller and faster, it will optimize the container launching phase, please check our [recipe](https://github.com/cppservergit/apiserver2/blob/main/docs/crun.md) for CRun with MicroK8s and APIServer2.
