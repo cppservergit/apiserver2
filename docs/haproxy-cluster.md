@@ -251,4 +251,4 @@ If you HAProxy VM fails, you will experience interruption of service, but it wou
 
 The same applies to the MicroK8s VMs.
 
-**Note**: Multipass on Windows 11 makes testing an architecture like this very easy, but it not intended for production, even for development, if the Windows host gets restarted, the Multipass VMs may change their IP address and then the whole cluster will not work anymore, but as you have just experienced, it takes only a few minutes to rebuild the whole cluster.
+**Note**: Multipass on Windows 11 makes testing an architecture like this very easy, but it is not intended for production, even for development, if the Windows host gets restarted, the Multipass VMs may change their IP address and then the whole cluster will not work anymore, but as you have just experienced, it takes only a few minutes to rebuild the whole cluster.
