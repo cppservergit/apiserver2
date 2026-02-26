@@ -34,7 +34,6 @@ echo "--------------------------------------------------------------------------
 
 echo "[+] STEP 1: Updating system and installing dependencies..."
 sudo apt-get update >/dev/null
-sudo apt-get upgrade -y >/dev/null
 sudo apt-get install socat -y >/dev/null
 echo -e "${BLUE}[✓] system updated and dependencies installed${RESET}"
 
