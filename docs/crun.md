@@ -2,6 +2,37 @@
 
 `CRun` is a replacement for the default MicroK8s OCI container runtime `Runc`, which is written in Go, `CRun` is written in C, it is much smaller and faster than Runc, in case you want to optimize the operation of your MicroK8s node regarding to the launching of containers, which is the specific task CRun/Runc manage, these are the steps, it is assumed that a working MicroK8s installation is in working condition.
 
+```mermaid
+graph LR
+    %%subgraph Cluster ["MicroK8s on Ubuntu 24.04"]
+    
+        direction LR
+        
+        %% Top Management Section
+        subgraph Management ["Management Layer"]
+            direction LR
+            ContainerD[ContainerD]
+        end
+
+        %% Connection from Management to Execution
+        ContainerD --> CRun
+
+        %% Bottom Execution Section
+        subgraph Execution ["Execution Layer"]
+            direction LR
+            CRun["CRun<br/>Low-Level C<br/>OCI runtime"]
+            
+            CRun --> APIServer2["APIServer2<br/>C++ container"]
+        end
+    %%end
+
+    %% Styling to match the Excalidraw look
+    %%style Cluster fill:#fff,stroke:#1e1e1e,stroke-width:2px
+    style ContainerD fill:#fff,stroke:#1e1e1e,stroke-width:2px
+    style CRun fill:#bbf,stroke:#1e1e1e,stroke-width:2px
+    style APIServer2 fill:#f9f,stroke:#1e1e1e,stroke-width:2px
+```
+
 The [CRun Project on Github](https://github.com/containers/crun)
 
 ## Step 1: Install CRun
