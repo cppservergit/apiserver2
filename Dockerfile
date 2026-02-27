@@ -38,6 +38,7 @@ RUN wget https://github.com/curl/curl/releases/download/curl-8_18_0/curl-8.18.0.
        --disable-smb --disable-smtp --disable-telnet --disable-tftp \
        --without-libssh2 --without-librtmp --without-libidn2 --without-nghttp2 \
        --without-brotli --without-zstd --without-libpsl \
+       --disable-docs --disable-manual \
     && make -j$(nproc) && make install
 
 # 3. COMPILE MINIMAL UNIXODBC (v2.3.14)
@@ -69,6 +70,8 @@ RUN wget https://s3.amazonaws.com/json-c_releases/releases/json-c-0.18.tar.gz -O
        -DISABLE_WERROR=ON \
        -DENABLE_THREADING=ON \
        -DENABLE_RDRAND=ON \
+       -DBUILD_TESTING=OFF \
+       -DBUILD_APPS=OFF \
     && make -j$(nproc) && make install
 
 # 6. COMPILE APPLICATION
