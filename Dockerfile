@@ -60,7 +60,7 @@ RUN wget https://www.freetds.org/files/stable/freetds-1.5.13.tar.gz -O freetds.t
 
 # 5. COMPILE MINIMAL JSON-C (v0.18)
 WORKDIR /tmp/json-c
-RUN wget https://s3.amazonaws.com/json-c_releases/releases/json-c-0.18.tar.gz -O json-c.tar.gz \
+RUN wget https://github.com/json-c/json-c/archive/refs/tags/json-c-0.18-20240915.tar.gz -O json-c.tar.gz \
     && tar -xvf json-c.tar.gz --strip-components=1 \
     && mkdir build && cd build \
     && cmake .. \
