@@ -25,9 +25,9 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
-#include <chrono> // Added for timeouts
+#include <chrono>
 
-inline constexpr auto g_version = "1.1.9";
+inline constexpr auto g_version = "1.2.0";
 
 using dispatch_task = std::function<void()>;
 
@@ -44,12 +44,12 @@ struct connection_state {
     http::request_parser parser;
     std::optional<http::response> response;
     std::string remote_ip;
-    std::chrono::steady_clock::time_point last_activity; // Track last read/write
+    std::chrono::steady_clock::time_point last_activity;
 
     void reset() {
         parser = http::request_parser{};
         response.reset();
-        update_activity(); // Reset timer on new request cycle
+        update_activity();
     }    
 
     void update_activity() {
@@ -91,7 +91,7 @@ private:
                     const api_router& router,
                     const std::unordered_set<std::string, util::string_hash, util::string_equal>& allowed_origins,
                     int worker_thread_count,
-                    size_t queue_capacity, // <--- NEW PARAMETER
+                    size_t queue_capacity,
                     std::atomic<bool>& running_flag);
         
         ~io_worker() noexcept;
@@ -101,8 +101,15 @@ private:
             return m_thread_pool.get();
         }
 
+        [[nodiscard]] shared_queue<response_item, true>* get_response_queue() const {
+            return m_response_queue.get();
+        }
+
     private:
         void setup_listening_socket();
+        void setup_timerfd();
+        void setup_eventfd();
+        
         void add_to_epoll(int fd, uint32_t events);
         void remove_from_epoll(int fd);
         void modify_epoll(int fd, uint32_t events);
@@ -110,45 +117,44 @@ private:
         void on_connect();
         void on_read(int fd);
         void on_write(int fd);
+        void on_timer_tick();
+        void on_response_ready();
+        
         void close_connection(int fd);
-        void check_timeouts(); // Helper to clean up idle connections
+        void check_timeouts(); 
         void drain_pending_responses();
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
         void dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
+        
         bool validate_bearer_token(const http::request& req, std::string_view path) const;
         bool handle_internal_api(const http::request& req, http::response& res) const;
-        
         void execute_handler(const http::request& req, http::response& res, const api_endpoint* endpoint) const;
         [[nodiscard]] bool validate_token(const http::request& req) const;
 
         int m_listening_fd{-1};
-        uint16_t m_port;
         int m_epoll_fd{-1};
+        int m_timer_fd{-1};
+        int m_event_fd{-1}; 
         
+        uint16_t m_port;
         std::shared_ptr<metrics> m_metrics;
         const api_router& m_router;
-        // *** BUG FIX *** Use the correct set type with the transparent hasher
         const std::unordered_set<std::string, util::string_hash, util::string_equal>& m_allowed_origins;
         std::atomic<bool>& m_running;
         
-        std::unique_ptr<shared_queue<response_item>> m_response_queue; // Destroyed LAST
-        std::unique_ptr<thread_pool> m_thread_pool;                   // Destroyed FIRST (stops threads)
+        std::unique_ptr<shared_queue<response_item, true>> m_response_queue; // Fixed: added template flag
+        std::unique_ptr<thread_pool> m_thread_pool;
 
         std::unordered_map<int, connection_state> m_connections;
-
-        // API Key for internal endpoints
         std::string m_api_key;
-        // MFA endpoint URI
         std::string m_mfa_uri;        
     };
 
-    static inline constexpr int MAX_EVENTS = 8192;
-    static inline constexpr int LISTEN_BACKLOG = 65536;
-	static inline constexpr int EPOLL_WAIT_MS = 5;
-    // Timeout for idle connections (Slowloris protection)
+    static inline constexpr int MAX_EVENTS{8192};
+    static inline constexpr int LISTEN_BACKLOG{65536};
     static inline constexpr std::chrono::seconds READ_TIMEOUT{60}; 
 
     uint16_t m_port;
@@ -158,14 +164,10 @@ private:
     std::unique_ptr<util::signal_handler> m_signals;
     std::shared_ptr<metrics> m_metrics;
     api_router m_router;
-    // *** BUG FIX *** Use the correct set type with the transparent hasher
     std::unordered_set<std::string, util::string_hash, util::string_equal> m_allowed_origins;
-
     std::vector<std::unique_ptr<io_worker>> m_workers;
     std::atomic<bool> m_running{true};
-
-    //task queue back pressure control
-    size_t m_queue_capacity{0};
+    size_t m_queue_capacity{1000};
 };
 
 #endif // SERVER_HPP

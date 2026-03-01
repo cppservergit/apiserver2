@@ -8,51 +8,76 @@
 #include <vector>
 #include <atomic>
 #include <stdexcept>
+#include <unistd.h> 
 
-// Specific exception for backpressure handling
+/**
+ * @brief Specific exception for backpressure handling.
+ */
 class queue_full_error : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
 
-template<typename T>
+/**
+ * @brief Thread-safe queue with optional eventfd signaling.
+ *
+ * @tparam T The type of items in the queue.
+ * @tparam UseEventFD If true, uses eventfd for signaling (suitable for epoll loops).
+ * If false, uses condition variables (suitable for worker threads).
+ */
+template<typename T, bool UseEventFD = false>
 class shared_queue {
 public:
     /**
      * @brief Constructor accepting a capacity limit.
-     * @param capacity The maximum number of items allowed in the queue. 
-     * 0 (default) implies unbounded.
      */
-    explicit shared_queue(size_t capacity = 0) : m_capacity(capacity) {}
+    explicit shared_queue(size_t capacity = 0)
+        : m_stopped(false), m_capacity(capacity), m_event_fd(-1) {}
 
     /**
-     * @brief Pushes a new item onto the queue and notifies a waiting thread.
-     * @throws queue_full_error if the queue has reached its capacity.
+     * @brief Links this queue to an eventfd for signaling.
+     * Uses atomic store to prevent data races during initialization.
+     */
+    void set_event_fd(int fd) noexcept {
+        if constexpr (UseEventFD) {
+            m_event_fd.store(fd, std::memory_order_release);
+        }
+    }
+
+    /**
+     * @brief Pushes a new item onto the queue and notifies the consumer.
      */
     void push(T item) {
         {
             std::scoped_lock lock(m_mutex);
-            // Check capacity if limit is set (non-zero)
             if (m_capacity > 0 && m_queue.size() >= m_capacity) {
                 throw queue_full_error("Queue is full");
             }
             m_queue.push(std::move(item));
         }
-        m_cond.notify_one();
+
+        if constexpr (UseEventFD) {
+            int fd = m_event_fd.load(std::memory_order_acquire);
+            if (fd != -1) {
+                uint64_t u = 1;
+                [[maybe_unused]] ssize_t s = write(fd, &u, sizeof(uint64_t));
+            }
+        } else {
+            m_cond.notify_one();
+        }
     }
 
     /**
      * @brief Waits for an item to be available and pops it from the queue.
-     * @return An optional containing the item, or std::nullopt if the queue was stopped.
      */
     std::optional<T> wait_and_pop() {
         std::unique_lock lock(m_mutex);
         m_cond.wait(lock, [this] { return !m_queue.empty() || m_stopped; });
-        
-        if (m_stopped && m_queue.empty()) {
-            return std::nullopt;
+
+        if (m_queue.empty()) {
+            return std::nullopt; 
         }
-        
+
         T item = std::move(m_queue.front());
         m_queue.pop();
         return item;
@@ -70,20 +95,26 @@ public:
     }
 
     /**
-     * @brief Signals the queue to stop, waking up all waiting threads.
+     * @brief Signals the queue to stop, waking up all waiting consumers.
      */
-    void stop() {
+    void stop() noexcept {
         {
             std::scoped_lock lock(m_mutex);
             m_stopped = true;
         }
+
+        if constexpr (UseEventFD) {
+            int fd = m_event_fd.load(std::memory_order_acquire);
+            if (fd != -1) {
+                uint64_t u = 1;
+                [[maybe_unused]] ssize_t s = write(fd, &u, sizeof(uint64_t));
+                return;
+            }
+        }
+
         m_cond.notify_all();
     }
 
-    /**
-     * @brief Gets the current number of items in the queue.
-     * @return The number of items.
-     */
     [[nodiscard]] size_t size() const {
         std::scoped_lock lock(m_mutex);
         return m_queue.size();
@@ -93,10 +124,9 @@ private:
     std::queue<T> m_queue;
     mutable std::mutex m_mutex;
     std::condition_variable m_cond;
-    std::atomic<bool> m_stopped{false};
-    
-    // Capacity limit (0 = unbounded)
-    size_t m_capacity; 
+    std::atomic<bool> m_stopped;
+    size_t m_capacity;
+    std::atomic<int> m_event_fd; // Changed to atomic to prevent TSAN data race
 };
 
 #endif // SHARED_QUEUE_HPP
