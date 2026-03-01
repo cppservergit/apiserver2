@@ -511,14 +511,13 @@ void server::start() {
     auto setup_ms = std::chrono::duration_cast<std::chrono::milliseconds>(setup_end - setup_start).count();
     util::log::info("Server started in {} milliseconds.", setup_ms);
 
-    signalfd_siginfo ssi;
-    if (read(m_signals->get_fd(), &ssi, sizeof(ssi)) == sizeof(ssi)) {
+    if (signalfd_siginfo ssi; read(m_signals->get_fd(), &ssi, sizeof(ssi)) == sizeof(ssi)) {
         const char* signal_name = strsignal(ssi.ssi_signo);
         util::log::info("Received signal {} ({}), shutting down.", ssi.ssi_signo, signal_name ? signal_name : "Unknown");
     }
     
     m_running = false;
-    for (auto& w : m_workers) {
+    for (const auto& w : m_workers) {
         w->get_response_queue()->stop(); 
     }
 }

@@ -32,7 +32,7 @@ public:
      * @brief Constructor accepting a capacity limit.
      */
     explicit shared_queue(size_t capacity = 0)
-        : m_stopped(false), m_capacity(capacity), m_event_fd(-1) {}
+        : m_capacity(capacity) {}
 
     /**
      * @brief Links this queue to an eventfd for signaling.
@@ -124,9 +124,11 @@ private:
     std::queue<T> m_queue;
     mutable std::mutex m_mutex;
     std::condition_variable m_cond;
-    std::atomic<bool> m_stopped;
-    size_t m_capacity;
-    std::atomic<int> m_event_fd; // Changed to atomic to prevent TSAN data race
+    
+    // Use in-class initializers to satisfy SonarCloud rules for constant defaults
+    std::atomic<bool> m_stopped{false};
+    size_t m_capacity{0};
+    std::atomic<int> m_event_fd{-1}; // Atomic to prevent TSAN data races
 };
 
 #endif // SHARED_QUEUE_HPP
