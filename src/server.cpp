@@ -220,13 +220,17 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
         }
 
         if (endpoint->is_secure && !validate_token(request_ref)) {
-            res.set_body(unauthorized, R"({"error":"Invalid or missing token"})");
+            res.set_body(http::status::unauthorized, R"({"error":"Invalid or missing token"})");
             return;
         }
 
         if(endpoint->is_secure)
             util::log::debug("Authenticated request by user '{}' with sessionId '{}' for path '{}' from {}",
-                request_ref.get_user(), request_ref.get_sessionId(), request_ref.get_path(), request_ref.get_remote_ip());
+                request_ref.get_user(),
+                request_ref.get_sessionId(),
+                request_ref.get_path(),
+                request_ref.get_remote_ip()
+            );
 
         endpoint->validator(request_ref);
         endpoint->handler(request_ref, res);
@@ -245,7 +249,7 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
     } catch (const curl_exception& e) {
         util::log::error("HTTP client error in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal communication failed"})");
-    } catch (const std::exception& e) {
+    } catch (/* NOSONAR */ const std::exception& e) {
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal Server Error"})");
     }
@@ -263,6 +267,7 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
             
             const auto start_time = std::chrono::high_resolution_clock::now();
             m_metrics->increment_active_threads();
+            
             http::response res(req_ptr->get_header_value("Origin"));
             
             execute_handler(*req_ptr, res, endpoint);
@@ -276,16 +281,22 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
             util::log::perf("API handler for '{}' executed in {} microseconds.", req_ptr->get_path(), duration.count());
         });
     } catch (const queue_full_error&) {
-        util::log::warn("Worker queue full. Dropping request for '{}' from {}", req_ptr->get_path(), req_ptr->get_remote_ip());
+        using enum http::status;
+        util::log::warn("Worker queue full. Dropping request for '{}' from {}", 
+                        req_ptr->get_path(), req_ptr->get_remote_ip());
+        
         http::response res(req_ptr->get_header_value("Origin"));
-        res.set_body(http::status::service_unavailable, R"({"error":"Service Unavailable: Server Overloaded"})");
+        res.set_body(service_unavailable, R"({"error":"Service Unavailable: Server Overloaded"})");
         
         try {
             m_response_queue->push({fd, std::move(res)});
             add_to_epoll(fd, EPOLLOUT); 
-        } catch (...) {
+        } catch (const queue_full_error&) {
             util::log::error("Critical: Response queue full for fd {}. Closing connection.", fd);
             close_connection(fd); 
+        } catch (const server_error& ex) {
+            util::log::error("Critical: Epoll failure for fd {}: {}. Closing connection.", fd, ex.what());
+            close_connection(fd);
         }
     }
 }
@@ -370,20 +381,42 @@ void server::io_worker::close_connection(int fd) {
 }
 
 bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
+    // Update last activity timestamp on read
     conn.update_activity();
+    
     while (true) {
+        // Wrap buffer access and read operations in a try-catch block
         try {
             auto buffer = conn.parser.get_buffer();
-            if (buffer.empty()) return false;
-            ssize_t s = read(fd, buffer.data(), buffer.size());
-            if (s == -1) return (errno == EAGAIN || errno == EWOULDBLOCK);
-            if (s == 0) { close_connection(fd); return false; }
-            conn.parser.update_pos(s);
-        } catch (...) {
+            if (buffer.empty()) {
+                util::log::error("Parser buffer full for fd {}", fd);
+                close_connection(fd);
+                return false;
+            }
+            ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
+            if (bytes_read == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                util::log::error("read error on fd {}: {}", fd, util::str_error_cpp(errno));
+                close_connection(fd);
+                return false;
+            }
+            if (bytes_read == 0) {
+                close_connection(fd);
+                return false;
+            }
+            conn.parser.update_pos(bytes_read);
+        } catch (const socket_buffer_error& e) {
+            using enum http::status;
+            close_connection(fd);
+            util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
+            return false; 
+        } catch (const std::exception& e) { // NOSONAR: Generic catch required to prevent worker thread crash
+            util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());
             close_connection(fd);
             return false;
         }
     }
+    return true;
 }
 
 void server::io_worker::process_request(int fd) {
