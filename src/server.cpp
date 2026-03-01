@@ -337,8 +337,9 @@ void server::io_worker::on_connect() {
 }
 
 void server::io_worker::on_read(int fd) {
-    if (auto it = m_connections.find(fd); it != m_connections.end() && handle_socket_read(it->second, fd)) {
-        if (it->second.parser.eof()) process_request(fd);
+    if (auto it = m_connections.find(fd); it != m_connections.end()
+         && handle_socket_read(it->second, fd) && it->second.parser.eof()) {
+            process_request(fd);
     }
 }
 
