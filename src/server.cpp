@@ -103,10 +103,7 @@ void server::io_worker::run() {
             if (fd == m_listening_fd) {
                 on_connect();
             } else if (fd == m_timer_fd) {
-                uint64_t expirations;
-                if (read(m_timer_fd, &expirations, sizeof(expirations)) > 0) {
-                    check_timeouts();
-                }
+                check_timeouts();
             } else if (fd == m_event_fd) {
                 on_response_ready();
             } else if (event.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
@@ -123,6 +120,9 @@ void server::io_worker::run() {
 }
 
 void server::io_worker::check_timeouts() {
+    if (uint64_t expirations; read(m_timer_fd, &expirations, sizeof(expirations)) <= 0) {
+        return;
+    }
     auto now = std::chrono::steady_clock::now();
     for (auto it = m_connections.begin(); it != m_connections.end(); ) {
         if (now - it->second.last_activity > server::READ_TIMEOUT) {
@@ -337,8 +337,7 @@ void server::io_worker::on_connect() {
 }
 
 void server::io_worker::on_read(int fd) {
-    auto it = m_connections.find(fd);
-    if (it != m_connections.end() && handle_socket_read(it->second, fd)) {
+    if (auto it = m_connections.find(fd); it != m_connections.end() && handle_socket_read(it->second, fd)) {
         if (it->second.parser.eof()) process_request(fd);
     }
 }
