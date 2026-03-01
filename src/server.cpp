@@ -359,20 +359,26 @@ void server::io_worker::on_write(int fd) {
     if (it == m_connections.end() || !it->second.response.has_value()) return;
     
     http::response& res = *it->second.response;
+    
+    // Update activity on write too
     it->second.update_activity();
 
     while (res.available_size() > 0) {
-        ssize_t s = write(fd, res.buffer().data(), res.buffer().size());
-        if (s == -1) {
+        ssize_t bytes_sent = write(fd, res.buffer().data(), res.buffer().size());
+        if (bytes_sent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            util::log::error("write error on fd {}: {}", fd, util::str_error_cpp(errno));
             close_connection(fd);
             return;
         }
-        res.update_pos(s);
+        res.update_pos(bytes_sent);
     }
 
-    it->second.reset();
-    modify_epoll(fd, EPOLLIN);
+    if (res.available_size() == 0) {
+        it->second.reset();
+        modify_epoll(fd, EPOLLIN);
+        util::log::debug("Response fully sent on fd {}", fd);
+    }
 }
 
 void server::io_worker::close_connection(int fd) {
