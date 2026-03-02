@@ -337,6 +337,12 @@ void server::io_worker::modify_epoll(int fd, uint32_t events) {
     epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event);
 }
 
+void server::io_worker::remove_from_epoll(int fd) {
+    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1) {
+        util::log::error("Failed to remove fd {} from epoll: {}", fd, util::str_error_cpp(errno));
+    }
+}
+
 void server::io_worker::on_connect() {
     while (true) {
         int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
@@ -429,26 +435,28 @@ void server::io_worker::process_request(int fd) {
     auto it = m_connections.find(fd);
     if (it == m_connections.end()) return;
     
-    epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr); 
+    remove_from_epoll(fd);
+    connection_state& conn = it->second;
 
-    if (auto res_opt = it->second.parser.finalize(); !res_opt.has_value()) {
-        util::log::error("Failed to parse request on fd {} from IP {}: {}", fd, it->second.remote_ip, res_opt.error().what());
-        http::response err;
-        err.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
-        m_response_queue->push({fd, std::move(err)});
+    if (auto res = conn.parser.finalize(); !res.has_value()) {
+        util::log::error("Failed to parse request on fd {} from IP {}: {}", fd, conn.remote_ip, res.error().what());
+        http::response err_res;
+        err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
+        m_response_queue->push({fd, std::move(err_res)});
         return;
     }
 
-    http::request req(std::move(it->second.parser), it->second.remote_ip);
+    http::request req(std::move(conn.parser), conn.remote_ip);
+
     const std::string request_id_str(req.get_header_value("x-request-id").value_or(""));
     const util::log::request_id_scope rid_scope(request_id_str);    
 
     if (!cors::is_origin_allowed(req.get_header_value("Origin"), m_allowed_origins)) {
         util::log::warn("CORS check failed for origin: {} for path '{}' from {}", 
             req.get_header_value("Origin").value_or("N/A"), req.get_path(), req.get_remote_ip());
-        http::response err;
-        err.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
-        m_response_queue->push({fd, std::move(err)});
+        http::response err_res;
+        err_res.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
+        m_response_queue->push({fd, std::move(err_res)});
         return;
     }
 
