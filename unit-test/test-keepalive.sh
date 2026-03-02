@@ -71,31 +71,63 @@ endpoints=(
   "POST $API_PREFIX/rcustomer {\"id\":\"anatr\"}"
 )
 
+# 1. Build the arguments for a single curl command
+curl_args=()
+req_idx=0
+tmp_dir=$(mktemp -d)
+
 for entry in "${endpoints[@]}"; do
   IFS=' ' read -r method uri rest <<< "$entry"
-  payload=""
-
-  if [[ "$method" == "POST" ]]; then
-    payload="$rest"
-    response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN1" \
-      -d "$payload" "${BASE_URL}${uri}")
-  else
-    # send API_KEY for diagnostic endpoints
-    if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" || "$uri" == "$API_PREFIX/metricsp" ]]; then
-      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $API_KEY" \
-      "${BASE_URL}${uri}")
-    else
-      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN1" \
-      "${BASE_URL}${uri}")
-    fi
+  
+  # Add the --next separator for all requests after the first one
+  if [[ $req_idx -gt 0 ]]; then
+    curl_args+=("--next")
   fi
 
-  body="${response::-3}"
-  status="${response: -3}"
+  body_file="${tmp_dir}/body_${req_idx}.txt"
+  
+  # Capture HTTP status to stdout, and direct the body to a specific temp file
+  curl_args+=("-k" "-s" "-w" "%{http_code}\n" "-o" "$body_file")
+
+  if [[ "$method" == "POST" ]]; then
+    curl_args+=("-X" "POST" "-H" "Content-Type: application/json" "-H" "Authorization: Bearer $TOKEN1" "-d" "$rest" "${BASE_URL}${uri}")
+  else
+    if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" || "$uri" == "$API_PREFIX/metricsp" ]]; then
+      curl_args+=("-X" "GET" "-H" "Authorization: Bearer $API_KEY" "${BASE_URL}${uri}")
+    else
+      curl_args+=("-X" "GET" "-H" "Authorization: Bearer $TOKEN1" "${BASE_URL}${uri}")
+    fi
+  fi
+  
+  ((req_idx++))
+done
+
+# 2. Execute the single curl instance to reuse the connection
+# The output will be a newline-separated list of HTTP status codes
+statuses=$(curl "${curl_args[@]}")
+
+# Map the statuses into an array for easy iteration
+mapfile -t status_array <<< "$statuses"
+
+# 3. Process and print the results
+req_idx=0
+for entry in "${endpoints[@]}"; do
+  IFS=' ' read -r method uri rest <<< "$entry"
+  
+  status="${status_array[$req_idx]}"
+  body_file="${tmp_dir}/body_${req_idx}.txt"
+  
+  body=$(cat "$body_file" 2>/dev/null)
+  
   ok="false"
   [[ "$status" == "200" ]] && ok="true"
 
   show_result "$method $uri" "$status" "$ok" "$body"
+  
+  ((req_idx++))
 done
+
+# Clean up the temporary directory
+rm -rf "$tmp_dir"
+
 exit 0

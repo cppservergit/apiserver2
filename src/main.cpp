@@ -268,9 +268,13 @@ int main() {
     try {
         util::log::info("Application starting...");
 
+        //warm up database library
+        sql::detail::ConnectionManager::get_connection("DB1");
+        sql::detail::ConnectionManager::get_connection("LOGINDB");
+
         server s;
         
-        //
+        //register API handlers
         s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
         s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
         s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);

@@ -45,6 +45,7 @@ struct connection_state {
     std::optional<http::response> response;
     std::string remote_ip;
     std::chrono::steady_clock::time_point last_activity;
+    uint64_t connection_id{0};
 
     void reset() {
         parser = http::request_parser{};
@@ -59,6 +60,7 @@ struct connection_state {
 
 struct response_item {
     int client_fd;
+    uint64_t connection_id;
     http::response res;
 };
 
@@ -127,7 +129,7 @@ private:
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
-        void dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint);
+        void dispatch_to_worker(int fd, uint64_t connection_id, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
         
         bool validate_bearer_token(const http::request& req, std::string_view path) const;
@@ -145,6 +147,7 @@ private:
         const api_router& m_router;
         const std::unordered_set<std::string, util::string_hash, util::string_equal>& m_allowed_origins;
         std::atomic<bool>& m_running;
+        uint64_t m_next_connection_id{0};
         
         std::unique_ptr<shared_queue<response_item, true>> m_response_queue; // Fixed: added template flag
         std::unique_ptr<thread_pool> m_thread_pool;

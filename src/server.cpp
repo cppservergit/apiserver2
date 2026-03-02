@@ -56,8 +56,8 @@ void server::io_worker::setup_timerfd() {
     if (m_timer_fd == -1) throw server_error("Failed to create timerfd");
 
     struct itimerspec ts{};
-    ts.it_value.tv_sec = 1;      
-    ts.it_interval.tv_sec = 1;   
+    ts.it_value.tv_sec = 5;      // <-- Changed from 1 to 5
+    ts.it_interval.tv_sec = 5;   // <-- Changed from 1 to 5
     
     if (timerfd_settime(m_timer_fd, 0, &ts, nullptr) == -1) {
         throw server_error("Failed to set timerfd interval");
@@ -154,8 +154,12 @@ void server::io_worker::process_response_queue() {
 
     for (auto& item : response_batch) {
         if (auto it = m_connections.find(item.client_fd); it != m_connections.end()) {
-            it->second.response = std::move(item.res);
-            do_write(item.client_fd, it->second);
+            if (it->second.connection_id == item.connection_id) {
+                it->second.response = std::move(item.res);
+                do_write(item.client_fd, it->second);
+            } else {
+                util::log::warn("Dropped stale response for reused fd {}", item.client_fd);
+            }
         }
     }
 }
@@ -259,11 +263,11 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
     }
 }
 
-void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_endpoint* endpoint) {
+void server::io_worker::dispatch_to_worker(int fd, uint64_t connection_id, http::request req, const api_endpoint* endpoint) {
     auto req_ptr = std::make_shared<http::request>(std::move(req));
 
     try {
-        m_thread_pool->push_task([this, fd, req_ptr, endpoint]() {
+        m_thread_pool->push_task([this, fd, connection_id, req_ptr, endpoint]() {
             const std::string request_id_str(req_ptr->get_header_value("x-request-id").value_or(""));
             const util::log::request_id_scope rid_scope(request_id_str);
 
@@ -278,7 +282,7 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
             
             const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
             
-            m_response_queue->push({fd, std::move(res)});
+            m_response_queue->push({fd, connection_id, std::move(res)});
             m_metrics->record_request_time(duration);
             m_metrics->decrement_active_threads();
 
@@ -293,7 +297,7 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
         res.set_body(service_unavailable, R"({"error":"Service Unavailable: Server Overloaded"})");
         
         try {
-            m_response_queue->push({fd, std::move(res)});
+            m_response_queue->push({fd, connection_id, std::move(res)});
         } catch (const queue_full_error&) {
             util::log::error("Critical: Response queue full for fd {}. Closing connection.", fd);
             close_connection(fd); 
@@ -359,7 +363,8 @@ void server::io_worker::on_connect() {
         std::string client_ip = util::get_peer_ip_ipv4(client_fd);
         util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
         
-        m_connections.try_emplace(client_fd, std::move(client_ip));
+        auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
+        conn.connection_id = ++m_next_connection_id;
         
         add_to_epoll(client_fd, EPOLLIN);
         m_metrics->increment_connections();
@@ -459,12 +464,13 @@ void server::io_worker::process_request(int fd) {
     
     remove_from_epoll(fd);
     connection_state& conn = it->second;
+    const uint64_t conn_id = conn.connection_id;
 
     if (auto res = conn.parser.finalize(); !res.has_value()) {
         util::log::error("Failed to parse request on fd {} from IP {}: {}", fd, conn.remote_ip, res.error().what());
         http::response err_res;
         err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
-        m_response_queue->push({fd, std::move(err_res)});
+        m_response_queue->push({fd, conn_id, std::move(err_res)});
         return;
     }
 
@@ -478,7 +484,7 @@ void server::io_worker::process_request(int fd) {
             req.get_header_value("Origin").value_or("N/A"), req.get_path(), req.get_remote_ip());
         http::response err_res;
         err_res.set_body(http::status::forbidden, R"({"error":"CORS origin not allowed"})");
-        m_response_queue->push({fd, std::move(err_res)});
+        m_response_queue->push({fd, conn_id, std::move(err_res)});
         return;
     }
 
@@ -486,17 +492,17 @@ void server::io_worker::process_request(int fd) {
 
     if (req.get_method() == http::method::options) {
         res.set_options();
-        m_response_queue->push({fd, std::move(res)});
+        m_response_queue->push({fd, conn_id, std::move(res)});
     } else if (handle_internal_api(req, res)) {
-        m_response_queue->push({fd, std::move(res)});
+        m_response_queue->push({fd, conn_id, std::move(res)});
     } else {
         const auto* endpoint = m_router.find_handler(req.get_path());
         if (!endpoint) {
             util::log::warn("BOT-ALERT No handler found for path '{}' from {}", req.get_path(), req.get_remote_ip());
             res.set_body(http::status::not_found, R"({"error":"Not Found"})");
-            m_response_queue->push({fd, std::move(res)});
+            m_response_queue->push({fd, conn_id, std::move(res)});
         } else {
-            dispatch_to_worker(fd, std::move(req), endpoint);
+            dispatch_to_worker(fd, conn_id, std::move(req), endpoint);
         }
     }
 }
