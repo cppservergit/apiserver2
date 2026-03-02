@@ -253,7 +253,7 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
     } catch (const curl_exception& e) {
         util::log::error("HTTP client error in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal communication failed"})");
-    } catch (const std::exception& e) {
+    } catch (/* NOSONAR */ const std::exception& e) {
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal Server Error"})");
     }
@@ -337,10 +337,8 @@ void server::io_worker::modify_epoll(int fd, uint32_t events) {
     epoll_event event{};
     event.events = events | EPOLLET | EPOLLRDHUP;
     event.data.fd = fd;
-    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1) {
-        if (errno == ENOENT) {
+    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1 && errno == ENOENT) {
             epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event);
-        }
     }
 }
 
@@ -446,7 +444,7 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
             close_connection(fd);
             util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
             return false; 
-        } catch (const std::exception& e) {
+        } catch (/* NOSONAR */ const std::exception& e) {
             util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());
             close_connection(fd);
             return false;
