@@ -117,6 +117,7 @@ private:
         void on_connect();
         void on_read(int fd);
         void on_write(int fd);
+        void do_write(int fd, connection_state& conn);
         void on_timer_tick();
         void on_response_ready();
         

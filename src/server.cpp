@@ -103,7 +103,7 @@ void server::io_worker::run() {
             if (fd == m_listening_fd) {
                 on_connect();
             } else if (fd == m_timer_fd) {
-                check_timeouts();
+                on_timer_tick();
             } else if (fd == m_event_fd) {
                 on_response_ready();
             } else if (event.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
@@ -119,10 +119,14 @@ void server::io_worker::run() {
     util::log::debug("I/O worker thread {} finished.", std::this_thread::get_id());
 }
 
-void server::io_worker::check_timeouts() {
-    if (uint64_t expirations; read(m_timer_fd, &expirations, sizeof(expirations)) <= 0) {
-        return;
+void server::io_worker::on_timer_tick() {
+    uint64_t expirations;
+    if (read(m_timer_fd, &expirations, sizeof(expirations)) > 0) {
+        check_timeouts();
     }
+}
+
+void server::io_worker::check_timeouts() {
     auto now = std::chrono::steady_clock::now();
     for (auto it = m_connections.begin(); it != m_connections.end(); ) {
         if (now - it->second.last_activity > server::READ_TIMEOUT) {
@@ -151,7 +155,7 @@ void server::io_worker::process_response_queue() {
     for (auto& item : response_batch) {
         if (auto it = m_connections.find(item.client_fd); it != m_connections.end()) {
             it->second.response = std::move(item.res);
-            add_to_epoll(it->first, EPOLLOUT);
+            do_write(item.client_fd, it->second);
         }
     }
 }
@@ -249,7 +253,7 @@ void server::io_worker::execute_handler(const http::request& request_ref, http::
     } catch (const curl_exception& e) {
         util::log::error("HTTP client error in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal communication failed"})");
-    } catch (/* NOSONAR */ const std::exception& e) {
+    } catch (const std::exception& e) {
         util::log::error("Unhandled exception in handler for path '{}': {}", request_ref.get_path(), e.what());
         res.set_body(internal_server_error, R"({"error":"Internal Server Error"})");
     }
@@ -290,7 +294,6 @@ void server::io_worker::dispatch_to_worker(int fd, http::request req, const api_
         
         try {
             m_response_queue->push({fd, std::move(res)});
-            add_to_epoll(fd, EPOLLOUT); 
         } catch (const queue_full_error&) {
             util::log::error("Critical: Response queue full for fd {}. Closing connection.", fd);
             close_connection(fd); 
@@ -334,7 +337,11 @@ void server::io_worker::modify_epoll(int fd, uint32_t events) {
     epoll_event event{};
     event.events = events | EPOLLET | EPOLLRDHUP;
     event.data.fd = fd;
-    epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event);
+    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1) {
+        if (errno == ENOENT) {
+            epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event);
+        }
+    }
 }
 
 void server::io_worker::remove_from_epoll(int fd) {
@@ -361,18 +368,26 @@ void server::io_worker::on_read(int fd) {
 }
 
 void server::io_worker::on_write(int fd) {
-    auto it = m_connections.find(fd);
-    if (it == m_connections.end() || !it->second.response.has_value()) return;
+    if (auto it = m_connections.find(fd); it != m_connections.end()) {
+        do_write(fd, it->second);
+    }
+}
+
+void server::io_worker::do_write(int fd, connection_state& conn) {
+    if (!conn.response.has_value()) return;
     
-    http::response& res = *it->second.response;
+    http::response& res = *conn.response;
     
     // Update activity on write too
-    it->second.update_activity();
+    conn.update_activity();
 
     while (res.available_size() > 0) {
         ssize_t bytes_sent = write(fd, res.buffer().data(), res.buffer().size());
         if (bytes_sent == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                add_to_epoll(fd, EPOLLOUT);
+                return;
+            }
             util::log::error("write error on fd {}: {}", fd, util::str_error_cpp(errno));
             close_connection(fd);
             return;
@@ -381,7 +396,7 @@ void server::io_worker::on_write(int fd) {
     }
 
     if (res.available_size() == 0) {
-        it->second.reset();
+        conn.reset();
         modify_epoll(fd, EPOLLIN);
         util::log::debug("Response fully sent on fd {}", fd);
     }
@@ -422,7 +437,7 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
             close_connection(fd);
             util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
             return false; 
-        } catch (const std::exception& e) { // NOSONAR: Generic catch required to prevent worker thread crash
+        } catch (const std::exception& e) {
             util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());
             close_connection(fd);
             return false;
