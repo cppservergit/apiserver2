@@ -344,7 +344,7 @@ void server::io_worker::modify_epoll(int fd, uint32_t events) {
     }
 }
 
-void server::io_worker::remove_from_epoll(int fd) {
+void server::io_worker::remove_from_epoll(int fd) const {
     if (epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1) {
         util::log::error("Failed to remove fd {} from epoll: {}", fd, util::str_error_cpp(errno));
     }
@@ -353,8 +353,16 @@ void server::io_worker::remove_from_epoll(int fd) {
 void server::io_worker::on_connect() {
     while (true) {
         int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
-        if (client_fd == -1) break;
-        m_connections.try_emplace(client_fd, util::get_peer_ip_ipv4(client_fd));
+        if (client_fd == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
+            continue;
+        }
+        std::string client_ip = util::get_peer_ip_ipv4(client_fd);
+        util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
+        
+        m_connections.try_emplace(client_fd, std::move(client_ip));
+        
         add_to_epoll(client_fd, EPOLLIN);
         m_metrics->increment_connections();
     }
@@ -385,6 +393,7 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
         ssize_t bytes_sent = write(fd, res.buffer().data(), res.buffer().size());
         if (bytes_sent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                util::log::debug("rearming epoll for writing fd: {}", fd);
                 add_to_epoll(fd, EPOLLOUT);
                 return;
             }

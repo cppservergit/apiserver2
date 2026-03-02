@@ -111,7 +111,7 @@ private:
         void setup_eventfd();
         
         void add_to_epoll(int fd, uint32_t events);
-        void remove_from_epoll(int fd);
+        void remove_from_epoll(int fd) const;
         void modify_epoll(int fd, uint32_t events);
 
         void on_connect();
