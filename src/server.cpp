@@ -370,7 +370,7 @@ void server::io_worker::on_connect() {
             
             add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
             m_metrics->increment_connections();
-        } catch (const std::exception& e) {
+        } catch (const server_error& e) {
             util::log::error("Failed to initialize connection for fd {}: {}", client_fd, e.what());
             close(client_fd);
             m_connections.erase(client_fd); 
