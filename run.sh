@@ -2,7 +2,7 @@
 
 # server configuration
 export PORT=8080
-export POOL_SIZE=4
+export POOL_SIZE=12
 export IO_THREADS=1
 export QUEUE_CAPACITY=500
 export MAX_REQUEST_SIZE=5252880  # 5MB

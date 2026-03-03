@@ -26,6 +26,7 @@
 #include <thread>
 #include <cstdint>
 #include <chrono>
+#include <list>
 
 inline constexpr auto g_version = "1.2.0";
 
@@ -46,6 +47,7 @@ struct connection_state {
     std::string remote_ip;
     std::chrono::steady_clock::time_point last_activity;
     uint64_t connection_id{0};
+    std::list<int>::iterator timeout_it;
 
     void reset() {
         parser = http::request_parser{};
@@ -120,6 +122,7 @@ private:
         void on_read(int fd);
         void on_write(int fd);
         void do_write(int fd, connection_state& conn);
+        void touch_connection(connection_state& conn);
         void on_timer_tick();
         void on_response_ready();
         
@@ -153,6 +156,7 @@ private:
         std::unique_ptr<thread_pool> m_thread_pool;
 
         std::unordered_map<int, connection_state> m_connections;
+        std::list<int> m_timeout_list;
         std::string m_api_key;
         std::string m_mfa_uri;        
     };

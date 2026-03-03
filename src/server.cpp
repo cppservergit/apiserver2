@@ -128,14 +128,23 @@ void server::io_worker::on_timer_tick() {
 
 void server::io_worker::check_timeouts() {
     auto now = std::chrono::steady_clock::now();
-    for (auto it = m_connections.begin(); it != m_connections.end(); ) {
+    while (!m_timeout_list.empty()) {
+        int fd = m_timeout_list.front();
+        auto it = m_connections.find(fd);
+        
+        if (it == m_connections.end()) {
+            m_timeout_list.pop_front();
+            continue;
+        }
+
         if (now - it->second.last_activity > server::READ_TIMEOUT) {
-            int fd = it->first;
             close(fd);
             m_metrics->decrement_connections();
-            it = m_connections.erase(it);
+            m_connections.erase(it);
+            m_timeout_list.pop_front();
         } else {
-            ++it;
+            // Since elements are ordered by activity, if the front hasn't timed out, nothing else has.
+            break;
         }
     }
 }
@@ -368,6 +377,9 @@ void server::io_worker::on_connect() {
             auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
             conn.connection_id = ++m_next_connection_id;
             
+            m_timeout_list.push_back(client_fd);
+            conn.timeout_it = std::prev(m_timeout_list.end());
+            
             add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
             m_metrics->increment_connections();
         } catch (const server_error& e) {
@@ -376,6 +388,11 @@ void server::io_worker::on_connect() {
             m_connections.erase(client_fd); 
         }
     }
+}
+
+void server::io_worker::touch_connection(connection_state& conn) {
+    conn.update_activity();
+    m_timeout_list.splice(m_timeout_list.end(), m_timeout_list, conn.timeout_it);
 }
 
 void server::io_worker::on_read(int fd) {
@@ -400,8 +417,7 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
     
     http::response& res = *conn.response;
     
-    // Update activity on write too
-    conn.update_activity();
+    touch_connection(conn);
 
     while (res.available_size() > 0) {
         ssize_t bytes_sent = write(fd, res.buffer().data(), res.buffer().size());
@@ -420,6 +436,7 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
 
     if (res.available_size() == 0) {
         conn.reset();
+        touch_connection(conn);
         modify_epoll(fd, EPOLLIN | EPOLLONESHOT);
         util::log::debug("Response fully sent on fd {}", fd);
     }
@@ -427,12 +444,15 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
 
 void server::io_worker::close_connection(int fd) {
     close(fd);
-    if (m_connections.erase(fd) > 0) m_metrics->decrement_connections();
+    if (auto it = m_connections.find(fd); it != m_connections.end()) {
+        m_timeout_list.erase(it->second.timeout_it);
+        m_connections.erase(it);
+        m_metrics->decrement_connections();
+    }
 }
 
 bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
-    // Update last activity timestamp on read
-    conn.update_activity();
+    touch_connection(conn);
     
     while (true) {
         // Wrap buffer access and read operations in a try-catch block
