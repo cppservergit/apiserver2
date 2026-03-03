@@ -360,14 +360,21 @@ void server::io_worker::on_connect() {
             util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
             continue;
         }
-        std::string client_ip = util::get_peer_ip_ipv4(client_fd);
-        util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
         
-        auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
-        conn.connection_id = ++m_next_connection_id;
-        
-        add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
-        m_metrics->increment_connections();
+        try {
+            std::string client_ip = util::get_peer_ip_ipv4(client_fd);
+            util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
+            
+            auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
+            conn.connection_id = ++m_next_connection_id;
+            
+            add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
+            m_metrics->increment_connections();
+        } catch (const std::exception& e) {
+            util::log::error("Failed to initialize connection for fd {}: {}", client_fd, e.what());
+            close(client_fd);
+            m_connections.erase(client_fd); 
+        }
     }
 }
 
