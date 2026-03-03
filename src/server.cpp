@@ -366,15 +366,19 @@ void server::io_worker::on_connect() {
         auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
         conn.connection_id = ++m_next_connection_id;
         
-        add_to_epoll(client_fd, EPOLLIN);
+        add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
         m_metrics->increment_connections();
     }
 }
 
 void server::io_worker::on_read(int fd) {
     if (auto it = m_connections.find(fd); it != m_connections.end()
-         && handle_socket_read(it->second, fd) && it->second.parser.eof()) {
+         && handle_socket_read(it->second, fd)) {
+        if (it->second.parser.eof()) {
             process_request(fd);
+        } else {
+            modify_epoll(fd, EPOLLIN | EPOLLONESHOT);
+        }
     }
 }
 
@@ -397,7 +401,7 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
         if (bytes_sent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 util::log::debug("rearming epoll for writing fd: {}", fd);
-                add_to_epoll(fd, EPOLLOUT);
+                modify_epoll(fd, EPOLLOUT | EPOLLONESHOT);
                 return;
             }
             util::log::error("write error on fd {}: {}", fd, util::str_error_cpp(errno));
@@ -409,7 +413,7 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
 
     if (res.available_size() == 0) {
         conn.reset();
-        modify_epoll(fd, EPOLLIN);
+        modify_epoll(fd, EPOLLIN | EPOLLONESHOT);
         util::log::debug("Response fully sent on fd {}", fd);
     }
 }
@@ -462,7 +466,6 @@ void server::io_worker::process_request(int fd) {
     auto it = m_connections.find(fd);
     if (it == m_connections.end()) return;
     
-    remove_from_epoll(fd);
     connection_state& conn = it->second;
     const uint64_t conn_id = conn.connection_id;
 
