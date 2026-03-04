@@ -202,7 +202,7 @@ By default Traefik ingress does not log HTTP requests, the external Load Balance
 
 APIServer2 Pods logs with server-generated timestamps:
 ```
-
+kubectl logs -l app=apiserver2 -c=apiserver2 -n cppserver --timestamps=true
 ```
 Expected output:
 ```
