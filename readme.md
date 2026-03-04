@@ -11,10 +11,8 @@ graph TD
         style Kernel fill:#333,color:#fff
     end
 
-    %% Connection to Reactor 1 Lane
+    %% Connections to Lanes
     Kernel -->|Connection| R1_Top
-
-    %% Connection to Reactor N Lane
     Kernel -->|Connection| RN_Top
 
     %% ==========================================
@@ -24,27 +22,26 @@ graph TD
         direction TB
         style Lane1 fill:#f9f9f9,stroke:#333
 
-        R1_Top[I/O Thread 1 Reactor<br/>Listening Socket FD<br/>epoll_wait loop]
+        R1_Top[I/O Thread 1 Reactor<br/>epoll_wait loop]
         style R1_Top fill:#d5e8d4,stroke:#82b366
 
-        R1_Dispatch[dispatch_to_worker<br/>Round-Robin Dispatch]
+        R1_SharedQ[Shared Task Queue<br/>SPMC - Thread Safe]
+        style R1_SharedQ fill:#dae8fc,stroke:#6c8ebf
         
-        R1_Top --> R1_Dispatch
+        R1_Top -->|Single Producer: Push| R1_SharedQ
 
-        %% Queues and Workers
         subgraph R1_Pool [Worker Pool]
             style R1_Pool fill:#fff,stroke:#ccc
-            
-            R1_Q1[Task Queue] --> R1_W1[Worker Thread 1]
-            R1_Q2[Task Queue] --> R1_W2[Worker Thread 2]
-            R1_QM[Task Queue] --> R1_WM[Worker Thread M]
+            R1_W1[Worker Thread 1]
+            R1_W2[Worker Thread 2]
+            R1_WM[Worker Thread M]
         end
 
-        R1_Dispatch --> R1_Q1
-        R1_Dispatch --> R1_Q2
-        R1_Dispatch --> R1_QM
+        %% Workers pulling from the single queue
+        R1_SharedQ -.->|Multiple Consumers: Pull| R1_W1
+        R1_SharedQ -.->|Multiple Consumers: Pull| R1_W2
+        R1_SharedQ -.->|Multiple Consumers: Pull| R1_WM
 
-        %% Response Queue aggregation
         R1_RespQ[Response Queue<br/>MPSC]
         style R1_RespQ fill:#ffe6cc,stroke:#d79b00
 
@@ -52,8 +49,7 @@ graph TD
         R1_W2 --> R1_RespQ
         R1_WM --> R1_RespQ
 
-        %% Back to IO Thread for writing
-        R1_Bot[I/O Thread 1 Reactor<br/>Processes response queue<br/>Writes to socket]
+        R1_Bot[I/O Thread 1 Reactor<br/>Writes to socket]
         style R1_Bot fill:#d5e8d4,stroke:#82b366
 
         R1_RespQ --> R1_Bot
@@ -66,27 +62,25 @@ graph TD
         direction TB
         style LaneN fill:#f9f9f9,stroke:#333
 
-        RN_Top[I/O Thread N Reactor<br/>Listening Socket FD<br/>epoll_wait loop]
+        RN_Top[I/O Thread N Reactor<br/>epoll_wait loop]
         style RN_Top fill:#d5e8d4,stroke:#82b366
 
-        RN_Dispatch[dispatch_to_worker<br/>Round-Robin Dispatch]
-        
-        RN_Top --> RN_Dispatch
+        RN_SharedQ[Shared Task Queue<br/>SPMC - Thread Safe]
+        style RN_SharedQ fill:#dae8fc,stroke:#6c8ebf
 
-        %% Queues and Workers
+        RN_Top -->|Single Producer: Push| RN_SharedQ
+
         subgraph RN_Pool [Worker Pool]
             style RN_Pool fill:#fff,stroke:#ccc
-            
-            RN_Q1[Task Queue] --> RN_W1[Worker Thread 1]
-            RN_Q2[Task Queue] --> RN_W2[Worker Thread 2]
-            RN_QM[Task Queue] --> RN_WM[Worker Thread M]
+            RN_W1[Worker Thread 1]
+            RN_W2[Worker Thread 2]
+            RN_WM[Worker Thread M]
         end
 
-        RN_Dispatch --> RN_Q1
-        RN_Dispatch --> RN_Q2
-        RN_Dispatch --> RN_QM
+        RN_SharedQ -.->|Multiple Consumers: Pull| RN_W1
+        RN_SharedQ -.->|Multiple Consumers: Pull| RN_W2
+        RN_SharedQ -.->|Multiple Consumers: Pull| RN_WM
 
-        %% Response Queue aggregation
         RN_RespQ[Response Queue<br/>MPSC]
         style RN_RespQ fill:#ffe6cc,stroke:#d79b00
 
@@ -94,8 +88,7 @@ graph TD
         RN_W2 --> RN_RespQ
         RN_WM --> RN_RespQ
 
-        %% Back to IO Thread for writing
-        RN_Bot[I/O Thread N Reactor<br/>Processes response queue<br/>Writes to socket]
+        RN_Bot[I/O Thread N Reactor<br/>Writes to socket]
         style RN_Bot fill:#d5e8d4,stroke:#82b366
 
         RN_RespQ --> RN_Bot
