@@ -38,7 +38,7 @@ server::io_worker::io_worker(uint16_t port,
       m_running(running_flag) {
           
     m_thread_pool = std::make_unique<thread_pool>(worker_thread_count, queue_capacity);
-    m_response_queue = std::make_unique<shared_queue<response_item, true>>(queue_capacity * 2); 
+    m_response_queue = std::make_unique<shared_queue<response_item, true>>(); 
     
     m_api_key = env::get<std::string>("API_KEY", "");
     m_mfa_uri = env::get<std::string>("MFA_URI", "/validate/totp");    
@@ -307,9 +307,6 @@ void server::io_worker::dispatch_to_worker(int fd, uint64_t connection_id, http:
         
         try {
             m_response_queue->push({fd, connection_id, std::move(res)});
-        } catch (const queue_full_error&) {
-            util::log::error("Critical: Response queue full for fd {}. Closing connection.", fd);
-            close_connection(fd); 
         } catch (const server_error& ex) {
             util::log::error("Critical: Epoll failure for fd {}: {}. Closing connection.", fd, ex.what());
             close_connection(fd);

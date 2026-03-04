@@ -249,8 +249,9 @@ auto request_parser::eof() -> bool {
     }
     
     if (m_identifiedMethod == post) {
-        if (!parse_and_store_content_length()) {
-            return false;
+        parse_and_store_content_length();
+        if (!m_identifiedContentLength.has_value()) {
+            return true; // Malformed or missing Content-Length: trigger finalize() to fail
         }
         return m_buffer->size() >= (*m_identifiedHeaderSize + *m_identifiedContentLength);
     }
@@ -299,7 +300,7 @@ auto request_parser::finalize() -> std::expected<void, request_parse_error> {
 
     if (m_parsedMethod == post) {
         if (!m_identifiedContentLength.has_value()) {
-             return std::unexpected(request_parse_error("POST request without Content-Length header."));
+             return std::unexpected(request_parse_error("POST request without valid Content-Length header."));
         }
         m_contentLength = *m_identifiedContentLength;
 
@@ -424,8 +425,8 @@ auto request_parser::parse_and_store_content_length() -> bool {
             continue;
         }
 
-        std::string_view cl_value_sv = header_line.substr(colon_pos + 1);
-        cl_value_sv.remove_prefix(std::min(cl_value_sv.find_first_not_of(" \t"sv), cl_value_sv.size()));
+        // FIX 2: Use trim_sv to strip both leading and trailing spaces
+        std::string_view cl_value_sv = trim_sv(header_line.substr(colon_pos + 1));
         
         size_t temp_cl = 0;
         auto [ptr, ec] = std::from_chars(cl_value_sv.data(), cl_value_sv.data() + cl_value_sv.size(), temp_cl);
@@ -434,9 +435,14 @@ auto request_parser::parse_and_store_content_length() -> bool {
             m_identifiedContentLength = temp_cl;
             return true;
         }
-        return false; // Malformed Content-Length value
+        
+        // FIX 1: Malformed Content-Length found. 
+        // Break out and return true. Leaving m_identifiedContentLength empty 
+        // safely signals to eof() and finalize() to throw a 400 Bad Request.
+        break; 
     }
-    return false; 
+    
+    return true; 
 }
 
 auto request_parser::parse_request_line(std::string_view request_line) -> std::optional<request_parse_error> {
@@ -482,7 +488,7 @@ auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_pa
 }
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
-    constexpr size_t MAX_HEADERS = 50; 
+    constexpr size_t MAX_HEADERS = 100; // Industry standard maximum header limit
 
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
@@ -502,8 +508,7 @@ auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional
                 return request_parse_error(std::format("Invalid header key: {}", key));
             }
             
-            auto value = header_line.substr(pos + 1);
-            value.remove_prefix(std::min(value.find_first_not_of(" \t"sv), value.size()));
+            auto value = trim_sv(header_line.substr(pos + 1));
 
             if (!is_valid_header_value(value)) {
                 return request_parse_error(std::format("Invalid characters in header value for key: {}", key));
@@ -514,9 +519,12 @@ auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional
                 return request_parse_error("Transfer-Encoding is not supported.");
             }
             
-            // Security: Reject duplicate Host headers
+            // Security: Reject duplicate Host and Content-Length headers
             if (sv_ci_equal{}(key, "Host") && m_headers.contains("Host")) {
                 return request_parse_error("Duplicate Host header detected.");
+            }
+            if (sv_ci_equal{}(key, "Content-Length") && m_headers.contains("Content-Length")) {
+                return request_parse_error("Duplicate Content-Length header detected.");
             }
             
             m_headers.try_emplace(std::string(key), value);
