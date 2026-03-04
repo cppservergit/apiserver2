@@ -482,10 +482,17 @@ auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_pa
 }
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
+    constexpr size_t MAX_HEADERS = 50; 
+
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
         if (header_line.empty()) {
             continue;
+        }
+
+        // Fast-fail defense against Hash DoS attacks
+        if (m_headers.size() >= MAX_HEADERS) {
+            return request_parse_error("Too many headers: maximum limit exceeded.");
         }
 
         if (auto pos = header_line.find(':'); pos != std::string_view::npos) {

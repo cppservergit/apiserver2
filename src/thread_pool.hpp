@@ -7,99 +7,96 @@
 #include <thread>
 #include <functional>
 #include <atomic>
-#include <memory>
-#include <numeric>
+#include <stdexcept>
 
 using dispatch_task = std::function<void()>;
 
 class thread_pool {
 public:
     /**
-     * @brief Constructs the thread pool.
+     * @brief Constructs the thread pool with a single global MPMC queue.
      * @param num_threads The number of worker threads to spawn.
-     * @param queue_capacity The maximum number of tasks per worker queue. 0 = unbounded.
+     * @param queue_capacity The maximum number of tasks in the global queue. 0 = unbounded.
      */
     explicit thread_pool(size_t num_threads, size_t queue_capacity = 0)
-        : m_num_threads(num_threads) {
-        for (size_t i = 0; i < m_num_threads; ++i) {
-            // Pass the capacity to the shared_queue constructor
-            m_task_queues.push_back(std::make_shared<shared_queue<dispatch_task>>(queue_capacity));
-        }
+        : m_num_threads(num_threads), 
+          m_global_queue(queue_capacity) { // Initialize the single shared queue directly
     }
+
+    // Rule of 5: Concurrency managers must not be copyable or movable
+    thread_pool(const thread_pool&) = delete;
+    thread_pool& operator=(const thread_pool&) = delete;
+    thread_pool(thread_pool&&) = delete;
+    thread_pool& operator=(thread_pool&&) = delete;
 
     ~thread_pool() noexcept {
         try {
             stop();
-        } catch (const std::exception& e) {
-            /* NOSONAR */
-            // avoid program crash, nothing else to do here
+        } catch (...) {
+            /* NOSONAR - Intentionally ignore exceptions during destruction to prevent std::terminate */
         }
     }
 
     void start() {
+        m_threads.reserve(m_num_threads);
         for (size_t i = 0; i < m_num_threads; ++i) {
+            // Spawn C++20 jthreads which automatically join on destruction
             m_threads.emplace_back([this, i] { worker_loop(i); });
         }
-        util::log::debug("Thread pool started with {} threads.", m_num_threads);
     }
 
     void stop() {
+        // Prevent multiple stop calls
         if (m_stopped.exchange(true)) {
             return;
         }
         
-        for(const auto& queue : m_task_queues) {
-            queue->stop();
-        }
+        m_global_queue.stop();
+        
+        // Clearing the vector destructs the jthreads, which safely blocks until they finish
         m_threads.clear();
-        util::log::debug("Thread pool stopped.");
+        util::log::info("Thread pool stopped.");
     }
 
-    // The I/O thread calls this to dispatch a task in a round-robin fashion.
-    // NOTE: This will now throw queue_full_error if the target queue is full.
+    /**
+     * @brief Pushes a task to the single global queue.
+     * @throws queue_full_error if the queue has reached its maximum capacity.
+     */
     void push_task(dispatch_task task) {
-        size_t queue_index = m_next_queue.fetch_add(1, std::memory_order_relaxed) % m_num_threads;
-        m_task_queues[queue_index]->push(std::move(task));
+        m_global_queue.push(std::move(task));
     }
 
-    // Used by the metrics class to get a total count of all pending tasks.
     [[nodiscard]] size_t get_total_pending_tasks() const {
-        size_t total_tasks = 0;
-        for (const auto& queue : m_task_queues) {
-            total_tasks += queue->size();
-        }
-        return total_tasks;
+        return m_global_queue.size();
     }
 
 private:
-    // Each worker thread runs this loop, consuming from its own dedicated queue.
-    void worker_loop(size_t queue_index) {
-        util::log::debug("Worker thread {} started, consuming from queue {}.", std::this_thread::get_id(), queue_index);
-        auto& my_queue = *m_task_queues[queue_index];
+    void worker_loop(size_t worker_id) {
+        util::log::debug("Worker thread {} started.", worker_id);
 
         while (true) {
-            auto task_opt = my_queue.wait_and_pop();
+            // Blocks efficiently until the single global queue has a task or is stopped
+            auto task_opt = m_global_queue.wait_and_pop();
 
             if (!task_opt) {
-                break; // Queue was stopped and is empty
+                break; // Queue was stopped and is fully drained
             }
             
             try {
                 if (*task_opt) {
-                    (*task_opt)(); // Execute the task
+                    (*task_opt)(); // Execute the API endpoint handler
                 }
             } catch (/* NOSONAR */ const std::exception& e) {
-                util::log::error("Exception caught in worker thread: {}", e.what());
+                util::log::error("Exception caught in worker thread {}: {}", worker_id, e.what());
             }
         }
-        util::log::debug("Worker thread {} finished.", std::this_thread::get_id());
+        util::log::debug("Worker thread {} finished.", worker_id);
     }
 
     const size_t m_num_threads;
     std::atomic<bool> m_stopped{false};
-    std::atomic<size_t> m_next_queue{0};
     
-    std::vector<std::shared_ptr<shared_queue<dispatch_task>>> m_task_queues;
+    shared_queue<dispatch_task> m_global_queue; 
     std::vector<std::jthread> m_threads;
 };
 

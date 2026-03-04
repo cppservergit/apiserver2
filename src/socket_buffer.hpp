@@ -32,7 +32,8 @@ public:
             if (m_buffer.size() >= max_size) {
                 throw socket_buffer_error(std::format("Maximum buffer size reached: {} bytes.", max_size));
             }
-            size_t new_size = m_buffer.size() + k_chunk_size;
+            // Use geometric growth (2x) to prevent O(N^2) memory reallocation performance drops
+            size_t new_size = m_buffer.size() * 2;
             m_buffer.resize(std::min(new_size, max_size));
         }
     }
