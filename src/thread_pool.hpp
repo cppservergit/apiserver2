@@ -30,11 +30,7 @@ public:
     thread_pool& operator=(thread_pool&&) = delete;
 
     ~thread_pool() noexcept {
-        try {
-            stop();
-        } catch (...) {
-            /* NOSONAR - Intentionally ignore exceptions during destruction to prevent std::terminate */
-        }
+        stop();
     }
 
     void start() {
