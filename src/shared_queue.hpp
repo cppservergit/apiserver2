@@ -111,7 +111,7 @@ private:
                 if (s == -1 && errno == EINTR) continue; 
                 
                 // Break on other fatal errors (EAGAIN is mathematically impossible 
-                // here without EFD_SEMAPHORE unless 18 quintillion pushes occur unread).
+                // here without EFD_SEMAPHORE unless quintillions of pushes occur unread).
                 break;
             }
         }
