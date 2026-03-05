@@ -73,6 +73,42 @@ void server::io_worker::setup_eventfd() {
     add_to_epoll(m_event_fd, EPOLLIN);
 }
 
+void server::io_worker::handle_epoll_event(const epoll_event& event) {
+    const int fd = event.data.fd;
+    const uint32_t ev = event.events;
+
+    // 1. Handle Server Control Sockets with early returns to reduce nesting
+    if (fd == m_listening_fd) {
+        on_connect();
+        return;
+    } 
+    if (fd == m_timer_fd) {
+        on_timer_tick();
+        return;
+    } 
+    if (fd == m_event_fd) {
+        on_response_ready();
+        return;
+    } 
+    
+    // 2. Handle Client Sockets Sequentially
+    if (ev & EPOLLIN) {
+        on_read(fd);
+    }
+    
+    if (ev & EPOLLOUT) {
+        on_write(fd);
+    }
+    
+    if (ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
+        // Safely check if the connection still exists 
+        // in case on_read or on_write already closed it
+        if (m_connections.contains(fd)) {
+            close_connection(fd);
+        }
+    }
+}
+
 void server::io_worker::run() {
     try {
         setup_listening_socket();
@@ -97,22 +133,7 @@ void server::io_worker::run() {
         }
 
         for (int i = 0; i < num_events; ++i) {
-            const auto& event = events[i];
-            const int fd = event.data.fd;
-
-            if (fd == m_listening_fd) {
-                on_connect();
-            } else if (fd == m_timer_fd) {
-                on_timer_tick();
-            } else if (fd == m_event_fd) {
-                on_response_ready();
-            } else if (event.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
-                close_connection(fd);
-            } else if (event.events & EPOLLIN) {
-                on_read(fd);
-            } else if (event.events & EPOLLOUT) {
-                on_write(fd);
-            }
+            handle_epoll_event(events[i]);
         }
     }
     drain_pending_responses();
@@ -177,13 +198,35 @@ void server::io_worker::drain_pending_responses() {
     util::log::debug("I/O worker thread {} shutting down. Draining pending responses...", std::this_thread::get_id());
     std::vector<epoll_event> events(MAX_EVENTS);
 
-    while (m_thread_pool->get_total_pending_tasks() > 0 || m_response_queue->size() > 0) {
+    // FIX 1: Check unfinished tasks (queued + executing) so we don't drop responses
+    while (m_thread_pool->get_unfinished_tasks() > 0 || m_response_queue->size() > 0) {
         process_response_queue();
         
         const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), 10);
+        
+        if (num_events == -1) {
+            if (errno == EINTR) continue;
+            util::log::error("epoll_wait failed during drain in worker {}: {}", std::this_thread::get_id(), util::str_error_cpp(errno));
+            break; 
+        }
+
         for (int i = 0; i < num_events; ++i) {
-            if (events[i].events & EPOLLOUT) {
-                on_write(events[i].data.fd);
+            int fd = events[i].data.fd;
+            uint32_t ev = events[i].events;
+
+            if (ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
+                close_connection(fd);
+                continue;
+            }
+
+            // FIX 4: Process OUT first to flush pending data before destroying the socket
+            if (ev & EPOLLOUT) {
+                on_write(fd);
+            }
+            
+            // Handle unexpected input after flushing out pending data
+            if (ev & EPOLLIN) {
+                close_connection(fd);
             }
         }
     }
@@ -344,11 +387,22 @@ void server::io_worker::add_to_epoll(int fd, uint32_t events) {
 }
 
 void server::io_worker::modify_epoll(int fd, uint32_t events) {
-    epoll_event event{};
-    event.events = events | EPOLLET | EPOLLRDHUP;
-    event.data.fd = fd;
-    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &event) == -1 && errno == ENOENT) {
-            epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event);
+    epoll_event ev{};
+    // FIX: Mandatory EPOLLET and EPOLLRDHUP added to prevent reverting to level-triggered mode
+    ev.events = events | EPOLLET | EPOLLRDHUP;
+    ev.data.fd = fd;
+    
+    if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+        if (errno == ENOENT) {
+            util::log::error("server::io_worker::modify_epoll -> fd {} not found: {}, adding it instead.", fd, util::str_error_cpp(errno));
+            if (epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+                close_connection(fd);
+            }
+        } else {
+            // Unexpected error modifying epoll (e.g., EBADF)
+            util::log::error("Fatal error modifying epoll for fd {}: {}", fd, util::str_error_cpp(errno));
+            close_connection(fd);
+        }
     }
 }
 
@@ -363,6 +417,13 @@ void server::io_worker::on_connect() {
         int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
         if (client_fd == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            
+            // FIX 2: Break if file descriptors are exhausted to prevent 100% CPU lockup
+            if (errno == EMFILE || errno == ENFILE) {
+                util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
+                break;
+            }
+            
             util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
             continue;
         }
@@ -432,6 +493,12 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
     }
 
     if (res.available_size() == 0) {
+        // FIX 3: Respect the close_after_write flag instead of blindly resetting
+        if (conn.close_after_write) {
+            close_connection(fd);
+            return;
+        }
+        
         conn.reset();
         touch_connection(conn);
         modify_epoll(fd, EPOLLIN | EPOLLONESHOT);
@@ -497,12 +564,19 @@ void server::io_worker::process_request(int fd) {
         util::log::error("Failed to parse request on fd {} from IP {}: {}", fd, conn.remote_ip, res.error().what());
         http::response err_res;
         err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
+        
+        // FIX 3: Stop the infinite Bad Request loop
+        conn.close_after_write = true;
+        
         m_response_queue->push({fd, conn_id, std::move(err_res)});
         return;
     }
 
     http::request req(std::move(conn.parser), conn.remote_ip);
+    route_parsed_request(fd, conn_id, std::move(req));
+}
 
+void server::io_worker::route_parsed_request(int fd, uint64_t conn_id, http::request req) {
     const std::string request_id_str(req.get_header_value("x-request-id").value_or(""));
     const util::log::request_id_scope rid_scope(request_id_str);    
 
@@ -610,8 +684,8 @@ void server::start() {
     }
 
     auto setup_end = std::chrono::steady_clock::now();
-    auto setup_ms = std::chrono::duration_cast<std::chrono::milliseconds>(setup_end - setup_start).count();
-    util::log::info("Server started in {} milliseconds.", setup_ms);
+    auto setup_ms = std::chrono::duration_cast<std::chrono::microseconds>(setup_end - setup_start).count();
+    util::log::info("Server started in {} microseconds.", setup_ms);
 
     if (signalfd_siginfo ssi; read(m_signals->get_fd(), &ssi, sizeof(ssi)) == sizeof(ssi)) {
         const char* signal_name = strsignal(ssi.ssi_signo);

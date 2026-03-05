@@ -30,7 +30,11 @@ public:
     thread_pool& operator=(thread_pool&&) = delete;
 
     ~thread_pool() noexcept {
-        stop();
+        try {
+            stop();
+        } catch (...) {
+            /* NOSONAR - Intentionally ignore exceptions during destruction to prevent std::terminate */
+        }
     }
 
     void start() {
@@ -39,6 +43,7 @@ public:
             // Spawn C++20 jthreads which automatically join on destruction
             m_threads.emplace_back([this, i] { worker_loop(i); });
         }
+        util::log::info("Thread pool started with {} workers on a single global queue.", m_num_threads);
     }
 
     void stop() {
@@ -51,6 +56,7 @@ public:
         
         // Clearing the vector destructs the jthreads, which safely blocks until they finish
         m_threads.clear();
+        util::log::info("Thread pool stopped.");
     }
 
     /**
@@ -58,11 +64,30 @@ public:
      * @throws queue_full_error if the queue has reached its maximum capacity.
      */
     void push_task(dispatch_task task) {
-        m_global_queue.push(std::move(task));
+        // FIX 1: Increment unfinished tasks *before* pushing to prevent shutdown race conditions
+        m_unfinished_tasks.fetch_add(1, std::memory_order_release);
+        try {
+            m_global_queue.push(std::move(task));
+        } catch (...) {
+            m_unfinished_tasks.fetch_sub(1, std::memory_order_relaxed);
+            throw;
+        }
     }
 
+    /**
+     * @brief Returns the number of tasks currently waiting in the queue.
+     * Useful for metrics reporting.
+     */
     [[nodiscard]] size_t get_total_pending_tasks() const {
         return m_global_queue.size();
+    }
+
+    /**
+     * @brief Returns the number of tasks both waiting in the queue AND currently executing.
+     * Critical for safe thread pool shutdown without dropping requests.
+     */
+    [[nodiscard]] size_t get_unfinished_tasks() const {
+        return m_unfinished_tasks.load(std::memory_order_acquire);
     }
 
 private:
@@ -84,12 +109,16 @@ private:
             } catch (/* NOSONAR */ const std::exception& e) {
                 util::log::error("Exception caught in worker thread {}: {}", worker_id, e.what());
             }
+
+            // FIX 1: Decrement only *after* the task is fully processed
+            m_unfinished_tasks.fetch_sub(1, std::memory_order_release);
         }
         util::log::debug("Worker thread {} finished.", worker_id);
     }
 
     const size_t m_num_threads;
     std::atomic<bool> m_stopped{false};
+    std::atomic<size_t> m_unfinished_tasks{0}; // Tracks tasks both queued AND executing
     
     shared_queue<dispatch_task> m_global_queue; 
     std::vector<std::jthread> m_threads;

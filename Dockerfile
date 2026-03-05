@@ -32,7 +32,7 @@ ENV CC=gcc-14 \
 WORKDIR /tmp/curl
 RUN wget https://github.com/curl/curl/releases/download/curl-8_18_0/curl-8.18.0.tar.gz -O curl.tar.gz \
     && tar -xvf curl.tar.gz --strip-components=1 \
-    && ./configure --prefix=/usr --with-ssl --with-zlib \
+    && ./configure --prefix=/usr --with-ssl --with-zlib --enable-threaded-resolver \
        --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap \
        --disable-ldap --disable-ldaps --disable-mqtt --disable-pop3 --disable-rtsp \
        --disable-smb --disable-smtp --disable-telnet --disable-tftp \

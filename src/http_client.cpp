@@ -141,6 +141,10 @@ void http_client::impl::configure_common_options(const std::string& url, http_re
     curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &response.body);
     curl_easy_setopt(m_curl, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(m_curl, CURLOPT_HEADERDATA, &response.headers);
+    curl_easy_setopt(m_curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPIDLE, 30L);
+    curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPINTVL, 60L);
     
     if (m_config.client_cert_path) curl_easy_setopt(m_curl, CURLOPT_SSLCERT, m_config.client_cert_path->c_str());
     if (m_config.client_key_path) curl_easy_setopt(m_curl, CURLOPT_SSLKEY, m_config.client_key_path->c_str());

@@ -48,10 +48,17 @@ struct connection_state {
     std::chrono::steady_clock::time_point last_activity;
     uint64_t connection_id{0};
     std::list<int>::iterator timeout_it;
+    
+    // NEW: Added to prevent infinite Bad Request loops
+    bool close_after_write{false}; 
 
     void reset() {
         parser = http::request_parser{};
         response.reset();
+        
+        // NEW: Reset the flag for recycled connections
+        close_after_write = false; 
+        
         update_activity();
     }    
 
@@ -126,12 +133,19 @@ private:
         void on_timer_tick();
         void on_response_ready();
         
+        // NEW: Extracted event handler to satisfy SonarCloud complexity limits
+        void handle_epoll_event(const epoll_event& event);
+        
         void close_connection(int fd);
         void check_timeouts(); 
         void drain_pending_responses();
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
+        
+        // NEW: Extracted routing logic to reduce process_request complexity
+        void route_parsed_request(int fd, uint64_t conn_id, http::request req);
+        
         void dispatch_to_worker(int fd, uint64_t connection_id, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
         
