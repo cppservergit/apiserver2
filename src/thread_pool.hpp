@@ -52,7 +52,10 @@ public:
         
         // Clearing the vector destructs the jthreads, which safely blocks until they finish
         m_threads.clear();
-        util::log::info("Thread pool stopped.");
+        try {
+            util::log::info("Thread pool stopped.");
+        } catch (/* NOSONAR */ const std::exception& e) {
+        }
     }
 
     /**
