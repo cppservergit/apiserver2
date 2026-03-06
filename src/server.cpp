@@ -57,8 +57,8 @@ void server::io_worker::setup_timerfd() {
     if (m_timer_fd == -1) throw server_error("Failed to create timerfd");
 
     struct itimerspec ts{};
-    ts.it_value.tv_sec = 5;      // <-- Changed from 1 to 5
-    ts.it_interval.tv_sec = 5;   // <-- Changed from 1 to 5
+    ts.it_value.tv_sec = 5;      
+    ts.it_interval.tv_sec = 5;   
     
     if (timerfd_settime(m_timer_fd, 0, &ts, nullptr) == -1) {
         throw server_error("Failed to set timerfd interval");
@@ -74,11 +74,11 @@ void server::io_worker::setup_eventfd() {
     add_to_epoll(m_event_fd, EPOLLIN);
 }
 
+// Extracted to fix SonarCloud Cognitive Complexity > 15
 void server::io_worker::handle_epoll_event(const epoll_event& event) {
     const int fd = event.data.fd;
     const uint32_t ev = event.events;
 
-    // 1. Handle Server Control Sockets with early returns to reduce nesting
     if (fd == m_listening_fd) {
         on_connect();
         return;
@@ -92,24 +92,18 @@ void server::io_worker::handle_epoll_event(const epoll_event& event) {
         return;
     } 
     
-    // 2. Handle Client Sockets Sequentially
-    if (ev & EPOLLIN) {
+    if ((ev & EPOLLIN) != 0) {
         on_read(fd);
     }
     
-    if (ev & EPOLLOUT) {
+    if ((ev & EPOLLOUT) != 0) {
         on_write(fd);
     }
     
-    // 3. Handle fatal errors
-    if (ev & (EPOLLERR | EPOLLHUP)) {
-        if (m_connections.contains(fd)) {
-            close_connection(fd);
-        }
-    } 
-    // Gracefully handle TCP Half-Close (EPOLLRDHUP)
-    // Do not instantly kill the socket, as the worker might be computing a response!
-    else if (ev & EPOLLRDHUP) {
+    // Flattened nested 'if' statements to pass Sonar checks
+    if ((ev & (EPOLLERR | EPOLLHUP)) != 0 && m_connections.contains(fd)) {
+        close_connection(fd);
+    } else if ((ev & EPOLLRDHUP) != 0) {
         if (auto it = m_connections.find(fd); it != m_connections.end()) {
             it->second.close_after_write = true;
         }
@@ -165,16 +159,16 @@ void server::io_worker::check_timeouts() {
             continue;
         }
 
-        if (now - it->second.last_activity > server::READ_TIMEOUT) {
-            remove_from_epoll(fd);
-            close(fd);
-            m_metrics->decrement_connections();
-            m_connections.erase(it);
-            m_timeout_list.pop_front();
-        } else {
-            // Since elements are ordered by activity, if the front hasn't timed out, nothing else has.
+        // Reversed logic to eliminate 'else' branch (SonarCloud optimization)
+        if (now - it->second.last_activity <= server::READ_TIMEOUT) {
             break;
         }
+
+        remove_from_epoll(fd);
+        close(fd);
+        m_metrics->decrement_connections();
+        m_connections.erase(it);
+        m_timeout_list.pop_front();
     }
 }
 
@@ -191,13 +185,13 @@ void server::io_worker::process_response_queue() {
     m_response_queue->drain_to(response_batch);
 
     for (auto& item : response_batch) {
-        if (auto it = m_connections.find(item.client_fd); it != m_connections.end()) {
-            if (it->second.connection_id == item.connection_id) {
-                it->second.response = std::move(item.res);
-                do_write(item.client_fd, it->second);
-            } else {
-                util::log::warn("Dropped stale response for reused fd {}", item.client_fd);
-            }
+        // Flattened nested 'if' to pass Sonar checks
+        auto it = m_connections.find(item.client_fd);
+        if (it != m_connections.end() && it->second.connection_id == item.connection_id) {
+            it->second.response = std::move(item.res);
+            do_write(item.client_fd, it->second);
+        } else {
+            util::log::warn("Dropped stale response for reused fd {}", item.client_fd);
         }
     }
 }
@@ -208,9 +202,8 @@ void server::io_worker::drain_pending_responses() {
 
     util::log::info("Waiting for {} unfinished tasks to complete...", m_thread_pool->get_unfinished_tasks());
 
-    // FIX 1: Check unfinished tasks (queued + executing) so we don't drop responses
     while (m_thread_pool->get_unfinished_tasks() > 0 || m_response_queue->size() > 0) {
-            process_response_queue();
+        process_response_queue();
         
         const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), 10);
         
@@ -224,24 +217,18 @@ void server::io_worker::drain_pending_responses() {
             int fd = events[i].data.fd;
             uint32_t ev = events[i].events;
 
-            // Ignore server control sockets during drain; we refuse new connections.
             if (fd == m_listening_fd || fd == m_timer_fd || fd == m_event_fd) {
                 continue;
             }
 
-            // FIX 4: Process OUT first to flush pending data before destroying the socket
-            if (ev & EPOLLOUT) {
+            if ((ev & EPOLLOUT) != 0) {
                 on_write(fd);
             }
             
-            // Handle fatal errors or unexpected input after flushing out pending data
-            if (ev & (EPOLLERR | EPOLLHUP | EPOLLIN)) {
-                if (m_connections.contains(fd)) {
-                    close_connection(fd);
-                }
-            }
-            // Gracefully handle TCP Half-Close (EPOLLRDHUP)
-            else if (ev & EPOLLRDHUP) {
+            // Flattened nested 'if' to pass Sonar checks
+            if ((ev & (EPOLLERR | EPOLLHUP | EPOLLIN)) != 0 && m_connections.contains(fd)) {
+                close_connection(fd);
+            } else if ((ev & EPOLLRDHUP) != 0) {
                 if (auto it = m_connections.find(fd); it != m_connections.end()) {
                     it->second.close_after_write = true;
                 }
@@ -406,7 +393,7 @@ void server::io_worker::add_to_epoll(int fd, uint32_t events) {
 
 void server::io_worker::modify_epoll(int fd, uint32_t events) {
     epoll_event ev{};
-     ev.events = events | EPOLLET | EPOLLRDHUP;
+    ev.events = events | EPOLLET | EPOLLRDHUP;
     ev.data.fd = fd;
     
     if (epoll_ctl(m_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
@@ -417,7 +404,6 @@ void server::io_worker::modify_epoll(int fd, uint32_t events) {
                 close_connection(fd);
             }
         } else {
-            // Unexpected error modifying epoll
             util::log::error("Fatal error modifying epoll for fd {}: {}", fd, util::str_error_cpp(errno));
             close_connection(fd);
         }
@@ -436,7 +422,6 @@ void server::io_worker::on_connect() {
         if (client_fd == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
             
-            // FIX 2: Break if file descriptors are exhausted to prevent 100% CPU lockup
             if (errno == EMFILE || errno == ENFILE) {
                 util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
                 break;
@@ -511,7 +496,6 @@ void server::io_worker::do_write(int fd, connection_state& conn) {
     }
 
     if (res.available_size() == 0) {
-        // FIX 3: Respect the close_after_write flag instead of blindly resetting
         if (conn.close_after_write) {
             close_connection(fd);
             return;
@@ -538,7 +522,6 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
     touch_connection(conn);
     
     while (true) {
-        // Wrap buffer access and read operations in a try-catch block
         try {
             auto buffer = conn.parser.get_buffer();
             if (buffer.empty()) {
@@ -584,9 +567,7 @@ void server::io_worker::process_request(int fd) {
         http::response err_res;
         err_res.set_body(http::status::bad_request, R"({"error":"Bad Request"})");
         
-        // FIX 3: Stop the infinite Bad Request loop
         conn.close_after_write = true;
-        
         m_response_queue->push({fd, conn_id, std::move(err_res)});
         return;
     }
@@ -595,6 +576,7 @@ void server::io_worker::process_request(int fd) {
     route_parsed_request(fd, conn_id, std::move(req));
 }
 
+// Extracted to fix SonarCloud Cognitive Complexity > 15
 void server::io_worker::route_parsed_request(int fd, uint64_t conn_id, http::request req) {
     const std::string request_id_str(req.get_header_value("x-request-id").value_or(""));
     const util::log::request_id_scope rid_scope(request_id_str);    

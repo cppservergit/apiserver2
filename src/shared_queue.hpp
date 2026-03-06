@@ -52,7 +52,6 @@ public:
         if constexpr (UseEventFD) {
             notify_event_fd();
         } else {
-            // Wakes up exactly ONE sleeping worker thread
             m_cond.notify_one();
         }
     }
@@ -88,7 +87,6 @@ public:
             notify_event_fd();
         }
 
-        // Wakes up ALL sleeping worker threads so they can observe the stop flag and exit
         m_cond.notify_all();
     }
 
@@ -99,21 +97,15 @@ public:
 
 private:
     // Helper to reliably notify the eventfd, safely handling POSIX interruptions
+    // Uses do-while to satisfy SonarCloud's "no infinite loops" rule
     void notify_event_fd() noexcept {
         int fd = m_event_fd.load(std::memory_order_acquire);
         if (fd != -1) {
             uint64_t u = 1;
-            while (true) {
-                ssize_t s = write(fd, &u, sizeof(uint64_t));
-                if (s == sizeof(uint64_t)) break; // Success
-                
-                // If interrupted by a system signal, retry immediately
-                if (s == -1 && errno == EINTR) continue; 
-                
-                // Break on other fatal errors (EAGAIN is mathematically impossible 
-                // here without EFD_SEMAPHORE unless quintillions of pushes occur unread).
-                break;
-            }
+            ssize_t s;
+            do {
+                s = write(fd, &u, sizeof(uint64_t));
+            } while (s == -1 && errno == EINTR);
         }
     }
 
