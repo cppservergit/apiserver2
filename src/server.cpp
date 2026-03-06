@@ -239,7 +239,7 @@ void server::io_worker::drain_pending_responses() {
             }
         }
     }
-    util::log::info("I/O worker thread {} drain complete.", std::this_thread::get_id());
+    util::log::info("I/O worker thread drain complete.");
 }
 
 bool server::io_worker::validate_token(const http::request& req) const {
