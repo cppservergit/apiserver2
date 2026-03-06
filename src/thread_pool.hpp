@@ -39,7 +39,7 @@ public:
             // Spawn C++20 jthreads which automatically join on destruction
             m_threads.emplace_back([this, i] { worker_loop(i); });
         }
-        util::log::info("Thread pool started with {} workers on a single global queue.", m_num_threads);
+        util::log::info("Thread pool started with {} workers.", m_num_threads);
     }
 
     void stop() {

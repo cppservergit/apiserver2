@@ -225,13 +225,17 @@ void server::io_worker::drain_pending_responses() {
                 on_write(fd);
             }
             
-            // Flattened nested 'if' to pass Sonar checks
-            if ((ev & (EPOLLERR | EPOLLHUP | EPOLLIN)) != 0 && m_connections.contains(fd)) {
+            // Extract the connection lookup to prevent a 4th level of nesting
+            auto it = m_connections.find(fd);
+            if (it == m_connections.end()) {
+                continue; // The connection was already closed (perhaps by on_write hitting EOF)
+            }
+
+            // The remaining logic is now safely flattened to a maximum depth of 3
+            if ((ev & (EPOLLERR | EPOLLHUP | EPOLLIN)) != 0) {
                 close_connection(fd);
             } else if ((ev & EPOLLRDHUP) != 0) {
-                if (auto it = m_connections.find(fd); it != m_connections.end()) {
-                    it->second.close_after_write = true;
-                }
+                it->second.close_after_write = true;
             }
         }
     }
@@ -420,15 +424,15 @@ void server::io_worker::on_connect() {
     while (true) {
         int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
         if (client_fd == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-            
-            if (errno == EMFILE || errno == ENFILE) {
-                util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
-                break;
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                if (errno == EMFILE || errno == ENFILE) {
+                    util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
+                } else {
+                    util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
+                    continue;
+                }
             }
-            
-            util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
-            continue;
+            break;
         }
         
         try {

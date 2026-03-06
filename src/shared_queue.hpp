@@ -98,7 +98,7 @@ public:
 private:
     // Helper to reliably notify the eventfd, safely handling POSIX interruptions
     // Uses do-while to satisfy SonarCloud's "no infinite loops" rule
-    void notify_event_fd() noexcept {
+    void notify_event_fd() const noexcept {
         int fd = m_event_fd.load(std::memory_order_acquire);
         if (fd != -1) {
             uint64_t u = 1;
