@@ -423,35 +423,41 @@ void server::io_worker::remove_from_epoll(int fd) const {
 void server::io_worker::on_connect() {
     while (true) {
         int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
-        if (client_fd == -1) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                if (errno == EMFILE || errno == ENFILE) {
-                    util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
-                } else {
-                    util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
-                    continue;
-                }
+        
+        // Handle successful connection first to avoid nesting the error logic
+        if (client_fd != -1) {
+            try {
+                std::string client_ip = util::get_peer_ip_ipv4(client_fd);
+                util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
+                
+                auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
+                conn.connection_id = ++m_next_connection_id;
+                
+                m_timeout_list.push_back(client_fd);
+                conn.timeout_it = std::prev(m_timeout_list.end());
+                
+                add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
+                m_metrics->increment_connections();
+            } catch (const server_error& e) {
+                util::log::error("Failed to initialize connection for fd {}: {}", client_fd, e.what());
+                close(client_fd);
+                m_connections.erase(client_fd); 
             }
-            break;
+            continue; // Loop again for the next pending connection
         }
         
-        try {
-            std::string client_ip = util::get_peer_ip_ipv4(client_fd);
-            util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
-            
-            auto& conn = m_connections.try_emplace(client_fd, std::move(client_ip)).first->second;
-            conn.connection_id = ++m_next_connection_id;
-            
-            m_timeout_list.push_back(client_fd);
-            conn.timeout_it = std::prev(m_timeout_list.end());
-            
-            add_to_epoll(client_fd, EPOLLIN | EPOLLONESHOT);
-            m_metrics->increment_connections();
-        } catch (const server_error& e) {
-            util::log::error("Failed to initialize connection for fd {}: {}", client_fd, e.what());
-            close(client_fd);
-            m_connections.erase(client_fd); 
+        // If we reach here, client_fd == -1. Flattened error handling (Max Depth 2):
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Normal exit: queue is empty, do nothing and let it hit the break
+        } else if (errno == EMFILE || errno == ENFILE) {
+            util::log::warn("accept4 failed: File descriptor limit reached (EMFILE/ENFILE). Halting accepts.");
+        } else {
+            // Recoverable error (e.g. ECONNABORTED)
+            util::log::error("accept4 failed: {}", util::str_error_cpp(errno));
+            continue; 
         }
+        
+        break; // Exactly 1 break statement for the entire while loop
     }
 }
 
