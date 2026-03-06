@@ -685,8 +685,8 @@ void server::start() {
     }
 
     auto setup_end = std::chrono::steady_clock::now();
-    auto setup_ms = std::chrono::duration_cast<std::chrono::milliseconds>(setup_end - setup_start).count();
-    util::log::info("Server started in {} milliseconds.", setup_ms);
+    auto setup_ms = std::chrono::duration_cast<std::chrono::microseconds>(setup_end - setup_start).count();
+    util::log::info("Server started in {} microseconds.", setup_ms);
 
     if (signalfd_siginfo ssi; read(m_signals->get_fd(), &ssi, sizeof(ssi)) == sizeof(ssi)) {
         const char* signal_name = strsignal(ssi.ssi_signo);
