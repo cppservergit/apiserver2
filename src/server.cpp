@@ -422,10 +422,8 @@ void server::io_worker::remove_from_epoll(int fd) const {
 
 void server::io_worker::on_connect() {
     while (true) {
-        int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK);
-        
         // Handle successful connection first to avoid nesting the error logic
-        if (client_fd != -1) {
+        if (int client_fd = accept4(m_listening_fd, nullptr, nullptr, SOCK_NONBLOCK); client_fd != -1) {
             try {
                 std::string client_ip = util::get_peer_ip_ipv4(client_fd);
                 util::log::debug("Thread {} accepted new connection from {} on fd {}", std::this_thread::get_id(), client_ip, client_fd);
@@ -446,7 +444,7 @@ void server::io_worker::on_connect() {
             continue; // Loop again for the next pending connection
         }
         
-        // If we reach here, client_fd == -1. Flattened error handling (Max Depth 2):
+        // If we reach here, accept4 returned -1. Flattened error handling (Max Depth 2):
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             // Normal exit: queue is empty, do nothing and let it hit the break
         } else if (errno == EMFILE || errno == ENFILE) {
