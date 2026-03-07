@@ -150,25 +150,33 @@ void server::io_worker::on_timer_tick() {
 
 void server::io_worker::check_timeouts() {
     auto now = std::chrono::steady_clock::now();
-    while (!m_timeout_list.empty()) {
-        int fd = m_timeout_list.front();
-        auto it = m_connections.find(fd);
+    auto it_list = m_timeout_list.begin();
+    
+    while (it_list != m_timeout_list.end()) {
+        int fd = *it_list;
+        auto it_conn = m_connections.find(fd);
         
-        if (it == m_connections.end()) {
-            m_timeout_list.pop_front();
+        if (it_conn == m_connections.end()) {
+            it_list = m_timeout_list.erase(it_list);
+            continue;
+        }
+
+        // Exemption: Do not timeout connections currently executing a heavy API task
+        if (it_conn->second.is_processing) {
+            ++it_list;
             continue;
         }
 
         // Reversed logic to eliminate 'else' branch (SonarCloud optimization)
-        if (now - it->second.last_activity <= server::READ_TIMEOUT) {
+        if (now - it_conn->second.last_activity <= server::READ_TIMEOUT) {
             break;
         }
 
         remove_from_epoll(fd);
         close(fd);
         m_metrics->decrement_connections();
-        m_connections.erase(it);
-        m_timeout_list.pop_front();
+        m_connections.erase(it_conn);
+        it_list = m_timeout_list.erase(it_list);
     }
 }
 
@@ -188,6 +196,7 @@ void server::io_worker::process_response_queue() {
         // Flattened nested 'if' to pass Sonar checks
         auto it = m_connections.find(item.client_fd);
         if (it != m_connections.end() && it->second.connection_id == item.connection_id) {
+            it->second.is_processing = false; // Worker is done, resume standard timeouts
             it->second.response = std::move(item.res);
             do_write(item.client_fd, it->second);
         } else {
@@ -239,7 +248,7 @@ void server::io_worker::drain_pending_responses() {
             }
         }
     }
-    util::log::info("I/O worker thread drain complete.");
+    util::log::info("I/O worker thread {} drain complete.", std::this_thread::get_id());
 }
 
 bool server::io_worker::validate_token(const http::request& req) const {
@@ -537,18 +546,30 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
                 close_connection(fd);
                 return false;
             }
+            
             ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
-            if (bytes_read == -1) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-                util::log::error("read error on fd {}: {}", fd, util::str_error_cpp(errno));
-                close_connection(fd);
-                return false;
+            
+            // Handle successful read first to prevent nested error trees
+            if (bytes_read > 0) {
+                conn.parser.update_pos(bytes_read);
+            } else {
+                // Flattened error and EOF handling (Max Depth: 3)
+                if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    // Normal exit: socket read buffer is fully drained
+                } else if (bytes_read == 0 && conn.parser.eof()) {
+                    conn.close_after_write = true;
+                } else if (bytes_read == -1) {
+                    util::log::error("read error on fd {}: {}", fd, util::str_error_cpp(errno));
+                    close_connection(fd);
+                    return false;
+                } else {
+                    // Client hung up midway through an incomplete request or while idle.
+                    close_connection(fd);
+                    return false;
+                }
+                
+                break; // Exactly 1 break statement for the entire while loop
             }
-            if (bytes_read == 0) {
-                close_connection(fd);
-                return false;
-            }
-            conn.parser.update_pos(bytes_read);
         } catch (const socket_buffer_error& e) {
             using enum http::status;
             close_connection(fd);
@@ -600,21 +621,32 @@ void server::io_worker::route_parsed_request(int fd, uint64_t conn_id, http::req
 
     http::response res(req.get_header_value("Origin"));
 
+    // Flattened routing logic via early returns to optimize SonarCloud complexity
     if (req.get_method() == http::method::options) {
         res.set_options();
         m_response_queue->push({fd, conn_id, std::move(res)});
-    } else if (handle_internal_api(req, res)) {
+        return;
+    } 
+    
+    if (handle_internal_api(req, res)) {
         m_response_queue->push({fd, conn_id, std::move(res)});
-    } else {
-        const auto* endpoint = m_router.find_handler(req.get_path());
-        if (!endpoint) {
-            util::log::warn("BOT-ALERT No handler found for path '{}' from {}", req.get_path(), req.get_remote_ip());
-            res.set_body(http::status::not_found, R"({"error":"Not Found"})");
-            m_response_queue->push({fd, conn_id, std::move(res)});
-        } else {
-            dispatch_to_worker(fd, conn_id, std::move(req), endpoint);
-        }
+        return;
+    } 
+    
+    const auto* endpoint = m_router.find_handler(req.get_path());
+    if (!endpoint) {
+        util::log::warn("BOT-ALERT No handler found for path '{}' from {}", req.get_path(), req.get_remote_ip());
+        res.set_body(http::status::not_found, R"({"error":"Not Found"})");
+        m_response_queue->push({fd, conn_id, std::move(res)});
+        return;
+    } 
+    
+    // Flag the connection as executing to prevent it from timing out during heavy workloads
+    if (auto it = m_connections.find(fd); it != m_connections.end()) {
+        it->second.is_processing = true;
     }
+    
+    dispatch_to_worker(fd, conn_id, std::move(req), endpoint);
 }
 
 bool server::io_worker::handle_internal_api(const http::request& req, http::response& res) const {

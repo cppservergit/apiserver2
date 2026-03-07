@@ -49,16 +49,14 @@ struct connection_state {
     uint64_t connection_id{0};
     std::list<int>::iterator timeout_it;
     
-    // NEW: Added to prevent infinite Bad Request loops
     bool close_after_write{false}; 
+    bool is_processing{false};
 
     void reset() {
         parser = http::request_parser{};
         response.reset();
-        
-        // NEW: Reset the flag for recycled connections
         close_after_write = false; 
-        
+        is_processing = false;
         update_activity();
     }    
 
@@ -125,6 +123,7 @@ private:
         void remove_from_epoll(int fd) const;
         void modify_epoll(int fd, uint32_t events);
 
+        void handle_epoll_event(const epoll_event& event);
         void on_connect();
         void on_read(int fd);
         void on_write(int fd);
@@ -133,19 +132,13 @@ private:
         void on_timer_tick();
         void on_response_ready();
         
-        // NEW: Extracted event handler to satisfy SonarCloud complexity limits
-        void handle_epoll_event(const epoll_event& event);
-        
         void close_connection(int fd);
         void check_timeouts(); 
         void drain_pending_responses();
 
         bool handle_socket_read(connection_state& conn, int fd);
         void process_request(int fd);
-        
-        // NEW: Extracted routing logic to reduce process_request complexity
         void route_parsed_request(int fd, uint64_t conn_id, http::request req);
-        
         void dispatch_to_worker(int fd, uint64_t connection_id, http::request req, const api_endpoint* endpoint);
         void process_response_queue();
         
@@ -166,7 +159,7 @@ private:
         std::atomic<bool>& m_running;
         uint64_t m_next_connection_id{0};
         
-        std::unique_ptr<shared_queue<response_item, true>> m_response_queue; // Fixed: added template flag
+        std::unique_ptr<shared_queue<response_item, true>> m_response_queue; 
         std::unique_ptr<thread_pool> m_thread_pool;
 
         std::unordered_map<int, connection_state> m_connections;
