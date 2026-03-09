@@ -10,27 +10,35 @@ jobs:
     name: Build and Analyze
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Better for SonarCloud accuracy
-      
+          fetch-depth: 0
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libjson-c-dev unixodbc-dev libssl-dev
+          sudo apt-get install -y \
+            build-essential \
+            libcurl4-openssl-dev \
+            libjson-c-dev \
+            unixodbc-dev \
+            libssl-dev
 
       - name: Install Build Wrapper
-        uses: sonarsource/sonarqube-scan-action/install-build-wrapper@v4
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v4
 
       - name: Run Build Wrapper
+        env:
+          TERM: xterm
         run: |
+          mkdir -p bw-output
+          # The wrapper records the build so SonarCloud understands your C++23 code
           build-wrapper-linux-x86-64 --out-dir bw-output make release
 
       - name: SonarCloud Scan
-        uses: sonarsource/sonarqube-scan-action@v4
+        uses: SonarSource/sonarqube-scan-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.cfamily.compile-commands=bw-output/compile_commands.json
+        # The scanner will automatically find and use sonar-project.properties
