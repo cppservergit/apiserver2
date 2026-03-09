@@ -18,9 +18,8 @@ jobs:
       - name: Install Modern GCC 14 and Dependencies
         run: |
           sudo apt-get update
-          # Install GCC 14 for C++23 <print> support
-          sudo apt-get install -y g++-14
-          sudo apt-get install -y \
+          # GCC 14 is required for C++23 <print> support
+          sudo apt-get install -y g++-14 \
             build-essential \
             libcurl4-openssl-dev \
             libjson-c-dev \
@@ -28,20 +27,21 @@ jobs:
             libssl-dev
 
       - name: Install Build Wrapper
+        # Uses the latest stable version for the wrapper installer
         uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v4
 
       - name: Run Build Wrapper
         env:
           TERM: xterm
-          # Force the build to use GCC 14
           CXX: g++-14
         run: |
           mkdir -p bw-output
-          # Pass the modern compiler to your Makefile
+          # Pass CXX=g++-14 to ensure the wrapper records the correct compiler 
           build-wrapper-linux-x86-64 --out-dir bw-output make release CXX=g++-14
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v4
+        # This is the v6 tag that resolves the security warning
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
