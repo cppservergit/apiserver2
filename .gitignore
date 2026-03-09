@@ -5,3 +5,5 @@ git_update.sh
 apiserver
 apiserver_*
 changes.txt
+.scannerwork/
+bw-output/

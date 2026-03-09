@@ -1,0 +1,50 @@
+name: SonarCloud Analysis
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: Build and Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Modern GCC 14 and Dependencies
+        run: |
+          sudo apt-get update
+          # GCC 14 is required for C++23 <print> support
+          sudo apt-get install -y g++-14 \
+            build-essential \
+            libcurl4-openssl-dev \
+            libjson-c-dev \
+            unixodbc-dev \
+            libssl-dev
+
+      - name: Install Build Wrapper
+        # Uses the latest stable version for the wrapper installer
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v4
+
+      - name: Run Build Wrapper
+        env:
+          TERM: xterm
+          CXX: g++-14
+        run: |
+          mkdir -p bw-output
+          # Pass CXX=g++-14 to ensure the wrapper records the correct compiler 
+          build-wrapper-linux-x86-64 --out-dir bw-output make release CXX=g++-14
+
+      - name: SonarCloud Scan
+        # This is the v6 tag that resolves the security warning
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.cfamily.compile-commands=bw-output/compile_commands.json
