@@ -43,15 +43,15 @@ RUN wget https://github.com/curl/curl/releases/download/curl-8_18_0/curl-8.18.0.
 
 # 3. COMPILE MINIMAL UNIXODBC (v2.3.14)
 WORKDIR /tmp/unixodbc
-RUN wget https://www.unixodbc.org/unixODBC-2.3.14.tar.gz -O unixodbc.tar.gz \
+RUN wget https://github.com/lurcher/unixODBC/releases/download/v2.3.14/unixODBC-2.3.14.tar.gz -O unixodbc.tar.gz \
     && tar -xvf unixodbc.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --sysconfdir=/etc --disable-gui --disable-readline \
        --enable-iconv --with-iconv-char-enc=UTF8 --with-iconv-ucode-enc=UTF16LE \
     && make -j$(nproc) && make install
 
-# 4. COMPILE MINIMAL FREETDS (v1.5.10)
+# 4. COMPILE MINIMAL FREETDS (v1.5.14)
 WORKDIR /tmp/freetds
-RUN wget https://www.freetds.org/files/stable/freetds-1.5.13.tar.gz -O freetds.tar.gz \
+RUN wget https://www.freetds.org/files/stable/freetds-1.5.14.tar.gz -O freetds.tar.gz \
     && tar -xvf freetds.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-unixodbc=/usr --with-openssl=/usr \
        --enable-msdblib --disable-libiconv --disable-krb5 --disable-gssapi \
@@ -119,7 +119,13 @@ COPY --from=builder /etc/protocols /rootfs/etc/protocols
 COPY --from=builder /etc/ssl/certs /rootfs/etc/ssl/certs
 COPY --from=builder /usr/lib/x86_64-linux-gnu/gconv /rootfs/usr/lib/x86_64-linux-gnu/gconv
 RUN cd /rootfs/usr/lib/x86_64-linux-gnu/gconv && \
-    find . -type f -not -name 'gconv-modules*' -not -name 'ISO8859-1.so' -not -name 'UTF-16.so' -not -name 'UTF-32.so' -not -name 'UNICODE.so' -delete
+    find . -type f \
+        -not -name 'gconv-modules*' \
+        -not -name 'ISO8859-1.so' \
+        -not -name 'UTF-16.so' \
+        -not -name 'UTF-32.so' \
+        -not -name 'UNICODE.so' \
+        -delete
 
 # 4. COPY CUSTOM LIBRARIES
 COPY --from=builder /usr/lib/libodbc.so.2 /rootfs/usr/lib/x86_64-linux-gnu/libodbc.so.2
