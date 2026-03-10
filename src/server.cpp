@@ -702,12 +702,13 @@ server::~server() noexcept = default;
 void server::start() {
     auto setup_start = std::chrono::steady_clock::now();
 
-    util::log::info("APIServer2 version {} starting on port {} with {} I/O threads and {} total worker threads.", 
-        g_version, m_port, m_io_threads, m_worker_threads);
+    util::log::info("APIServer2 version {} starting on {}:{}.", 
+        g_version, util::get_pod_name(), m_port);
+
+    util::log::info("Using {} I/O threads and {} total worker threads.", 
+        m_io_threads, m_worker_threads);
 
     const int worker_threads_per_io = std::max(1, m_worker_threads / m_io_threads);
-    util::log::info("Assigning {} worker threads per I/O worker.", worker_threads_per_io);
-
     std::vector<std::jthread> io_worker_threads;
     io_worker_threads.reserve(m_io_threads);
 

@@ -284,6 +284,7 @@ int main() {
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
         s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
         s.register_api(webapi_path{"/validate/totp"}, post, totp_validator, &validate_totp, true);
+        
         s.start();
 
         util::log::info("Application shutting down gracefully.");

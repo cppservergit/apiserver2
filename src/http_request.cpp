@@ -488,7 +488,7 @@ auto request_parser::parse_uri(std::string_view uri) -> std::optional<request_pa
 }
 
 auto request_parser::parse_headers(std::string_view headers_sv) -> std::optional<request_parse_error> {
-    constexpr size_t MAX_HEADERS = 100; // Industry standard maximum header limit
+    constexpr size_t MAX_HEADERS = 50; // maximum header limit
 
     for (const auto line_range : headers_sv | std::views::split("\r\n"sv)) {
         std::string_view header_line(line_range.begin(), line_range.end());
