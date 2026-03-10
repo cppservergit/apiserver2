@@ -81,14 +81,7 @@ namespace detail {
     public:
         // Updated constructor to accept both standard and MFA timeouts
         service(std::string secret, std::chrono::seconds timeout, std::chrono::seconds mfa_timeout);
-        // *** SONARCLOUD FIX ***
-        // Destructors should never throw. Added the noexcept specifier.
-        ~service() noexcept;
-        service(const service&) = delete;
-        service& operator=(const service&) = delete;
-        service(service&&) noexcept;
-        service& operator=(service&&) = delete;
-
+        
         [[nodiscard]] std::string sign(std::string_view data) const;
         [[nodiscard]] std::expected<std::string, error_code> get_token(const claims_map& claims) const;
         [[nodiscard]] std::expected<claims_map, error_code> is_valid(std::string_view token) const;

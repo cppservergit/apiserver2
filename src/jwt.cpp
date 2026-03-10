@@ -97,9 +97,6 @@ service::service(std::string secret, std::chrono::seconds timeout, std::chrono::
     if (m_secret.empty()) throw std::invalid_argument("jwt secret cannot be empty.");
 }
 
-service::~service() noexcept = default;
-service::service(service&&) noexcept = default;
-
 std::string service::sign(std::string_view data) const {
     const sha256_digest signature_raw = hmac_sha256(m_secret, data);
     return base64url_encode({(const char*)signature_raw.data(), signature_raw.size()});
