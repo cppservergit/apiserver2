@@ -81,11 +81,10 @@ class request_parser;
 class request {
 public:
     explicit request(request_parser&& parser, std::string_view remote_ip);
-    ~request();
     request(const request&) = delete;
     request& operator=(const request&) = delete;
-    request(request&&) noexcept;
-    request& operator=(request&&) noexcept;
+    request(request&&) noexcept = default;
+    request& operator=(request&&) noexcept = default;
 
     [[nodiscard]] auto get_method() const noexcept -> method;
     [[nodiscard]] auto get_method_str() const noexcept -> std::string_view;

@@ -613,10 +613,6 @@ request::request(request_parser&& parser, std::string_view remote_ip)
     }    
 }
 
-request::~request() noexcept = default;
-request::request(request&&) noexcept = default;
-request& request::operator=(request&&) noexcept = default;
-
 auto request::get_method() const noexcept -> method { return m_method; }
 
 auto request::get_method_str() const noexcept -> std::string_view {
