@@ -119,7 +119,7 @@ private:
         void setup_timerfd();
         void setup_eventfd();
         
-        void add_to_epoll(int fd, uint32_t events);
+        void add_to_epoll(int fd, uint32_t events) const;
         void remove_from_epoll(int fd) const;
         void modify_epoll(int fd, uint32_t events);
 

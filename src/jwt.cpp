@@ -26,7 +26,7 @@ namespace { // Anonymous namespace for private helpers
 
     std::string base64url_encode(std::string_view data) {
         std::string buffer( ((data.length() + 2) / 3) * 4, '\0');
-        int len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(buffer.data()), (const unsigned char*)data.data(), data.length());
+        int len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(buffer.data()), (const unsigned char*)data.data(), static_cast<int>(data.length()));
         buffer.resize(len);
         for (char& c : buffer) {
             if (c == '+') c = '-';
@@ -44,7 +44,7 @@ namespace { // Anonymous namespace for private helpers
         }
         while (b64_str.length() % 4) b64_str += '=';
         
-        auto bio = std::unique_ptr<BIO, decltype(&BIO_free_all)>(BIO_new_mem_buf(b64_str.data(), b64_str.length()), &BIO_free_all);
+        auto bio = std::unique_ptr<BIO, decltype(&BIO_free_all)>(BIO_new_mem_buf(b64_str.data(), static_cast<int>(b64_str.length())), &BIO_free_all);
         if (!bio) return std::unexpected(error_code::invalid_format);
         
         auto b64 = std::unique_ptr<BIO, decltype(&BIO_free)>(BIO_new(BIO_f_base64()), &BIO_free);
@@ -52,7 +52,7 @@ namespace { // Anonymous namespace for private helpers
         bio.reset(BIO_push(b64.release(), bio.release()));
 
         std::string decoded_str(b64_str.length(), '\0');
-        int decoded_len = BIO_read(bio.get(), decoded_str.data(), decoded_str.length());
+        int decoded_len = BIO_read(bio.get(), decoded_str.data(), static_cast<int>(decoded_str.length()));
         if (decoded_len < 0) return std::unexpected(error_code::invalid_format);
         decoded_str.resize(decoded_len);
         return decoded_str;
@@ -61,7 +61,7 @@ namespace { // Anonymous namespace for private helpers
     sha256_digest hmac_sha256(std::string_view secret, std::string_view data) {
         sha256_digest digest;
         unsigned int hash_len = 0;
-        HMAC(EVP_sha256(), secret.data(), secret.length(), (const unsigned char*)data.data(), data.length(), digest.data(), &hash_len);
+        HMAC(EVP_sha256(), secret.data(), static_cast<int>(secret.length()), (const unsigned char*)data.data(), static_cast<int>(data.length()), digest.data(), &hash_len);
         assert(hash_len == digest.size());
         return digest;
     }

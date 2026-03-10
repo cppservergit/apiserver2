@@ -126,7 +126,7 @@ void server::io_worker::run() {
     std::vector<epoll_event> events(MAX_EVENTS);
 
     while (m_running) {
-        const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), -1);
+        const int num_events = epoll_wait(m_epoll_fd, events.data(), static_cast<int>(events.size()), -1);
         if (num_events == -1) {
             if (errno == EINTR) continue;
             util::log::error("epoll_wait failed in worker {}: {}", std::this_thread::get_id(), util::str_error_cpp(errno));
@@ -214,7 +214,7 @@ void server::io_worker::drain_pending_responses() {
     while (m_thread_pool->get_unfinished_tasks() > 0 || m_response_queue->size() > 0) {
         process_response_queue();
         
-        const int num_events = epoll_wait(m_epoll_fd, events.data(), events.size(), 10);
+        const int num_events = epoll_wait(m_epoll_fd, events.data(), static_cast<int>(events.size()), 10);
         
         if (num_events == -1) {
             if (errno == EINTR) continue;
@@ -395,7 +395,7 @@ void server::io_worker::setup_listening_socket() {
     add_to_epoll(m_listening_fd, EPOLLIN);
 }
 
-void server::io_worker::add_to_epoll(int fd, uint32_t events) {
+void server::io_worker::add_to_epoll(int fd, uint32_t events) const {
     epoll_event event{};
     event.events = events | EPOLLET | EPOLLRDHUP;
     event.data.fd = fd;
@@ -680,7 +680,7 @@ bool server::io_worker::validate_bearer_token(const http::request& req, std::str
 //         server Implementation
 // ===================================================================
 server::server() {
-    m_port = env::get<int>("PORT", 8080);
+    m_port = static_cast<uint16_t>(env::get<int>("PORT", 8080));
     m_io_threads = env::get<int>("IO_THREADS", std::thread::hardware_concurrency());
     m_worker_threads = env::get<int>("POOL_SIZE", 16);
     m_queue_capacity = env::get<size_t>("QUEUE_CAPACITY", 1000uz);

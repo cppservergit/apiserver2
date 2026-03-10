@@ -46,7 +46,7 @@ std::vector<std::string> StmtHandle::get_column_names(SQLHSTMT stmt_handle, SQLS
     for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
         std::vector<SQLCHAR> col_name_buffer(256);
         SQLSMALLINT name_len = 0;
-        check_odbc_error(SQLDescribeCol(stmt_handle, i, col_name_buffer.data(), col_name_buffer.size(), &name_len, nullptr, nullptr, nullptr, nullptr),
+        check_odbc_error(SQLDescribeCol(stmt_handle, i, col_name_buffer.data(), static_cast<SQLSMALLINT>(col_name_buffer.size()), &name_len, nullptr, nullptr, nullptr, nullptr),
                          stmt_handle, SQL_HANDLE_STMT, "SQLDescribeCol");
         col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
     }
@@ -118,7 +118,7 @@ void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_ty
     std::string first_sqlstate;
 
     // Get the first diagnostic record to identify the primary error
-    if (SQLGetDiagRec(handle_type, handle, 1, sql_state.data(), &native_error, message_text.data(), message_text.size(), &text_length) == SQL_SUCCESS) {
+    if (SQLGetDiagRec(handle_type, handle, 1, sql_state.data(), &native_error, message_text.data(), static_cast<SQLSMALLINT>(message_text.size()), &text_length) == SQL_SUCCESS) {
         first_sqlstate = reinterpret_cast<char*>(sql_state.data());
         full_error_msg = std::format("[SQLState: {}] [Native Error: {}] {}",
                                      first_sqlstate,

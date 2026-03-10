@@ -101,17 +101,17 @@ inline auto today() {
     }
     unique_bio bio_chain(BIO_push(b64.release(), source));
 
-
-    // The decoded size is at most 3/4 of the input size.
+    // Decode in chunks to handle large inputs properly.
     std::string decoded_data;
-    decoded_data.resize(data.size());
-
-    int decoded_len = BIO_read(bio_chain.get(), decoded_data.data(), decoded_data.size());
-    if (decoded_len < 0) {
+    std::array<char, 1024> buffer{};
+    int len;
+    while ((len = BIO_read(bio_chain.get(), buffer.data(), buffer.size())) > 0) {
+        decoded_data.append(buffer.data(), len);
+    }
+    if (len < 0) {
         return ""; // Decoding error
     }
 
-    decoded_data.resize(decoded_len);
     return decoded_data;
 }
 
@@ -138,7 +138,7 @@ inline auto today() {
         return std::string(hostname_buffer.begin(), end);
 
     } catch (const std::exception& e) {
-        return "hostname_lookup_exception";
+        return std::format("hostname_lookup_exception: {}", e.what());
     }
 }
 
@@ -156,7 +156,7 @@ inline auto today() {
             std::error_code ec(error, std::system_category());
             return ec.message();
         } catch (const std::exception& e) {
-            return "error_message_lookup_failed";
+            return std::format("error_message_lookup_failed: {}", e.what());
         }
     }
 
