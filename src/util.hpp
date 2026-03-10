@@ -173,7 +173,7 @@ inline auto today() {
         std::error_code ec(err_num, std::system_category());
         return ec.message();
     } catch (const std::exception& e) {
-        return "error_message_lookup_failed";
+        return std::format("error_message_lookup_failed: {}", e.what());
     }
 }
 
@@ -198,7 +198,7 @@ inline auto today() {
         }
     } catch (const std::exception& e) {
         // FIX: Explicitly return from the catch block to satisfy SonarCloud.
-        return "";
+        return std::format("get_peer_ip_ipv4_exception: {}", e.what());
     }
     return "";
 }
@@ -267,7 +267,7 @@ namespace detail {
                     return value; // Value is typically in KB
                 }
             }
-        } catch (const std::exception& e) {
+        } catch (/* NOSONAR */ const std::exception& e) {
             // FIX: Explicitly return from the catch block to satisfy SonarCloud.
             return 0;
         }
