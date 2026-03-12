@@ -233,10 +233,7 @@ void get_remote_customer(const http::request& req, http::response& res) {
 
 // handler that calls sp_customers_like with optional filter parameter
 void get_customers(const http::request& req, http::response& res) {
-    auto filter_opt = req.get_optional_param<std::string>("filter");
-    // if the SP treats empty string same as no filter, just pass empty string
-    const std::string filter = filter_opt.value_or("");
-
+    auto filter = req.get_optional_param<std::string>("filter");
     const auto json_result = sql::get("DB1", "{CALL sp_customers_like(?)}", filter);
     res.set_body(ok, json_result.value_or("[]"));
 }
