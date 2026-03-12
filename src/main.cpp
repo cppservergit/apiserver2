@@ -59,6 +59,14 @@ const validator upload_validator {
     rule<std::string>{"title", requirement::required}
 };
 
+// validator for /customers endpoint: filter is optional, max 10 chars
+const validator customers_validator {
+    rule<std::string>{"filter", requirement::optional,
+        [](std::string_view s) { return s.size() <= 10; },
+        "Filter must be at most 10 characters."
+    }
+};
+
 // --- User-Defined API Handlers ---
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
     res.set_body(ok, R"({"message":"Hello, World!"})");
@@ -223,6 +231,16 @@ void get_remote_customer(const http::request& req, http::response& res) {
     res.set_body(ok, customer_response.body);
 }
 
+// handler that calls sp_customers_like with optional filter parameter
+void get_customers(const http::request& req, http::response& res) {
+    auto filter_opt = req.get_optional_param<std::string>("filter");
+    // if the SP treats empty string same as no filter, just pass empty string
+    const std::string filter = filter_opt.value_or("");
+
+    const auto json_result = sql::get("DB1", "{CALL sp_customers_like(?)}", filter);
+    res.set_body(ok, json_result.value_or("[]"));
+}
+
 void validate_totp(const http::request& req, http::response& res) {
     auto claims_result = jwt::get_claims(req.get_bearer_token().value_or(""));
     const auto& claims = *claims_result;
@@ -284,6 +302,7 @@ int main() {
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
         s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
         s.register_api(webapi_path{"/validate/totp"}, post, totp_validator, &validate_totp, true);
+        s.register_api(webapi_path{"/customers"}, post, customers_validator, &get_customers, true);
         
         s.start();
 

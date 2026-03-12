@@ -5,7 +5,7 @@ CONCURRENCY="${1:-10}"
 BASE_URL="${2:-http://localhost:8080}"
 API_PREFIX="${3:-}"
 
-TEST_SCRIPT="./test-keepalive.sh"
+TEST_SCRIPT="$(dirname "$0")/test-keepalive.sh"
 
 # Ensure the test script exists and is executable
 if [[ ! -x "$TEST_SCRIPT" ]]; then

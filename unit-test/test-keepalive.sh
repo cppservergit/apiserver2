@@ -70,6 +70,11 @@ endpoints=(
   "POST $API_PREFIX/sales {\"start_date\":\"1994-01-01\",\"end_date\":\"1994-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1995-01-01\",\"end_date\":\"1995-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1996-01-01\",\"end_date\":\"1996-12-31\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"a\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"f\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"s\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"w\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"\"}"  
   "POST $API_PREFIX/rcustomer {\"id\":\"anatr\"}"
 )
 
