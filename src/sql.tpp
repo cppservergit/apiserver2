@@ -38,13 +38,10 @@ auto convert_for_binding(T&& value) {
         return std::forward<T>(value);
     } 
     else if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
-        // This handles const char*, std::string, and std::string_view
         return std::string(std::forward<T>(value)); // Create a std::string copy
     } else if constexpr (std::is_same_v<DecayedT, size_t>) {
-        // Convert size_t to long long, as the binding logic handles long long (as BIGINT).
         return static_cast<long long>(value);
     } else if constexpr (std::is_same_v<DecayedT, std::chrono::year_month_day>) {
-        // Convert year_month_day to "YYYY-MM-DD" string format for the database.
         return std::format("{:%F}", value);
     }
     else {
@@ -64,8 +61,27 @@ auto make_binding_tuple(Args&&... args) {
 template<typename TupleType>
 void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array<SQLLEN, std::tuple_size_v<TupleType>>& indicators) {
 
-    auto bind_one = [&stmt, &indicators](int index, const auto& param_value) {
-        using T = std::decay_t<decltype(param_value)>;
+    auto bind_concrete_value = [&stmt, &indicators]<typename T>(int index, const T& val) {
+        using V = std::decay_t<T>;
+        if constexpr (std::is_same_v<V, std::string>) {
+            indicators[index - 1] = SQL_NTS; 
+            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
+                                        val.length(), 0, (SQLPOINTER)val.c_str(), 0, &indicators[index - 1]);
+            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
+        } else if constexpr (std::is_same_v<V, int>) {
+            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&val, 0, nullptr);
+            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
+        } else if constexpr (std::is_same_v<V, long> || std::is_same_v<V, long long>) {
+            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&val, 0, nullptr);
+            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
+        } else if constexpr (std::is_same_v<V, double>) {
+            SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&val, 0, nullptr);
+            check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
+        }
+    };
+
+    auto bind_one = [&stmt, &indicators, &bind_concrete_value]<typename P>(int index, const P& param_value) {
+        using T = std::decay_t<P>;
         
         if constexpr (is_optional_v<T>) {
              if (!param_value.has_value()) {
@@ -73,50 +89,45 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
                 SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 1, 0, nullptr, 0, &indicators[index - 1]);
                 check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (NULL)");
              } else {
-                 auto converted = convert_for_binding(param_value.value());
-                 auto bind_final = [&](const auto& final_val) {
-                     using V = std::decay_t<decltype(final_val)>;
-                     if constexpr (std::is_same_v<V, std::string>) {
-                        indicators[index - 1] = SQL_NTS; 
-                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
-                                                    final_val.length(), 0, (SQLPOINTER)final_val.c_str(), 0, &indicators[index - 1]);
-                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
-                    } else if constexpr (std::is_same_v<V, int>) {
-                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
-                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
-                    } else if constexpr (std::is_same_v<V, long> || std::is_same_v<V, long long>) {
-                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
-                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
-                    } else if constexpr (std::is_same_v<V, double>) {
-                        SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&final_val, 0, nullptr);
-                        check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
-                    }
-                 };
-                 bind_final(converted);
+                 bind_concrete_value(index, convert_for_binding(param_value.value()));
              }
         } else {
-            if constexpr (std::is_same_v<T, std::string>) {
-                indicators[index - 1] = SQL_NTS; 
-                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 
-                                               param_value.length(), 0, (SQLPOINTER)param_value.c_str(), 0, &indicators[index - 1]);
-                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (string)");
-            } else if constexpr (std::is_same_v<T, int>) {
-                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
-                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (int)");
-            } else if constexpr (std::is_same_v<T, long> || std::is_same_v<T, long long>) {
-                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
-                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (long)");
-            } else if constexpr (std::is_same_v<T, double>) {
-                SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0, (SQLPOINTER)&param_value, 0, nullptr);
-                check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (double)");
-            }
+             bind_concrete_value(index, param_value);
         }
     };
 
     int param_index = 1;
-    std::apply([&](const auto&... param) {
+    std::apply([&]<typename... ArgsType>(const ArgsType&... param) {
         (bind_one(param_index++, param), ...);
     }, params_tuple);
+}
+
+/**
+ * @brief Helper to fetch chunked data for a single column and append to a string.
+ */
+inline void fetch_column_chunks(StmtHandle& stmt, std::string& result_string) {
+    constexpr size_t buffer_size = 8192;
+    std::array<char, buffer_size> buffer;
+    SQLLEN indicator;
+    SQLRETURN ret;
+
+    bool has_more_chunks = true;
+    while (has_more_chunks) {
+        ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+        if (ret == SQL_NO_DATA) {
+            has_more_chunks = false; // Finished fetching all chunks for this column
+        } else {
+            check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLGetData");
+            
+            if (indicator > 0 && indicator != SQL_NULL_DATA) {
+                result_string.append(buffer.data(), static_cast<size_t>(indicator));
+            }
+            
+            // If SQLGetData returns SQL_SUCCESS_WITH_INFO, it means the buffer was too small
+            // and there is more data to fetch. The loop will continue. Otherwise, we break.
+            has_more_chunks = (ret == SQL_SUCCESS_WITH_INFO);
+        }
+    }
 }
 
 /**
@@ -126,9 +137,6 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
  */
 [[nodiscard]] inline std::optional<std::string> fetch_json_result(StmtHandle& stmt) {
     std::string result_string;
-    constexpr size_t buffer_size = 4096;
-    std::vector<char> buffer(buffer_size);
-    SQLLEN indicator;
     SQLRETURN ret;
     bool has_data = false;
 
@@ -137,25 +145,8 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
         check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLFetch");
         has_data = true;
 
-        // Inner loop to get all data for the first column of the current row,
-        // which may be sent in chunks.
-        while (true) {
-            ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-            if (ret == SQL_NO_DATA) {
-                break; // Finished fetching all chunks for this column
-            }
-            check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLGetData");
-            
-            if (indicator > 0 && indicator != SQL_NULL_DATA) {
-                result_string.append(buffer.data(), static_cast<size_t>(indicator));
-            }
-            
-            // If SQLGetData returns SQL_SUCCESS_WITH_INFO, it means the buffer was too small
-            // and there is more data to fetch. The loop will continue. Otherwise, we break.
-            if (ret != SQL_SUCCESS_WITH_INFO) {
-                break;
-            }
-        }
+        // Fetch all chunks for the first column of the current row
+        fetch_column_chunks(stmt, result_string);
     }
 
     return has_data ? std::optional{result_string} : std::nullopt;
@@ -309,15 +300,15 @@ namespace detail {
         builder.push_back('"');
         for (char c : sv) {
             switch (c) {
-                case '"':  builder.append("\\\""); break;
-                case '\\': builder.append("\\\\"); break;
+                case '"':  builder.append(R"(\")"); break;
+                case '\\': builder.append(R"(\\)"); break;
                 case '\b': builder.append("\\b"); break;
                 case '\f': builder.append("\\f"); break;
                 case '\n': builder.append("\\n"); break;
                 case '\r': builder.append("\\r"); break;
                 case '\t': builder.append("\\t"); break;
                 default:
-                    if ('\x00' <= c && c <= '\x1f') {
+                    if ('\x{00}' <= c && c <= '\x{1f}') {
                         // Append control characters as unicode escapes, though this is rare.
                         builder.append(std::format("\\u{:04x}", static_cast<unsigned char>(c)));
                     } else {
@@ -329,6 +320,77 @@ namespace detail {
         builder.push_back('"');
     }
 
+    // --- JSON Building Helpers ---
+
+    struct ColumnMeta {
+        std::string name;
+        SQLSMALLINT type;
+    };
+
+    inline std::vector<ColumnMeta> get_result_metadata(StmtHandle& stmt, SQLSMALLINT num_cols) {
+        std::vector<ColumnMeta> meta;
+        meta.reserve(num_cols);
+        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+            std::array<SQLCHAR, 256> col_name_buffer;
+            SQLSMALLINT name_len = 0;
+            SQLSMALLINT data_type = 0;
+            check_odbc_error(SQLDescribeCol(stmt.get(), i, col_name_buffer.data(), static_cast<SQLSMALLINT>(col_name_buffer.size()), &name_len, &data_type, nullptr, nullptr, nullptr),
+                            stmt.get(), SQL_HANDLE_STMT, "SQLDescribeCol");
+            meta.push_back({std::string(col_name_buffer.begin(), col_name_buffer.begin() + name_len), data_type});
+        }
+        return meta;
+    }
+
+    inline void append_json_value(std::string& builder, SQLSMALLINT col_type, SQLLEN indicator, const char* data) {
+        if (indicator == SQL_NULL_DATA) {
+            builder.append("null");
+            return;
+        }
+        
+        std::string_view value_sv(data);
+        switch (col_type) {
+            case SQL_BIT:
+            case SQL_TINYINT:
+            case SQL_SMALLINT:
+            case SQL_INTEGER:
+            case SQL_BIGINT:
+            case SQL_REAL:
+            case SQL_FLOAT:
+            case SQL_DOUBLE:
+            case SQL_DECIMAL:
+            case SQL_NUMERIC:
+                builder.append(value_sv); // Numeric types are not quoted
+                break;
+            default:
+                // String, date, time, and other types are quoted
+                append_escaped_json_string(builder, value_sv);
+                break;
+        }
+    }
+
+    inline void append_json_row(std::string& json_builder, StmtHandle& stmt, const std::vector<ColumnMeta>& meta) {
+        json_builder.push_back('{');
+        SQLUSMALLINT num_cols = static_cast<SQLUSMALLINT>(meta.size());
+        
+        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+            SQLLEN indicator;
+            std::array<char, 8192> buffer;
+            SQLGetData(stmt.get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+            
+            // Append key: "column_name":
+            append_escaped_json_string(json_builder, meta[i - 1].name);
+            json_builder.push_back(':');
+
+            // Append value
+            append_json_value(json_builder, meta[i - 1].type, indicator, buffer.data());
+
+            if (i < num_cols) {
+                json_builder.push_back(',');
+            }
+        }
+        json_builder.push_back('}');
+    }
+
     [[nodiscard]] inline std::optional<std::string> fetch_and_build_json(StmtHandle& stmt) {
         SQLSMALLINT num_cols = 0;
         check_odbc_error(SQLNumResultCols(stmt.get(), &num_cols), stmt.get(), SQL_HANDLE_STMT, "SQLNumResultCols");
@@ -337,24 +399,10 @@ namespace detail {
             return std::optional{std::string("[]")};
         }
 
-        // 1. Get column metadata once
-        std::vector<std::string> col_names;
-        std::vector<SQLSMALLINT> col_types;
-        col_names.reserve(num_cols);
-        col_types.reserve(num_cols);
+        auto meta = get_result_metadata(stmt, num_cols);
 
-        for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
-            std::vector<SQLCHAR> col_name_buffer(256);
-            SQLSMALLINT name_len = 0, data_type = 0;
-            check_odbc_error(SQLDescribeCol(stmt.get(), i, col_name_buffer.data(), col_name_buffer.size(), &name_len, &data_type, nullptr, nullptr, nullptr),
-                            stmt.get(), SQL_HANDLE_STMT, "SQLDescribeCol");
-            col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
-            col_types.push_back(data_type);
-        }
-
-        // 2. Build the JSON string
         std::string json_builder;
-        json_builder.reserve(4096);
+        json_builder.reserve(8192);
         json_builder.push_back('[');
 
         bool first_row = true;
@@ -363,48 +411,7 @@ namespace detail {
                 json_builder.push_back(',');
             }
             first_row = false;
-            
-            json_builder.push_back('{');
-
-            for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
-                SQLLEN indicator;
-                std::vector<char> buffer(4096);
-                SQLGetData(stmt.get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-                
-                // Append key: "column_name":
-                append_escaped_json_string(json_builder, col_names[i - 1]);
-                json_builder.push_back(':');
-
-                if (indicator == SQL_NULL_DATA) {
-                    json_builder.append("null");
-                } else {
-                    std::string_view value_sv(buffer.data());
-                    // Check the SQL data type to decide on quoting
-                    switch (col_types[i - 1]) {
-                        case SQL_BIT:
-                        case SQL_TINYINT:
-                        case SQL_SMALLINT:
-                        case SQL_INTEGER:
-                        case SQL_BIGINT:
-                        case SQL_REAL:
-                        case SQL_FLOAT:
-                        case SQL_DOUBLE:
-                        case SQL_DECIMAL:
-                        case SQL_NUMERIC:
-                            json_builder.append(value_sv); // Numeric types are not quoted
-                            break;
-                        default:
-                            // String, date, time, and other types are quoted
-                            append_escaped_json_string(json_builder, value_sv);
-                            break;
-                    }
-                }
-
-                if (i < num_cols) {
-                    json_builder.push_back(',');
-                }
-            }
-            json_builder.push_back('}');
+            append_json_row(json_builder, stmt, meta);
         }
 
         json_builder.push_back(']');
