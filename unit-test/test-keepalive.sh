@@ -51,6 +51,8 @@ fi
 # validate TOTP with stage-1 token and get stage-2 token
 #TOKEN2=$(curl --json '{"totp":"'$TOTP'"}' "${BASE_URL}${API_PREFIX}/validate/totp" -ks -H "Authorization: Bearer $TOKEN1" | jq -r '.id_token')
 
+if [[ -v TOKEN2 && "$TOKEN2" != "null" ]]; then TOKEN="$TOKEN2"; else TOKEN="$TOKEN1"; fi
+
 endpoints=(
   "GET $API_PREFIX/shippers"
   "GET $API_PREFIX/products"
@@ -68,6 +70,11 @@ endpoints=(
   "POST $API_PREFIX/sales {\"start_date\":\"1994-01-01\",\"end_date\":\"1994-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1995-01-01\",\"end_date\":\"1995-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1996-01-01\",\"end_date\":\"1996-12-31\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"a\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"f\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"s\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"w\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"\"}"  
   "POST $API_PREFIX/rcustomer {\"id\":\"anatr\"}"
 )
 
@@ -90,12 +97,12 @@ for entry in "${endpoints[@]}"; do
   curl_args+=("-k" "-s" "-w" "%{http_code}\n" "-o" "$body_file")
 
   if [[ "$method" == "POST" ]]; then
-    curl_args+=("-X" "POST" "-H" "Content-Type: application/json" "-H" "Authorization: Bearer $TOKEN1" "-d" "$rest" "${BASE_URL}${uri}")
+    curl_args+=("-X" "POST" "-H" "Content-Type: application/json" "-H" "Authorization: Bearer $TOKEN" "-d" "$rest" "${BASE_URL}${uri}")
   else
     if [[ "$uri" == "$API_PREFIX/version" || "$uri" == "$API_PREFIX/metrics" || "$uri" == "$API_PREFIX/metricsp" ]]; then
       curl_args+=("-X" "GET" "-H" "Authorization: Bearer $API_KEY" "${BASE_URL}${uri}")
     else
-      curl_args+=("-X" "GET" "-H" "Authorization: Bearer $TOKEN1" "${BASE_URL}${uri}")
+      curl_args+=("-X" "GET" "-H" "Authorization: Bearer $TOKEN" "${BASE_URL}${uri}")
     fi
   fi
   

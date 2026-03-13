@@ -51,6 +51,8 @@ fi
 # validate TOTP with stage-1 token and get stage-2 token
 #TOKEN2=$(curl --json '{"totp":"'$TOTP'"}' "${BASE_URL}${API_PREFIX}/validate/totp" -ks -H "Authorization: Bearer $TOKEN1" | jq -r '.id_token')
 
+if [[ -v TOKEN2 && "$TOKEN2" != "null" ]]; then TOKEN="$TOKEN2"; else TOKEN="$TOKEN1"; fi
+
 endpoints=(
   "GET $API_PREFIX/shippers"
   "GET $API_PREFIX/products"
@@ -68,6 +70,11 @@ endpoints=(
   "POST $API_PREFIX/sales {\"start_date\":\"1994-01-01\",\"end_date\":\"1994-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1995-01-01\",\"end_date\":\"1995-12-31\"}"
   "POST $API_PREFIX/sales {\"start_date\":\"1996-01-01\",\"end_date\":\"1996-12-31\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"a\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"f\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"s\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"w\"}"
+  "POST $API_PREFIX/customers {\"filter\":\"\"}"
   "POST $API_PREFIX/rcustomer {\"id\":\"anatr\"}"
 )
 
@@ -78,7 +85,7 @@ for entry in "${endpoints[@]}"; do
   if [[ "$method" == "POST" ]]; then
     payload="$rest"
     response=$(curl -k -s -w "%{http_code}" -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN1" \
+      -H "Authorization: Bearer $TOKEN" \
       -d "$payload" "${BASE_URL}${uri}")
   else
     # send API_KEY for diagnostic endpoints
@@ -86,7 +93,7 @@ for entry in "${endpoints[@]}"; do
       response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $API_KEY" \
       "${BASE_URL}${uri}")
     else
-      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN1" \
+      response=$(curl -k -s -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
       "${BASE_URL}${uri}")
     fi
   fi

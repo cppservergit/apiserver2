@@ -9,10 +9,13 @@ CXXFLAGS_DEBUG = -g -DENABLE_DEBUG_LOGS -DUSE_STACKTRACE
 CXXFLAGS_RELEASE = -O2 -DLOG_USE_JSON -DNDEBUG -march=x86-64-v3 -flto=4
 # FIX: Add new perflog build flags
 CXXFLAGS_PERFLOG = -O2 -march=native -DNDEBUG -flto=4 -DENABLE_PERF_LOGS
+# NEW: Coverage flags
+CXXFLAGS_COVERAGE = -g -O0 --coverage
 CXXFLAGS_SANITIZER_ADDRESS = -g -fsanitize=address -fno-omit-frame-pointer -O1
 CXXFLAGS_SANITIZER_THREAD = -g -fsanitize=thread
 CXXFLAGS_SANITIZER_LEAK = -g -fsanitize=address -fsanitize=leak -fno-omit-frame-pointer -O0
 
+LDFLAGS_COVERAGE = --coverage
 LDFLAGS_SANITIZER_ADDRESS = -fsanitize=address
 LDFLAGS_SANITIZER_THREAD = -fsanitize=thread
 LDFLAGS_SANITIZER_LEAK = -fsanitize=leak
@@ -26,6 +29,8 @@ TARGET_SERVER_RELEASE = apiserver
 TARGET_SERVER_DEBUG = apiserver_debug
 # FIX: Add new perflog target executable
 TARGET_SERVER_PERFLOG = apiserver_perflog
+# NEW: Coverage target
+TARGET_SERVER_COVERAGE = apiserver_coverage
 TARGET_SERVER_SANITIZER_ADDRESS = apiserver_sanitizer_address
 TARGET_SERVER_SANITIZER_THREAD = apiserver_sanitizer_thread
 TARGET_SERVER_SANITIZER_LEAK = apiserver_sanitizer_leak
@@ -46,8 +51,8 @@ LIBS_DEBUG = $(LIBS_COMMON) -lstdc++exp -lbacktrace
 
 # --- User-Facing Commands ---
 .PHONY: all release debug server run run_server clean help \
-		apiserver apiserver_debug apiserver_perflog apiserver_sanitize_address apiserver_sanitize_thread apiserver_sanitize_leak \
-		run_apiserver_debug run_apiserver_perflog run_apiserver_sanitizer_address run_apiserver_sanitizer_thread run_apiserver_sanitizer_leak
+		apiserver apiserver_debug apiserver_perflog apiserver_coverage apiserver_sanitize_address apiserver_sanitize_thread apiserver_sanitize_leak \
+		run_apiserver_debug run_apiserver_perflog run_server_coverage run_apiserver_sanitizer_address run_apiserver_sanitizer_thread run_apiserver_sanitizer_leak
 
 all: release
 
@@ -71,6 +76,11 @@ server_debug:
 server_perflog:
 	@clear
 	@$(MAKE) --no-print-directory $(TARGET_SERVER_PERFLOG)
+
+# NEW: User-facing coverage target
+server_coverage:
+	@clear
+	@$(MAKE) --no-print-directory $(TARGET_SERVER_COVERAGE)
 
 server_sanitize_address:
 	@clear
@@ -97,6 +107,10 @@ run_server_debug: server_debug
 run_server_perflog: server_perflog
 	./$(TARGET_SERVER_PERFLOG)
 
+# NEW: Run coverage server
+run_server_coverage: server_coverage
+	./$(TARGET_SERVER_COVERAGE)
+
 run_server_sanitizer_address: server_sanitize_address
 	./$(TARGET_SERVER_SANITIZER_ADDRESS)
 
@@ -118,6 +132,7 @@ help:
 	@echo "  server              Build the release server."
 	@echo "  server_debug        Build the debug server."
 	@echo "  server_perflog      Build the release server with performance logging."
+	@echo "  server_coverage     Build server with code coverage tracking (gcov)."
 	@echo "  server_sanitize_address Build server with AddressSanitizer."
 	@echo "  server_sanitize_thread Build server with ThreadSanitizer."
 	@echo "  server_sanitize_leak Build server with LeakSanitizer."
@@ -144,6 +159,11 @@ $(TARGET_SERVER_PERFLOG): $(call GET_OBJS,perflog,$(SERVER_SRCS)) $(call GET_OBJ
 	@echo "==> Stripping symbols..."
 	strip $@
 
+# NEW: Linking rule for coverage server
+$(TARGET_SERVER_COVERAGE): $(call GET_OBJS,coverage,$(SERVER_SRCS)) $(call GET_OBJS,coverage,$(COMMON_LIB_SRCS)) $(call GET_OBJS,coverage,$(SERVER_LIB_SRCS))
+	@echo "==> Linking coverage server: $@"
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_COVERAGE) -o $@ $^ $(LIBS_COMMON) $(LDFLAGS_COVERAGE)
+
 $(TARGET_SERVER_SANITIZER_ADDRESS): $(call GET_OBJS,sanitize_address,$(SERVER_SRCS)) $(call GET_OBJS,sanitize_address,$(COMMON_LIB_SRCS)) $(call GET_OBJS,sanitize_address,$(SERVER_LIB_SRCS))
 	@echo "==> Linking address sanitizer server: $@"
 	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_SANITIZER_ADDRESS) $(LDFLAGS_SANITIZER_ADDRESS) -o $@ $^ $(LIBS_COMMON)
@@ -169,6 +189,11 @@ $(OBJ_DIR)/debug/%.o: $(SRC_DIR)/%.cpp
 $(OBJ_DIR)/perflog/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_PERFLOG) -c $< -o $@
+
+# NEW: Compilation rule for coverage objects
+$(OBJ_DIR)/coverage/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS_BASE) $(CXXFLAGS_COVERAGE) -c $< -o $@
 
 $(OBJ_DIR)/sanitize_address/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(@D)

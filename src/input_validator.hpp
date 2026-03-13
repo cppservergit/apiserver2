@@ -11,6 +11,7 @@
 #include <tuple>
 #include <utility>
 #include <format>
+#include <type_traits> // Required for std::is_same_v
 
 namespace validation {
 
@@ -46,47 +47,21 @@ private:
     std::string m_details;
 };
 
-
-/// @brief A validation rule for a parameter of a specific type.
-/// @tparam T The expected type of the parameter.
+/// @brief A rule defining validation criteria for a single input parameter.
 template<typename T>
-class rule {
-public:
-    // Constructor for simple rules (e.g., just checking for presence).
-    explicit rule(std::string_view name_sv, requirement r)
-        : name(name_sv),
-          req(r),
-          predicate([](const T&){ return true; }), // Default "always pass" predicate
-          error_message("")
-    {}
-
-    // Constructor for rules with a custom validation predicate.
-    explicit rule(std::string_view name_sv, requirement r, std::function<bool(const T&)> p, std::string_view msg)
-        : name(name_sv),
-          req(r),
-          predicate(std::move(p)),
-          error_message(msg)
-    {}
-
-    // Public members for the validator to access.
+struct rule {
     std::string_view name;
-    requirement req;
-    std::function<bool(const T&)> predicate;
-    std::string_view error_message;
+    requirement req{requirement::required};
+    std::function<bool(const T&)> predicate{[](const T&) { return true; }};
+    std::string_view error_message{"Invalid parameter value"};
 };
 
-
-/// @class validator
-/// @brief A compile-time class to build and execute a set of validation rules.
+/// @brief A compile-time tuple-based validator for multiple HTTP request parameters.
 template<typename... Rules>
 class validator {
 public:
-    /// @brief Constructs a validator with a set of rules.
-    explicit constexpr validator(Rules... rules) : m_rulesTuple{std::move(rules)...} {}
+    explicit validator(Rules... rules) : m_rulesTuple(std::move(rules)...) {}
 
-    /// @brief Validates an HTTP request against all rules.
-    /// @param req The http::request object to validate.
-    /// @throws validation::validation_error on the first rule that fails.
     void validate(const http::request& req) const {
         std::apply(
             [&](const auto&... rule_pack) {
@@ -111,15 +86,24 @@ private:
         }
 
         const auto& maybe_value = *result;
-        if (!maybe_value.has_value()) {
+        
+        // FIX: Treat empty strings from form-data as conceptually "missing"
+        bool is_empty_string = false;
+        if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
+            if (maybe_value.has_value() && maybe_value->empty()) {
+                is_empty_string = true;
+            }
+        }
+
+        if (!maybe_value.has_value() || is_empty_string) {
             if (r.req == requirement::required) {
                 throw validation_error(
                     std::string(r.name),
                     validation_error::error_type::missing_required_param,
-                    "Required parameter is missing."
+                    "Required parameter is missing or empty."
                 );
             }
-            return;
+            return; // If it's optional and missing/empty, validation cleanly passes
         }
         
         if (!r.predicate(*maybe_value)) {
