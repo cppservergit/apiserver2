@@ -1,6 +1,7 @@
 #include "sql.hpp"
 #include <vector>
 #include <mutex>
+#include <array>
 
 namespace sql {
 
@@ -44,7 +45,7 @@ std::vector<std::string> StmtHandle::get_column_names(SQLHSTMT stmt_handle, SQLS
     std::vector<std::string> col_names;
     col_names.reserve(num_cols);
     for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
-        std::vector<SQLCHAR> col_name_buffer(256);
+        std::array<SQLCHAR, 256> col_name_buffer;
         SQLSMALLINT name_len = 0;
         check_odbc_error(SQLDescribeCol(stmt_handle, i, col_name_buffer.data(), static_cast<SQLSMALLINT>(col_name_buffer.size()), &name_len, nullptr, nullptr, nullptr, nullptr),
                          stmt_handle, SQL_HANDLE_STMT, "SQLDescribeCol");
@@ -64,7 +65,7 @@ row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, con
     row current_row;
     for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
         SQLLEN indicator;
-        std::vector<char> buffer(1024); // Buffer for column data
+        std::array<char, 1024> buffer; // Buffer for column data
                 
         if (SQLRETURN ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator); ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
             continue; // Skip column on error
@@ -110,9 +111,9 @@ void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_ty
         return;
     }
 
-    std::vector<SQLCHAR> sql_state(6);
+    std::array<SQLCHAR, 6> sql_state;
     SQLINTEGER native_error;
-    std::vector<SQLCHAR> message_text(SQL_MAX_MESSAGE_LENGTH);
+    std::array<SQLCHAR, SQL_MAX_MESSAGE_LENGTH> message_text;
     SQLSMALLINT text_length = 0;
     std::string full_error_msg;
     std::string first_sqlstate;
