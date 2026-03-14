@@ -2,23 +2,22 @@
 #include <vector>
 #include <mutex>
 #include <array>
+#include <algorithm> // Required for std::find_if
 
 namespace sql {
 
 template<typename T>
 T row::get_value(std::string_view col_name) const {
-    // FIX: Use "if with initializer" to scope the iterator `it` to the conditional.
-    if (auto it = m_data.find(col_name); it != m_data.end()) {
+    // FIX: Replaced unordered_map lookup with a flat vector linear search. 
+    // Bounding it with if-initializer maintains the exact same client contract.
+    if (auto it = std::ranges::find_if(m_data, 
+            [col_name](const auto& pair) { return pair.first == col_name; }); it != m_data.end()) {
         try {
-            // Now that we have a valid iterator, get the value and perform the cast.
-            const auto& value_any = it->second;
-            return std::any_cast<T>(value_any);
+            return std::any_cast<T>(it->second);
         } catch (const std::bad_any_cast&) {
-            // This catch block now only handles type casting errors.
             throw sql::error(std::format("Invalid type requested for column '{}'.", col_name));
         }
     } else {
-        // Manually throw an exception to mimic the behavior of .at() when the key is not found.
         throw sql::error(std::format("Column '{}' not found in result set.", col_name));
     }
 }
@@ -37,9 +36,6 @@ namespace detail {
 
 /**
  * @brief Retrieves all column names for the current result set.
- * @param stmt_handle The ODBC statement handle.
- * @param num_cols The number of columns in the result set.
- * @return A vector of column names.
  */
 std::vector<std::string> StmtHandle::get_column_names(SQLHSTMT stmt_handle, SQLSMALLINT num_cols) {
     std::vector<std::string> col_names;
@@ -49,34 +45,49 @@ std::vector<std::string> StmtHandle::get_column_names(SQLHSTMT stmt_handle, SQLS
         SQLSMALLINT name_len = 0;
         check_odbc_error(SQLDescribeCol(stmt_handle, i, col_name_buffer.data(), static_cast<SQLSMALLINT>(col_name_buffer.size()), &name_len, nullptr, nullptr, nullptr, nullptr),
                          stmt_handle, SQL_HANDLE_STMT, "SQLDescribeCol");
-        col_names.emplace_back(reinterpret_cast<char*>(col_name_buffer.data()), name_len);
+        
+        // FIX: Iterator construction removes unsafe reinterpret_cast
+        col_names.emplace_back(col_name_buffer.begin(), col_name_buffer.begin() + name_len);
     }
     return col_names;
 }
 
 /**
  * @brief Fetches the data for a single row from the result set.
- * @param stmt_handle The ODBC statement handle.
- * @param num_cols The number of columns in the row.
- * @param col_names The names of the columns.
- * @return A sql::row object containing the row data.
  */
 row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, const std::vector<std::string>& col_names) {
     row current_row;
+    current_row.m_data.reserve(num_cols); // Prevent reallocations
+
     for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+        std::string cell_data;
         SQLLEN indicator;
-        std::array<char, 1024> buffer; // Buffer for column data
+        SQLRETURN ret;
+        bool has_more_chunks = true;
+
+        // FIX: C++23 resize_and_overwrite robustly chunks large texts without 
+        // silently truncating at 1024 characters like the old version did.
+        while (has_more_chunks) {
+            size_t current_size = cell_data.size();
+            cell_data.resize_and_overwrite(current_size + 4096, [/* NOSONAR */ &](char* buf, size_t /* capacity */) {
+                ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buf + current_size, 4096, &indicator);
                 
-        if (SQLRETURN ret = SQLGetData(stmt_handle, i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator); ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-            continue; // Skip column on error
+                if (ret == SQL_NO_DATA) return current_size;
+                
+                if (indicator > 0 && indicator != SQL_NULL_DATA) {
+                    has_more_chunks = (ret == SQL_SUCCESS_WITH_INFO);
+                    return current_size + static_cast<size_t>(indicator);
+                }
+                
+                has_more_chunks = false;
+                return current_size;
+            });
         }
 
         if (indicator == SQL_NULL_DATA) {
-            current_row.m_data[col_names[i - 1]] = std::any{}; // Store null as empty std::any
+            current_row.m_data.emplace_back(col_names[i - 1], std::any{});
         } else {
-            // This simple implementation treats all data as strings for now.
-            // A more advanced version could check column types and convert.
-            current_row.m_data[col_names[i - 1]] = std::string(buffer.data());
+            current_row.m_data.emplace_back(col_names[i - 1], std::move(cell_data));
         }
     }
     return current_row;
@@ -85,18 +96,15 @@ row StmtHandle::fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, con
 resultset StmtHandle::fetch_all() const {
     resultset rs;
     
-    // Get number of columns
     SQLSMALLINT num_cols = 0;
     check_odbc_error(SQLNumResultCols(get(), &num_cols), get(), SQL_HANDLE_STMT, "SQLNumResultCols");
 
     if (num_cols == 0) {
-        return rs; // No columns, return empty result set
+        return rs; 
     }
 
-    // Get column names using the helper function
     const auto col_names = StmtHandle::get_column_names(get(), num_cols);
 
-    // Fetch rows using the helper function
     while (SQLFetch(get()) == SQL_SUCCESS) {
         rs.m_rows.push_back(StmtHandle::fetch_single_row(get(), num_cols, col_names));
     }
@@ -120,18 +128,20 @@ void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_ty
 
     // Get the first diagnostic record to identify the primary error
     if (SQLGetDiagRec(handle_type, handle, 1, sql_state.data(), &native_error, message_text.data(), static_cast<SQLSMALLINT>(message_text.size()), &text_length) == SQL_SUCCESS) {
-        first_sqlstate = reinterpret_cast<char*>(sql_state.data());
+        // FIX: Replaced reinterpret_cast with strict iterator string construction
+        first_sqlstate = std::string(sql_state.begin(), sql_state.begin() + 5); 
+        std::string msg(message_text.begin(), message_text.begin() + text_length);
+
         full_error_msg = std::format("[SQLState: {}] [Native Error: {}] {}",
                                      first_sqlstate,
                                      native_error,
-                                     reinterpret_cast<char*>(message_text.data()));
+                                     msg);
     }
 
     if (retcode == SQL_NO_DATA) {
         return;
     }
 
-    // Throw the enhanced exception, providing both the message and the state
     throw sql::error(std::format("ODBC Error on '{}': {}", context, full_error_msg), first_sqlstate);
 }
 
@@ -168,14 +178,12 @@ StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {
     if (auto it = m_statement_cache.find(sql_query); it != m_statement_cache.end()) {
         return *it->second;
     }
-    // Statement not in cache, create and prepare it.
     auto new_stmt = std::make_unique<StmtHandle>(m_dbc);
     SQLRETURN ret = SQLPrepare(new_stmt->get(), /* NOSONAR */ (SQLCHAR*)sql_query.data(), SQL_NTS);
     check_odbc_error(ret, new_stmt->get(), SQL_HANDLE_STMT, "SQLPrepare (cached)");
 
-    // Store it in the cache and return a reference.
     auto& stmt_ref = *new_stmt;
-    m_statement_cache[std::string(sql_query)] = std::move(new_stmt);
+    m_statement_cache.try_emplace(std::string(sql_query), std::move(new_stmt));
     
     util::log::debug("Cached new prepared statement for {}", sql_query);
     return stmt_ref;
@@ -183,7 +191,6 @@ StmtHandle& Connection::get_or_create_statement(std::string_view sql_query) {
 
 // --- Connection Manager Implementation ---
 Connection& ConnectionManager::get_connection(std::string_view db_key) {
-    // FIX: Use string_view directly for lookup
     if (auto it = m_connections.find(db_key); it != m_connections.end()) {
         return *it->second;
     }
@@ -191,14 +198,15 @@ Connection& ConnectionManager::get_connection(std::string_view db_key) {
     std::string conn_str = env::get<std::string>(std::string(db_key));
     auto new_conn = std::make_unique<Connection>(conn_str);
     auto& conn_ref = *new_conn;
-    // FIX: Insertion requires a std::string key
-    m_connections[std::string(db_key)] = std::move(new_conn);
+    m_connections.try_emplace(std::string(db_key), std::move(new_conn));
     
     util::log::debug("Created new ODBC connection for '{}' on thread {}", db_key, std::this_thread::get_id());
     return conn_ref;
 }
 
 void ConnectionManager::invalidate_connection(std::string_view db_key) {
+    // FIX: Heterogeneous erase in C++23 is only supported for std::map, not std::unordered_map.
+    // We must instantiate a std::string here to match the key_type.
     if (m_connections.erase(std::string(db_key)) > 0) {
         util::log::warn("Invalidated and removed broken ODBC connection for key '{}' from thread-local cache.", db_key);
     }

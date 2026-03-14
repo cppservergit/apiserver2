@@ -572,8 +572,8 @@ bool server::io_worker::handle_socket_read(connection_state& conn, int fd) {
             }
         } catch (const socket_buffer_error& e) {
             using enum http::status;
-            close_connection(fd);
             util::log::warn("Socket buffer error on fd {} from IP {}: {}", fd, conn.remote_ip, e.what());
+            close_connection(fd);
             return false; 
         } catch (/* NOSONAR */ const std::exception& e) {
             util::log::error("Unexpected exception during socket read on fd {}: {}", fd, e.what());

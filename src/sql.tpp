@@ -10,6 +10,7 @@
 #include <chrono>
 #include <format>
 #include <optional> // Required for std::optional logic
+#include <ranges>   // Required for std::from_range and std::views
 
 namespace sql {
 namespace detail {
@@ -29,30 +30,28 @@ inline constexpr bool is_optional_v = is_optional<T>::value;
 // Helper to convert any string-like type into a std::string for safe binding.
 // Also converts size_t to long long and year_month_day to a formatted string.
 // Other types are passed through unchanged.
-template<typename T>
-auto convert_for_binding(T&& value) {
-    using DecayedT = std::decay_t<T>;
+auto convert_for_binding(/* NOSONAR */ auto&& value) {
+    using DecayedT = std::decay_t<decltype(value)>;
     
     // Pass std::optional through as-is, so we can check has_value() in bind_one
     if constexpr (is_optional_v<DecayedT>) {
-        return std::forward<T>(value);
+        return std::forward<decltype(value)>(value);
     } 
     else if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
-        return std::string(std::forward<T>(value)); // Create a std::string copy
+        return std::string(std::forward<decltype(value)>(value)); // Create a std::string copy
     } else if constexpr (std::is_same_v<DecayedT, size_t>) {
         return static_cast<long long>(value);
     } else if constexpr (std::is_same_v<DecayedT, std::chrono::year_month_day>) {
         return std::format("{:%F}", value);
     }
     else {
-        return std::forward<T>(value); // Pass others (int, long, double) through
+        return std::forward<decltype(value)>(value); // Pass others (int, long, double) through
     }
 }
 
 // Creates a tuple that owns std::string copies of all string-like parameters.
-template<typename... Args>
-auto make_binding_tuple(Args&&... args) {
-    return std::make_tuple(convert_for_binding(std::forward<Args>(args))...);
+auto make_binding_tuple(/* NOSONAR */ auto&&... args) {
+    return std::make_tuple(convert_for_binding(std::forward<decltype(args)>(args))...);
 }
 
 
@@ -96,37 +95,40 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
         }
     };
 
-    int param_index = 1;
-    std::apply([&]<typename... ArgsType>(const ArgsType&... param) {
-        (bind_one(param_index++, param), ...);
-    }, params_tuple);
+    // Using C++20/23 generic lambdas and index sequences to eliminate mutable states in fold expressions
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (bind_one(static_cast<int>(Is + 1), std::get<Is>(params_tuple)), ...);
+    }(std::make_index_sequence<std::tuple_size_v<TupleType>>{});
 }
 
 /**
  * @brief Helper to fetch chunked data for a single column and append to a string.
  */
 inline void fetch_column_chunks(StmtHandle& stmt, std::string& result_string) {
-    constexpr size_t buffer_size = 8192;
-    std::array<char, buffer_size> buffer;
     SQLLEN indicator;
     SQLRETURN ret;
-
     bool has_more_chunks = true;
+
     while (has_more_chunks) {
-        ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
-        if (ret == SQL_NO_DATA) {
-            has_more_chunks = false; // Finished fetching all chunks for this column
-        } else {
+        size_t current_size = result_string.size();
+        
+        // C++23: Direct API write into the string's capacity buffer to avoid intermediate allocations
+        // FIX: Remove 'capacity' parameter name to fix -Wunused-parameter
+        result_string.resize_and_overwrite(current_size + 8192, [&](char* buf, size_t /* capacity */) {
+            ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buf + current_size, 8192, &indicator);
+            
+            if (ret == SQL_NO_DATA) return current_size; // String size unchanged
+            
             check_odbc_error(ret, stmt.get(), SQL_HANDLE_STMT, "SQLGetData");
             
             if (indicator > 0 && indicator != SQL_NULL_DATA) {
-                result_string.append(buffer.data(), static_cast<size_t>(indicator));
+                has_more_chunks = (ret == SQL_SUCCESS_WITH_INFO);
+                return current_size + static_cast<size_t>(indicator); // Set new exact size
             }
             
-            // If SQLGetData returns SQL_SUCCESS_WITH_INFO, it means the buffer was too small
-            // and there is more data to fetch. The loop will continue. Otherwise, we break.
-            has_more_chunks = (ret == SQL_SUCCESS_WITH_INFO);
-        }
+            has_more_chunks = false;
+            return current_size;
+        });
     }
 }
 
@@ -154,7 +156,6 @@ inline void fetch_column_chunks(StmtHandle& stmt, std::string& result_string) {
 
 
 } // namespace detail
-
 
 // --- Public `get` Function Implementation (Restored Behavior) ---
 template<typename... Args>
@@ -336,7 +337,13 @@ namespace detail {
             SQLSMALLINT data_type = 0;
             check_odbc_error(SQLDescribeCol(stmt.get(), i, col_name_buffer.data(), static_cast<SQLSMALLINT>(col_name_buffer.size()), &name_len, &data_type, nullptr, nullptr, nullptr),
                             stmt.get(), SQL_HANDLE_STMT, "SQLDescribeCol");
-            meta.push_back({std::string(col_name_buffer.begin(), col_name_buffer.begin() + name_len), data_type});
+                            
+            // FIX: Revert to iterator construction. std::from_range fails deduction because SQLCHAR (unsigned char) 
+            // does not strictly match std::string's char type requirement in GCC 14.
+            meta.push_back({
+                std::string(col_name_buffer.begin(), col_name_buffer.begin() + name_len), 
+                data_type
+            });
         }
         return meta;
     }
