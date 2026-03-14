@@ -12,6 +12,7 @@
 #include <optional>
 #include <format>
 #include <any>
+#include <utility> // For std::pair
 
 // Include ODBC headers
 #include <sql.h>
@@ -51,7 +52,12 @@ public:
 private:
     // Grant friendship to StmtHandle so it can construct row objects.
     friend class detail::StmtHandle;
-    std::unordered_map<std::string, std::any, util::string_hash, util::string_equal> m_data;
+    
+    // OPTIMIZATION: Replaced std::unordered_map with a flat vector of pairs.
+    // For small N (typical column counts), linear search over contiguous memory 
+    // is significantly faster than hashing and pointer-chasing map nodes. 
+    // This avoids huge numbers of heap allocations for large result sets.
+    std::vector<std::pair<std::string, std::any>> m_data;
 };
 
 /// @class resultset
@@ -127,8 +133,6 @@ public:
     SQLHANDLE* get_ptr() { return &m_handle; }
 
 private:
-    // Changed from protected to private to improve encapsulation.
-    // Derived classes use the public get() and get_ptr() accessors.
     SQLHANDLE m_handle = SQL_NULL_HANDLE;
 };
 
@@ -147,8 +151,6 @@ public:
     explicit StmtHandle(const DbcHandle& dbc);
     [[nodiscard]] resultset fetch_all() const;
 private:
-    // Helper functions for fetch_all, made static members to access row's private data
-    // via the friend declaration in the row class.
     static std::vector<std::string> get_column_names(SQLHSTMT stmt_handle, SQLSMALLINT num_cols);
     static row fetch_single_row(SQLHSTMT stmt_handle, SQLSMALLINT num_cols, const std::vector<std::string>& col_names);
 };
@@ -156,15 +158,11 @@ private:
 // --- Shared Environment Handle to avoid data race in multithreading mode ---
 class SharedEnvHandle {
 public:
-    // The get() method now simply returns a reference to the inline member.
     static EnvHandle& get() {
         return s_env_handle;
     }
 
 private:
-    // By declaring the static member 'inline', you can define it directly
-    // in the header. The C++ linker guarantees there will be only one
-    // instance of s_env_handle across your entire program.
     static inline EnvHandle s_env_handle;
 };
 
@@ -173,7 +171,6 @@ private:
 void check_odbc_error(SQLRETURN retcode, SQLHANDLE handle, SQLSMALLINT handle_type, std::string_view context);
 
 // --- Fetch Helpers ---
-// Marked inline to prevent "multiple definition" linker errors.
 [[nodiscard]] inline std::optional<std::string> fetch_json_result(StmtHandle& stmt);
 
 
