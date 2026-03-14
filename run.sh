@@ -35,4 +35,4 @@ export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
 
 # executable
-./apiserver
+./apiserver_sanitizer_leak

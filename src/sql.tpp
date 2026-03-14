@@ -27,25 +27,34 @@ inline constexpr bool is_optional_v = is_optional<T>::value;
 
 // --- New, more robust parameter processing ---
 
-// Helper to convert any string-like type into a std::string for safe binding.
-// Also converts size_t to long long and year_month_day to a formatted string.
-// Other types are passed through unchanged.
-auto convert_for_binding(/* NOSONAR */ auto&& value) {
+// Helper to extract common conversion logic for primitive types
+inline auto convert_base_value(/* NOSONAR */ auto&& value) {
     using DecayedT = std::decay_t<decltype(value)>;
-    
-    // Pass std::optional through as-is, so we can check has_value() in bind_one
-    if constexpr (is_optional_v<DecayedT>) {
-        return std::forward<decltype(value)>(value);
-    } 
-    else if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
-        return std::string(std::forward<decltype(value)>(value)); // Create a std::string copy
+    if constexpr (std::is_convertible_v<DecayedT, std::string_view>) {
+        return std::string(std::forward<decltype(value)>(value)); 
     } else if constexpr (std::is_same_v<DecayedT, size_t>) {
         return static_cast<long long>(value);
     } else if constexpr (std::is_same_v<DecayedT, std::chrono::year_month_day>) {
         return std::format("{:%F}", value);
+    } else {
+        return std::forward<decltype(value)>(value);
     }
-    else {
-        return std::forward<decltype(value)>(value); // Pass others (int, long, double) through
+}
+
+// Helper to convert any string-like type into a std::string for safe binding.
+// Also converts size_t to long long and year_month_day to a formatted string.
+// Passes std::optional through safely owning the converted inner value.
+auto convert_for_binding(/* NOSONAR */ auto&& value) {
+    using DecayedT = std::decay_t<decltype(value)>;
+    
+    // FIX: Must convert the inner value of the optional so it safely owns the string memory inside the tuple!
+    if constexpr (is_optional_v<DecayedT>) {
+        // C++23 monadic operations elegantly handle optional unwrapping, converting, and re-wrapping
+        return value.transform([](/* NOSONAR */ auto&& v) {
+            return convert_base_value(std::forward<decltype(v)>(v));
+        });
+    } else {
+        return convert_base_value(std::forward<decltype(value)>(value));
     }
 }
 
@@ -88,7 +97,9 @@ void bind_all_params(StmtHandle& stmt, const TupleType& params_tuple, std::array
                 SQLRETURN r = SQLBindParameter(stmt.get(), index, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 1, 0, nullptr, 0, &indicators[index - 1]);
                 check_odbc_error(r, stmt.get(), SQL_HANDLE_STMT, "SQLBindParameter (NULL)");
              } else {
-                 bind_concrete_value(index, convert_for_binding(param_value.value()));
+                 // FIX: Do not call convert_for_binding here. param_value.value() is already 
+                 // securely owned and converted inside the params_tuple.
+                 bind_concrete_value(index, param_value.value());
              }
         } else {
              bind_concrete_value(index, param_value);
@@ -113,8 +124,8 @@ inline void fetch_column_chunks(StmtHandle& stmt, std::string& result_string) {
         size_t current_size = result_string.size();
         
         // C++23: Direct API write into the string's capacity buffer to avoid intermediate allocations
-        // FIX: Remove 'capacity' parameter name to fix -Wunused-parameter
-        result_string.resize_and_overwrite(current_size + 8192, [&](char* buf, size_t /* capacity */) {
+        // FIX: Restored /* NOSONAR */ so SonarQube stops complaining about the [&] default capture
+        result_string.resize_and_overwrite(current_size + 8192, [&] /* NOSONAR */ (char* buf, size_t /* capacity */) {
             ret = SQLGetData(stmt.get(), 1, SQL_C_CHAR, buf + current_size, 8192, &indicator);
             
             if (ret == SQL_NO_DATA) return current_size; // String size unchanged
@@ -157,6 +168,7 @@ inline void fetch_column_chunks(StmtHandle& stmt, std::string& result_string) {
 
 } // namespace detail
 
+
 // --- Public `get` Function Implementation (Restored Behavior) ---
 template<typename... Args>
 [[nodiscard]] std::optional<std::string> get(std::string_view db_key, std::string_view sql_query, Args&&... args) {
@@ -166,7 +178,7 @@ template<typename... Args>
             detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
             detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            auto params_tuple = detail::make_binding_tuple(std::forward<decltype(args)>(args)...);
             std::array<SQLLEN, sizeof...(args)> indicators;
             if constexpr (sizeof...(args) > 0) {
                 SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
@@ -213,7 +225,7 @@ template<typename... Args>
             detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
             detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            auto params_tuple = detail::make_binding_tuple(std::forward<decltype(args)>(args)...);
             std::array<SQLLEN, sizeof...(args)> indicators;
             if constexpr (sizeof...(args) > 0) {
                 SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
@@ -259,7 +271,7 @@ void exec(std::string_view db_key, std::string_view sql_query, Args&&... args) {
             detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
             detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            auto params_tuple = detail::make_binding_tuple(std::forward<decltype(args)>(args)...);
             std::array<SQLLEN, sizeof...(args)> indicators;
             if constexpr (sizeof...(args) > 0) {
                 SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);
@@ -348,13 +360,13 @@ namespace detail {
         return meta;
     }
 
-    inline void append_json_value(std::string& builder, SQLSMALLINT col_type, SQLLEN indicator, const char* data) {
+    // FIX: Changed parameter to std::string_view to support robust chunking of large columns
+    inline void append_json_value(std::string& builder, SQLSMALLINT col_type, SQLLEN indicator, std::string_view value_sv) {
         if (indicator == SQL_NULL_DATA) {
             builder.append("null");
             return;
         }
         
-        std::string_view value_sv(data);
         switch (col_type) {
             case SQL_BIT:
             case SQL_TINYINT:
@@ -380,16 +392,35 @@ namespace detail {
         SQLUSMALLINT num_cols = static_cast<SQLUSMALLINT>(meta.size());
         
         for (SQLUSMALLINT i = 1; i <= num_cols; ++i) {
+            std::string cell_data;
             SQLLEN indicator;
-            std::array<char, 8192> buffer;
-            SQLGetData(stmt.get(), i, SQL_C_CHAR, buffer.data(), buffer.size(), &indicator);
+            SQLRETURN ret;
+            bool has_more_chunks = true;
+
+            // ENHANCEMENT: Ported C++23 chunking to prevent large JSON column truncation.
+            while (has_more_chunks) {
+                size_t current_size = cell_data.size();
+                cell_data.resize_and_overwrite(current_size + 8192, [&] /* NOSONAR */ (char* buf, size_t /* capacity */) {
+                    ret = SQLGetData(stmt.get(), i, SQL_C_CHAR, buf + current_size, 8192, &indicator);
+                    
+                    if (ret == SQL_NO_DATA) return current_size;
+                    
+                    if (indicator > 0 && indicator != SQL_NULL_DATA) {
+                        has_more_chunks = (ret == SQL_SUCCESS_WITH_INFO);
+                        return current_size + static_cast<size_t>(indicator);
+                    }
+                    
+                    has_more_chunks = false;
+                    return current_size;
+                });
+            }
             
             // Append key: "column_name":
             append_escaped_json_string(json_builder, meta[i - 1].name);
             json_builder.push_back(':');
 
             // Append value
-            append_json_value(json_builder, meta[i - 1].type, indicator, buffer.data());
+            append_json_value(json_builder, meta[i - 1].type, indicator, cell_data);
 
             if (i < num_cols) {
                 json_builder.push_back(',');
@@ -434,7 +465,7 @@ template<typename... Args>
             detail::Connection& conn = detail::ConnectionManager::get_connection(db_key);
             detail::StmtHandle& stmt = conn.get_or_create_statement(sql_query);
 
-            auto params_tuple = detail::make_binding_tuple(std::forward<Args>(args)...);
+            auto params_tuple = detail::make_binding_tuple(std::forward<decltype(args)>(args)...);
             std::array<SQLLEN, sizeof...(args)> indicators;
             if constexpr (sizeof...(args) > 0) {
                 SQLFreeStmt(stmt.get(), SQL_RESET_PARAMS);

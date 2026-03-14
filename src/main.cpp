@@ -283,10 +283,6 @@ int main() {
     try {
         util::log::info("Application starting...");
 
-        //warm up database library
-        sql::detail::ConnectionManager::get_connection("DB1");
-        sql::detail::ConnectionManager::get_connection("LOGINDB");
-
         server s;
         
         //register API handlers
