@@ -60,25 +60,25 @@ public:
      * @brief Increments the count of currently active connections.
      * @note Uses std::memory_order_relaxed for minimal overhead.
      */
-    void increment_connections() noexcept { m_connections.fetch_add(1, std::memory_order_relaxed); }
+    void increment_connections() noexcept { m_connections.fetch_add(1, /* NOSONAR */ std::memory_order_relaxed); }
 
     /**
      * @brief Decrements the count of currently active connections.
      * @note Uses std::memory_order_relaxed for minimal overhead.
      */
-    void decrement_connections() noexcept { m_connections.fetch_sub(1, std::memory_order_relaxed); }
+    void decrement_connections() noexcept { m_connections.fetch_sub(1, /* NOSONAR */ std::memory_order_relaxed); }
 
     /**
      * @brief Increments the count of currently active worker threads.
      * @note Uses std::memory_order_relaxed for minimal overhead.
      */
-    void increment_active_threads() noexcept { m_active_threads.fetch_add(1, std::memory_order_relaxed); }
+    void increment_active_threads() noexcept { m_active_threads.fetch_add(1, /* NOSONAR */ std::memory_order_relaxed); }
 
     /**
      * @brief Decrements the count of currently active worker threads.
      * @note Uses std::memory_order_relaxed for minimal overhead.
      */
-    void decrement_active_threads() noexcept { m_active_threads.fetch_sub(1, std::memory_order_relaxed); }
+    void decrement_active_threads() noexcept { m_active_threads.fetch_sub(1, /* NOSONAR */ std::memory_order_relaxed); }
     
     /**
      * @brief Records the duration of a processed request.
@@ -87,8 +87,8 @@ public:
      * @param duration The time taken to process the request in microseconds.
      */
     void record_request_time(std::chrono::microseconds duration) noexcept {
-        m_total_requests.fetch_add(1, std::memory_order_relaxed);
-        m_total_processing_time_us.fetch_add(duration.count(), std::memory_order_relaxed);
+        m_total_requests.fetch_add(1, /* NOSONAR */ std::memory_order_relaxed);
+        m_total_processing_time_us.fetch_add(duration.count(), /* NOSONAR */ std::memory_order_relaxed);
     }
 
     /**
@@ -247,10 +247,10 @@ private:
         MetricsSnapshot s;
         
         // 1. Atomic Loads
-        s.total_reqs = m_total_requests.load(std::memory_order_relaxed);
-        long long total_time_us = m_total_processing_time_us.load(std::memory_order_relaxed);
-        s.current_connections = m_connections.load(std::memory_order_relaxed);
-        s.active_threads = m_active_threads.load(std::memory_order_relaxed);
+        s.total_reqs = m_total_requests.load(/* NOSONAR */ std::memory_order_relaxed);
+        long long total_time_us = m_total_processing_time_us.load(/* NOSONAR */ std::memory_order_relaxed);
+        s.current_connections = m_connections.load(/* NOSONAR */ std::memory_order_relaxed);
+        s.active_threads = m_active_threads.load(/* NOSONAR */ std::memory_order_relaxed);
         s.pool_size = m_pool_size;
         
         // 2. Static/Member Data

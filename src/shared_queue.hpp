@@ -36,7 +36,7 @@ public:
 
     void set_event_fd(int fd) noexcept {
         if constexpr (UseEventFD) {
-            m_event_fd.store(fd, std::memory_order_release);
+            m_event_fd.store(fd, /* NOSONAR */ std::memory_order_release);
         }
     }
 
@@ -99,7 +99,7 @@ private:
     // Helper to reliably notify the eventfd, safely handling POSIX interruptions
     // Uses do-while to satisfy SonarCloud's "no infinite loops" rule
     void notify_event_fd() const noexcept {
-        int fd = m_event_fd.load(std::memory_order_acquire);
+        int fd = m_event_fd.load(/* NOSONAR */ std::memory_order_acquire);
         if (fd != -1) {
             uint64_t u = 1;
             ssize_t s;
