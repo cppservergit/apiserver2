@@ -5,7 +5,7 @@ export PORT=8080
 export POOL_SIZE=4
 export IO_THREADS=1
 export QUEUE_CAPACITY=2500
-export MAX_REQUEST_SIZE=5252880  # 5MB
+export MAX_REQUEST_SIZE=5242880  # 5MB
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"

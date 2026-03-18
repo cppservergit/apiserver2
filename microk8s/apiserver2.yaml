@@ -131,7 +131,7 @@ spec:
         - name: POOL_SIZE
           value: "4" 
         - name: QUEUE_CAPACITY
-          value: "1000"
+          value: "5000"
         - name: "MAX_REQUEST_SIZE"
           value: "5242880"  # 5MB
         - name: CORS_ORIGINS
