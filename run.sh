@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # server configuration
-export PORT=9090
+export PORT=8080
 export POOL_SIZE=4
 export IO_THREADS=1
 export QUEUE_CAPACITY=2500
