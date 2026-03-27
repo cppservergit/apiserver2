@@ -148,9 +148,9 @@ spec:
           value: "/validate/totp"
         - name: MFA_ENABLED
           value: "0"
-        - name: MFA_DURATION_SECONDS
+        - name: MFA_DURATION_SECONDS # allow codes from 30 seconds before and after
           value: "30"
-        - name: MFA_WINDOW
+        - name: MFA_WINDOW # allow codes from 30 seconds before and after
           value: "1"
         # Secrets
         - name: DB1
