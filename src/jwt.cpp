@@ -6,6 +6,7 @@
 #include <openssl/crypto.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
+#include <openssl/rand.h>
 #include <vector>
 #include <stdexcept>
 #include <array>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <expected>
+#include <charconv>
 
 using namespace json;
 
@@ -70,7 +72,6 @@ namespace { // Anonymous namespace for private helpers
         return a.length() == b.length() && CRYPTO_memcmp(a.data(), b.data(), a.length()) == 0;
     }
 
-    // FIX: New helper to purely decode the claims without any validation.
     std::expected<claims_map, error_code> decode_claims_unvalidated(std::string_view token) {
         using enum jwt::error_code;
         const auto first_dot = token.find('.');
@@ -91,7 +92,6 @@ namespace { // Anonymous namespace for private helpers
 
 } // anonymous namespace
 
-// Constructor updated to initialize m_mfa_timeout
 service::service(std::string secret, std::chrono::seconds timeout, std::chrono::seconds mfa_timeout)
     : m_secret{std::move(secret)}, m_timeout{timeout}, m_mfa_timeout{mfa_timeout} {
     if (m_secret.empty()) throw std::invalid_argument("jwt secret cannot be empty.");
@@ -107,7 +107,6 @@ std::expected<std::string, error_code> service::get_token(const claims_map& clai
     auto claims_copy = claims;
     const auto now = std::chrono::system_clock::now();
     
-    // Determine expiration based on 'preauth' claim
     std::chrono::seconds duration = m_timeout;
     if (auto it = claims.find("preauth"); it != claims.end() && it->second == "true") {
         duration = m_mfa_timeout;
@@ -134,15 +133,37 @@ std::expected<claims_map, error_code> service::is_valid(std::string_view token) 
     return validate_and_decode(token, true);
 }
 
-// FIX: get_claims now only decodes, it does not validate.
 std::expected<claims_map, error_code> service::get_claims(std::string_view token) const {
     return decode_claims_unvalidated(token);
+}
+
+std::string service::get_nonce() const {
+    std::array<unsigned char, 32> raw_nonce;
+    if (RAND_bytes(raw_nonce.data(), static_cast<int>(raw_nonce.size())) != 1) {
+        throw nonce_error("RAND_bytes() failed to generate cryptographically secure random nonce.");
+    }
+    const std::string payload = base64url_encode({(const char*)raw_nonce.data(), raw_nonce.size()});
+    const sha256_digest signature_raw = hmac_sha256(m_secret, payload);
+    const std::string signature = base64url_encode({(const char*)signature_raw.data(), signature_raw.size()});
+    return payload + "." + signature;
+}
+
+bool service::verify_nonce(std::string_view nonce) const {
+    const auto dot = nonce.find('.');
+    if (dot == std::string_view::npos) return false;
+
+    const std::string_view payload = nonce.substr(0, dot);
+    const std::string_view signature_b64 = nonce.substr(dot + 1);
+
+    const sha256_digest expected_signature_raw = hmac_sha256(m_secret, payload);
+    const std::string expected_signature_b64 = base64url_encode({(const char*)expected_signature_raw.data(), expected_signature_raw.size()});
+
+    return constant_time_compare(expected_signature_b64, signature_b64);
 }
 
 std::expected<claims_map, error_code> service::validate_and_decode(std::string_view token, bool verify_signature) const {
     using enum jwt::error_code;
     
-    // FIX: Start by decoding the claims without validation.
     auto claims_result = decode_claims_unvalidated(token);
     if (!claims_result) {
         return std::unexpected(claims_result.error());
@@ -151,7 +172,6 @@ std::expected<claims_map, error_code> service::validate_and_decode(std::string_v
 
     if (verify_signature) {
         const auto second_dot = token.rfind('.');
-        // Note: format has already been checked by decode_claims_unvalidated
         const std::string_view signing_input = token.substr(0, second_dot);
         const std::string_view signature_b64 = token.substr(second_dot + 1);
 
@@ -188,7 +208,6 @@ namespace {
         static std::unique_ptr<detail::service> g_jwt_service = []{
             auto secret = env::get<std::string>("JWT_SECRET", "a-secure-secret-key-that-is-at-least-32-bytes-long");
             auto timeout = env::get<long>("JWT_TIMEOUT_SECONDS", 3600);
-            // Default MFA timeout to 300 seconds (5 minutes)
             auto mfa_timeout = env::get<long>("JWT_MFA_TIMEOUT_SECONDS", 300);
             return std::make_unique<detail::service>(std::move(secret), std::chrono::seconds(timeout), std::chrono::seconds(mfa_timeout));
         }();
@@ -212,6 +231,14 @@ std::expected<claims_map, error_code> is_valid(std::string_view token) {
 
 std::expected<claims_map, error_code> get_claims(std::string_view token) {
     return get_service().get_claims(token);
+}
+
+std::string get_nonce() {
+    return get_service().get_nonce();
+}
+
+bool verify_nonce(std::string_view nonce) {
+    return get_service().verify_nonce(nonce);
 }
 
 std::string to_string(const error_code err) {

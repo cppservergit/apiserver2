@@ -109,12 +109,14 @@ namespace otp {
      * @param seconds The time-step size (usually 30).
      * @param token The 6 or 8 digit token string to validate.
      * @param secretb32 The user's secret key, encoded in Base32.
+     * @param window The number of steps to check before and after the current step (default 0).
      * @return A std::expected. On success, contains `true`. On failure, contains an error string.
      */
     [[nodiscard]] inline std::expected<bool, std::string> is_valid_token(
         const int seconds,
         std::string_view token,
-        std::string_view secretb32) noexcept 
+        std::string_view secretb32,
+        const int window = 0) noexcept 
     {
         if (token.empty() || secretb32.empty()) {
             return std::unexpected("Invalid parameters: token or secret are empty");
@@ -137,9 +139,13 @@ namespace otp {
             const uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(now).count();
             const uint64_t current_step = current_timestamp / seconds;
 
-            // 3. Check Window (Current, Previous, Next)
-            // Matching liboath's 'window=1' behavior which checks +/- 1 step.
-            for (uint64_t step = current_step - 1; step <= current_step + 1; ++step) {
+            // 3. Check Window (Current, Previous, Next based on window size)
+            // window=0 checks only the current step.
+            // window=1 checks current, current-1, current+1.
+            uint64_t start_step = (current_step >= static_cast<uint64_t>(window)) ? current_step - window : 0;
+            uint64_t end_step = current_step + window;
+
+            for (uint64_t step = start_step; step <= end_step; ++step) {
                 auto generated_otp = detail::generate_hotp(*secret_bytes, step, digits);
                 
                 if (!generated_otp.has_value()) {
