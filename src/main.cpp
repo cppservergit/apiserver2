@@ -9,6 +9,7 @@
 #include "http_client.hpp"
 #include "otp.hpp" 
 #include "mfa.hpp" // for TOTP validation handler
+#include "env.hpp" // for environment variables
 #include "restclient.hpp" // for  get_remote_customer() API handler
 #include <functional>
 #include <algorithm> 
@@ -70,6 +71,10 @@ const validator customers_validator {
 // --- User-Defined API Handlers ---
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
     res.set_body(ok, R"({"message":"Hello, World!"})");
+}
+
+void get_nonce([[maybe_unused]] const http::request& req, http::response& res) {
+    res.set_body(ok, std::format(R"({{"nonce":"{}"}})", jwt::get_nonce()));
 }
 
 void get_shippers([[maybe_unused]] const http::request& req, http::response& res) {
@@ -262,8 +267,11 @@ void validate_totp(const http::request& req, http::response& res) {
         return;
     }
 
-    // 4. Validate TOTP (30 second step)
-    if (auto result = otp::is_valid_token(30, totp_val, *secret_opt); !result.has_value()) {
+    // 4. Validate TOTP
+    static const int mfa_duration = env::get<int>("MFA_DURATION_SECONDS", 30);
+    static const int mfa_window = env::get<int>("MFA_WINDOW", 0);
+
+    if (auto result = otp::is_valid_token(mfa_duration, totp_val, *secret_opt, mfa_window); !result.has_value()) {
         util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
         res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
         return;
@@ -287,6 +295,7 @@ int main() {
         
         //register API handlers
         s.register_api(webapi_path{"/hello"}, get, &hello_world, false);
+        s.register_api(webapi_path{"/nonce"}, get, &get_nonce, false);
         s.register_api(webapi_path{"/login"}, post, login_validator, &login, false);
         s.register_api(webapi_path{"/shippers"}, get, &get_shippers, true);
         s.register_api(webapi_path{"/products"}, get, &get_products, true);

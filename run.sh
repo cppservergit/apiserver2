@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # server configuration
-export PORT=8080
+export PORT=9090
 export POOL_SIZE=4
 export IO_THREADS=1
 export QUEUE_CAPACITY=2500
@@ -25,6 +25,8 @@ export JWT_MFA_TIMEOUT_SECONDS=120
 # MFA configuration
 export MFA_ENABLED=0
 export MFA_URI="/validate/totp"
+export MFA_WINDOW=1 # allow codes from 30 seconds before and after
+export MFA_DURATION_SECONDS=30 # TOTP codes are valid for 30 seconds
 
 # api key for diagnostics
 export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
