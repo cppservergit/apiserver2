@@ -20,7 +20,7 @@ export BLOB_PATH="/home/ubuntu/uploads"
 # json web token configuration
 export JWT_SECRET="B@asica2025*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
-export JWT_MFA_TIMEOUT_SECONDS=120
+export JWT_MFA_TIMEOUT_SECONDS=60
 
 # MFA configuration
 export MFA_ENABLED=0
