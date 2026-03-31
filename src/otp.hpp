@@ -16,6 +16,31 @@
 
 namespace otp {
 
+    /**
+     * @brief Strong type for TOTP step duration.
+     */
+    enum class Duration : int { 
+        Standard = 30, 
+        Extended = 60 
+    };
+
+    /**
+     * @brief Strong type for validation window (look-back/look-ahead).
+     */
+    enum class Window : int { 
+        Strict = 0, 
+        Leeway = 1 
+    };
+
+    /**
+     * @brief Grouped settings for TOTP validation.
+     * Follows C++ Core Guideline F.15 (group related parameters).
+     */
+    struct Settings {
+        Duration duration = Duration::Standard;
+        Window window     = Window::Strict;
+    };
+
     namespace detail {
         // Base32 decoding lookup table (RFC 4648)
         static constexpr int8_t base32_lookup[] = {
@@ -106,17 +131,15 @@ namespace otp {
      *
      * Drop-in replacement using OpenSSL. Thread-safe and lock-free.
      *
-     * @param seconds The time-step size (usually 30).
      * @param token The 6 or 8 digit token string to validate.
      * @param secretb32 The user's secret key, encoded in Base32.
-     * @param window The number of steps to check before and after the current step (default 0).
+     * @param config The validation settings (duration and window).
      * @return A std::expected. On success, contains `true`. On failure, contains an error string.
      */
     [[nodiscard]] inline std::expected<bool, std::string> is_valid_token(
-        const int seconds,
         std::string_view token,
         std::string_view secretb32,
-        const int window = 0) noexcept 
+        Settings config = {}) noexcept 
     {
         if (token.empty() || secretb32.empty()) {
             return std::unexpected("Invalid parameters: token or secret are empty");
@@ -137,11 +160,14 @@ namespace otp {
             // 2. Calculate Time Steps
             const auto now = std::chrono::system_clock::now().time_since_epoch();
             const uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(now).count();
+            
+            const auto seconds = std::to_underlying(config.duration);
             const uint64_t current_step = current_timestamp / seconds;
 
             // 3. Check Window (Current, Previous, Next based on window size)
             // window=0 checks only the current step.
             // window=1 checks current, current-1, current+1.
+            auto window = std::to_underlying(config.window);
             uint64_t start_step = (current_step >= static_cast<uint64_t>(window)) ? current_step - window : 0;
             uint64_t end_step = current_step + window;
 

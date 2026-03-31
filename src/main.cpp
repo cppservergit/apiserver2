@@ -243,6 +243,17 @@ void get_customers(const http::request& req, http::response& res) {
     res.set_body(ok, json_result.value_or("[]"));
 }
 
+// Helper to load MFA settings from environment variables with strong typing
+otp::Settings load_mfa_settings() {
+    auto d = env::get<int>("MFA_DURATION_SECONDS", 30);
+    auto w = env::get<int>("MFA_WINDOW", 0);
+
+    return {
+        (d == 60 ? otp::Duration::Extended : otp::Duration::Standard),
+        (w == 1  ? otp::Window::Leeway     : otp::Window::Strict)
+    };
+}
+
 void validate_totp(const http::request& req, http::response& res) {
     auto claims_result = jwt::get_claims(req.get_bearer_token().value_or(""));
     const auto& claims = *claims_result;
@@ -268,10 +279,9 @@ void validate_totp(const http::request& req, http::response& res) {
     }
 
     // 4. Validate TOTP
-    static const int mfa_duration = env::get<int>("MFA_DURATION_SECONDS", 30);
-    static const int mfa_window = env::get<int>("MFA_WINDOW", 0);
+    static const otp::Settings mfa_settings = load_mfa_settings();
 
-    if (auto result = otp::is_valid_token(mfa_duration, totp_val, *secret_opt, mfa_window); !result.has_value()) {
+    if (auto result = otp::is_valid_token(totp_val, *secret_opt, mfa_settings); !result.has_value()) {
         util::log::warn("TOTP validation failed for user {} from IP {}: {}", user, req.get_remote_ip(), result.error());
         res.set_body(unauthorized, R"({"error":"Invalid TOTP"})");
         return;
