@@ -98,7 +98,7 @@ spec:
 
       containers:
       - name: apiserver2
-        image: cppserver/apiserver2:v1.2.2
+        image: cppserver/apiserver2:v1.2.3
         tty: true # non-buffered stdout logs - prints immediately
         imagePullPolicy: IfNotPresent # for side-loaded images, change to Always if you want to pull every time
         ports:
