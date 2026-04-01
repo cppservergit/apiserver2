@@ -78,10 +78,8 @@ private:
      * Uses a lock-free thread_local cache to store the token for 3 minutes.
      */
     static std::string login_and_get_token(const http::request& req) {
-        const auto now = std::chrono::system_clock::now();
-
         // Check cache: if token exists and hasn't expired, return it.
-        if (!m_session.token.empty() && now < m_session.expires_at) {
+        if (const auto now = std::chrono::system_clock::now(); !m_session.token.empty() && now < m_session.expires_at) {
             return m_session.token;
         }
 
