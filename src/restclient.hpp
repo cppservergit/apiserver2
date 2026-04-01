@@ -4,6 +4,7 @@
 #include "http_client.hpp"
 #include "json_parser.hpp"
 #include "util.hpp"
+#include "jwt.hpp"
 #include <string>
 #include <string_view>
 #include <map>
@@ -69,7 +70,7 @@ public:
 private:
     struct Session {
         std::string token;
-        std::chrono::steady_clock::time_point created_at;
+        std::chrono::system_clock::time_point expires_at;
     };
 
     /**
@@ -77,14 +78,11 @@ private:
      * Uses a lock-free thread_local cache to store the token for 3 minutes.
      */
     static std::string login_and_get_token(const http::request& req) {
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = std::chrono::system_clock::now();
 
-        // Check cache: if token exists and is younger than 3 minutes, return it.
-        if (!m_session.token.empty()) {
-            const auto age = std::chrono::duration_cast<std::chrono::minutes>(now - m_session.created_at);
-            if (age.count() < 3) {
-                return m_session.token;
-            }
+        // Check cache: if token exists and hasn't expired, return it.
+        if (!m_session.token.empty() && now < m_session.expires_at) {
+            return m_session.token;
         }
 
         // --- Perform Login ---
@@ -118,9 +116,33 @@ private:
             throw RemoteServiceError("Invalid response from remote authentication service.");
         }
 
-        // Update thread-local cache
-        m_session.token = id_token;
-        m_session.created_at = now;
+        // Parse JWT to get expiration
+        auto claims_result = jwt::get_claims(id_token);
+        if (!claims_result) {
+            util::log::error("Failed to parse JWT claims from remote token: {}", jwt::to_string(claims_result.error()));
+            throw RemoteServiceError("Invalid JWT token received from remote service.");
+        }
+
+        const auto& claims = *claims_result;
+        auto exp_it = claims.find("exp");
+        if (exp_it == claims.end()) {
+            util::log::error("Remote JWT does not contain an 'exp' claim.");
+            throw RemoteServiceError("Insecure JWT received from remote service (no expiration).");
+        }
+
+        try {
+            // Convert 'exp' (seconds since epoch) to time_point
+            uint64_t exp_timestamp = std::stoull(exp_it->second);
+            auto expires_at = std::chrono::system_clock::time_point{std::chrono::seconds{exp_timestamp}};
+
+            // Update thread-local cache
+            m_session.token = id_token;
+            m_session.expires_at = expires_at;
+
+        } catch (const std::exception& e) {
+            util::log::error("Failed to parse 'exp' claim: {}", e.what());
+            throw RemoteServiceError("Invalid 'exp' format in remote JWT.");
+        }
 
         return id_token;
     }
