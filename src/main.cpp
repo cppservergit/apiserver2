@@ -10,6 +10,7 @@
 #include "otp.hpp" 
 #include "mfa.hpp" // for TOTP validation handler
 #include "env.hpp" // for environment variables
+#include "qrcode.hpp" // for MFA QR code generation
 #include "restclient.hpp" // for  get_remote_customer() API handler
 #include <functional>
 #include <algorithm> 
@@ -254,6 +255,50 @@ otp::Settings load_mfa_settings() {
     };
 }
 
+void get_mfa_qrcode(const http::request& req, http::response& res) {
+    const std::string user = req.get_user();
+    
+    auto secret_opt = fetch_user_secret(user);
+    if (!secret_opt.has_value()) {
+        util::log::error("QR generation failed: for user {} from IP {}: no secret found.", user, req.get_remote_ip());
+        res.set_body(unauthorized, R"({"error":"Cannot generate QR code"})");
+        return;
+    }
+
+    // Format: otpauth://totp/APIServer2:mcordova?secret=FLVSIZNN3JF2Z3US&issuer=APIServer2
+    const std::string uri = std::format("otpauth://totp/APIServer2:{}?secret={}&issuer=APIServer2", user, *secret_opt);
+    
+    auto qr_svg = qr::generate_svg(uri);
+    if (!qr_svg) {
+        util::log::error("QR generation failed for user {}: {}", user, qr_svg.error());
+        res.set_body(internal_server_error, R"({"error":"Failed to generate QR code"})");
+        return;
+    }
+
+    res.set_body(ok, *qr_svg, "image/svg+xml");
+}
+
+void test_mfa_otp(const http::request& req, http::response& res) {
+    const std::string user = req.get_user();
+    const auto totp_val = req.get_required_param<std::string>("totp");
+
+    auto secret_opt = fetch_user_secret(user);
+    if (!secret_opt.has_value()) {
+        util::log::error("MFA test failed for user {}: no secret found.", user);
+        res.set_body(unauthorized, R"({"error":"MFA not configured"})");
+        return;
+    }
+
+    static const otp::Settings mfa_settings = load_mfa_settings();
+
+    if (auto result = otp::is_valid_token(totp_val, *secret_opt, mfa_settings); result.has_value()) {
+        res.set_body(ok, R"({"status":"valid"})");
+    } else {
+        util::log::warn("TOTP test failed for user {} from ip {}: {}.", user, req.get_remote_ip(), result.error());
+        res.set_body(unauthorized, R"({"status":"invalid"})");
+    }
+}
+
 void validate_totp(const http::request& req, http::response& res) {
     auto claims_result = jwt::get_claims(req.get_bearer_token().value_or(""));
     const auto& claims = *claims_result;
@@ -313,6 +358,8 @@ int main() {
         s.register_api(webapi_path{"/sales"}, post, sales_validator, &get_sales_by_category, true);
         s.register_api(webapi_path{"/upload"}, post, upload_validator, &upload_file, true);
         s.register_api(webapi_path{"/rcustomer"}, post, customer_validator, &get_remote_customer, true);
+        s.register_api(webapi_path{"/mfa/qrcode"}, get, &get_mfa_qrcode, true);
+        s.register_api(webapi_path{"/mfa/testotp"}, post, totp_validator, &test_mfa_otp, true);
         s.register_api(webapi_path{"/validate/totp"}, post, totp_validator, &validate_totp, true);
         s.register_api(webapi_path{"/customers"}, post, customers_validator, &get_customers, true);
         

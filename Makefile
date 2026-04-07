@@ -46,7 +46,7 @@ $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(2))
 endef
 
 # --- Libraries to Link ---
-LIBS_COMMON = -lcurl -ljson-c -lcrypto -lodbc
+LIBS_COMMON = -lcurl -ljson-c -lcrypto -lodbc -lqrencode
 LIBS_DEBUG = $(LIBS_COMMON) -lstdc++exp -lbacktrace
 
 # --- User-Facing Commands ---

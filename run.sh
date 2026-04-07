@@ -25,7 +25,7 @@ export JWT_MFA_TIMEOUT_SECONDS=60
 # MFA configuration
 export MFA_ENABLED=0
 export MFA_URI="/validate/totp"
-export MFA_WINDOW=1 # allow codes from 30 seconds before and after
+export MFA_WINDOW=0 # allow codes from 30 seconds before and after
 export MFA_DURATION_SECONDS=30 # TOTP codes are valid for 30 seconds
 
 # api key for diagnostics

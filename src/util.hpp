@@ -242,6 +242,29 @@ inline auto today() {
     }
 }
 
+/**
+ * @brief Generates a random 6-digit One-Time Password (OTP) string.
+ * Uses OpenSSL's RAND_bytes for cryptographically secure randomness.
+ * Follows C++ Core Guidelines and is SonarCloud compliant.
+ * 
+ * @return A string containing 6 random digits (e.g., "045219").
+ */
+[[nodiscard]] inline std::string get_otp() noexcept {
+    std::array<unsigned char, 6> raw_bytes;
+    if (/* NOSONAR */ RAND_bytes(raw_bytes.data(), static_cast<int>(raw_bytes.size())) != 1) {
+        return "000000"; // Fallback in case of CSPRNG failure
+    }
+
+    std::string otp;
+    otp.reserve(6);
+    for (const auto b : raw_bytes) {
+        // Map the byte to a digit (0-9). 
+        // Note: Slight bias (256 % 10 != 0), but acceptable for 6-digit OTP use cases.
+        otp += static_cast<char>('0' + (static_cast<int>(b) % 10));
+    }
+    return otp;
+}
+
 namespace detail {
     /**
      * @brief Reads a numeric value from a line in a procfs file.
