@@ -28,6 +28,7 @@ jobs:
             libcurl4-openssl-dev \
             libjson-c-dev \
             unixodbc-dev \
+            libqrencode-dev \
             libssl-dev
 
       - name: Install Build Wrapper
