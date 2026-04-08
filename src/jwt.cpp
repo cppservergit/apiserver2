@@ -142,23 +142,51 @@ std::string service::get_nonce() const {
     if (RAND_bytes(raw_nonce.data(), static_cast<int>(raw_nonce.size())) != 1) {
         throw nonce_error("RAND_bytes() failed to generate cryptographically secure random nonce.");
     }
-    const std::string payload = base64url_encode({(const char*)raw_nonce.data(), raw_nonce.size()});
+    const std::string random_part = base64url_encode({(const char*)raw_nonce.data(), raw_nonce.size()});
+    const auto now = std::chrono::system_clock::now();
+    const auto timestamp = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    
+    const std::string payload = random_part + "." + timestamp;
     const sha256_digest signature_raw = hmac_sha256(m_secret, payload);
     const std::string signature = base64url_encode({(const char*)signature_raw.data(), signature_raw.size()});
+    
     return payload + "." + signature;
 }
 
 bool service::verify_nonce(std::string_view nonce) const {
-    const auto dot = nonce.find('.');
-    if (dot == std::string_view::npos) return false;
+    // Expected format: random.timestamp.signature
+    const auto first_dot = nonce.find('.');
+    if (first_dot == std::string_view::npos) return false;
+    
+    const auto second_dot = nonce.find('.', first_dot + 1);
+    if (second_dot == std::string_view::npos) return false;
 
-    const std::string_view payload = nonce.substr(0, dot);
-    const std::string_view signature_b64 = nonce.substr(dot + 1);
+    const std::string_view payload = nonce.substr(0, second_dot);
+    const std::string_view timestamp_str = nonce.substr(first_dot + 1, second_dot - first_dot - 1);
+    const std::string_view signature_b64 = nonce.substr(second_dot + 1);
 
+    // 1. Verify Signature first (Security: mitigate timing attacks/DoS)
     const sha256_digest expected_signature_raw = hmac_sha256(m_secret, payload);
-    const std::string expected_signature_b64 = base64url_encode({(const char*)expected_signature_raw.data(), expected_signature_raw.size()});
+    if (const std::string expected_signature_b64 = base64url_encode({(const char*)expected_signature_raw.data(), expected_signature_raw.size()}); 
+        !constant_time_compare(expected_signature_b64, signature_b64)) {
+        return false;
+    }
 
-    return constant_time_compare(expected_signature_b64, signature_b64);
+    // 2. Verify Expiration
+    long long nonce_timestamp_val;
+    if (auto [ptr, ec] = std::from_chars(timestamp_str.data(), timestamp_str.data() + timestamp_str.size(), nonce_timestamp_val); ec != std::errc{}) {
+        return false;
+    }
+
+    const auto now = std::chrono::system_clock::now();
+
+    // Check if nonce is from the future (clock drift) or too old
+    if (const auto nonce_time = std::chrono::system_clock::from_time_t(nonce_timestamp_val); 
+        nonce_time > now + std::chrono::seconds(5) || now > nonce_time + m_mfa_timeout) {
+        return false;
+    }
+
+    return true;
 }
 
 std::expected<claims_map, error_code> service::validate_and_decode(std::string_view token, bool verify_signature) const {

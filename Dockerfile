@@ -9,11 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TERM=xterm
 
 # 1. Install Dependencies
-# KEPT: libssl-dev (Required for HTTPS and Crypto)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential g++-14 gcc-14 make ca-certificates wget git pkg-config \
     libssl-dev zlib1g-dev tzdata \
-    netbase binutils libltdl-dev cmake
+    netbase binutils libltdl-dev cmake autoconf automake libtool
 
 # ------------------------------------------------------------------------------
 # GLOBAL OPTIMIZATION FLAGS
@@ -28,7 +27,6 @@ ENV CC=gcc-14 \
     LDFLAGS="-O2 -flto=auto"
 
 # 2. COMPILE MINIMAL LIBCURL (v8.19.0)
-# FIX: Added --without-libpsl to prevent build error
 WORKDIR /tmp/curl
 RUN wget https://github.com/curl/curl/releases/download/curl-8_19_0/curl-8.19.0.tar.gz -O curl.tar.gz \
     && tar -xvf curl.tar.gz --strip-components=1 \
@@ -74,20 +72,26 @@ RUN wget https://github.com/json-c/json-c/archive/refs/tags/json-c-0.18-20240915
        -DBUILD_APPS=OFF \
     && make -j$(nproc) && make install
 
-# 6. COMPILE APPLICATION
+# 6. COMPILE MINIMAL LIBQRENCODE (v4.1.1)
+# Built entirely without PNG support to keep the container tiny
+WORKDIR /tmp/qrencode
+RUN wget https://github.com/fukuchi/libqrencode/archive/refs/tags/v4.1.1.tar.gz -O qrencode.tar.gz \
+    && tar -xvf qrencode.tar.gz --strip-components=1 \
+    && ./autogen.sh \
+    && ./configure --prefix=/usr --without-png --without-tools --without-tests \
+    && make -j$(nproc) && make install
+
+# 7. COMPILE APPLICATION
 WORKDIR /src
 COPY . .
 RUN make release CXX=g++-14
 
-# 7. STRIP BINARIES (Aggressive)
-# Confirmed SONAMEs for new versions:
-# Curl 8.18.0 -> libcurl.so.4 (Unchanged)
-# UnixODBC 2.3.14 -> libodbc.so.2 (Unchanged)
-# Json-C 0.18 -> libjson-c.so.5 (Unchanged)
+# 8. STRIP BINARIES (Aggressive)
 RUN strip --strip-all /usr/lib/libtdsodbc.so \
     && strip --strip-all /usr/lib/libodbc.so.2 \
     && strip --strip-all /usr/lib/libodbcinst.so.2 \
     && strip --strip-all /usr/lib/x86_64-linux-gnu/libltdl.so.7 \
+    && strip --strip-all /usr/lib/libqrencode.so.4 \
     && if [ -f /usr/lib/libjson-c.so.5 ]; then strip --strip-all /usr/lib/libjson-c.so.5; \
        else strip --strip-all /usr/lib/x86_64-linux-gnu/libjson-c.so.5; fi
 
@@ -108,7 +112,6 @@ RUN tar -xvf chisel.tar.gz -C /usr/bin/ && rm chisel.tar.gz
 WORKDIR /rootfs
 
 # 2. Cut Slices
-# Note: libssl3t64_libs includes libcrypto and libssl (needed for your new OTP/UUID code)
 RUN chisel cut --release ubuntu-$UBUNTU_RELEASE --root /rootfs \
     base-files_base base-files_release-info base-files_chisel ca-certificates_data \
     libgcc-s1_libs libc6_libs libstdc++6_libs libssl3t64_libs zlib1g_libs
@@ -132,8 +135,8 @@ COPY --from=builder /usr/lib/libodbc.so.2 /rootfs/usr/lib/x86_64-linux-gnu/libod
 COPY --from=builder /usr/lib/libodbcinst.so.2 /rootfs/usr/lib/x86_64-linux-gnu/libodbcinst.so.2
 COPY --from=builder /usr/lib/libtdsodbc.so /rootfs/usr/lib/x86_64-linux-gnu/libtdsodbc.so
 COPY --from=builder /usr/lib/libcurl.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libcurl.so.4
-# Uses wildcard to catch libjson-c.so.5 (version 0.18 usually keeps .5 ABI)
 COPY --from=builder /usr/lib/*/libjson-c.so.5 /rootfs/usr/lib/x86_64-linux-gnu/libjson-c.so.5
+COPY --from=builder /usr/lib/libqrencode.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libqrencode.so.4
 
 # 5. PRE-COPY SYSTEM LIBRARIES
 COPY --from=builder \

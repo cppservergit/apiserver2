@@ -129,7 +129,7 @@ In your projects or home directory, run:
 ```
 git clone https://github.com/cppservergit/apiserver2.git && \
 cd apiserver2 && \
-sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc libcurl4-openssl-dev && \
+sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc libcurl4-openssl-dev libqrencode-dev && \
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 chmod +x run.sh
 ```
