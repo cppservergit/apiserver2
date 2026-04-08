@@ -295,7 +295,7 @@ void test_mfa_otp(const http::request& req, http::response& res) {
         res.set_body(ok, R"({"status":"valid"})");
     } else {
         util::log::warn("TOTP test failed for user {} from ip {}: {}.", user, req.get_remote_ip(), result.error());
-        res.set_body(unauthorized, R"({"status":"invalid"})");
+        res.set_body(bad_request, R"({"status":"invalid"})");
     }
 }
 
