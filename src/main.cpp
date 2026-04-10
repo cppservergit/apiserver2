@@ -262,7 +262,7 @@ void get_mfa_qrcode(const http::request& req, http::response& res) {
     auto secret_opt = fetch_user_secret(user);
     if (!secret_opt.has_value()) {
         util::log::error("QR generation failed: for user {} from IP {}: no secret found.", user, req.get_remote_ip());
-        res.set_body(unauthorized, R"({"error":"Cannot generate QR code"})");
+        res.set_body(internal_server_error, R"({"error":"Cannot generate QR code"})");
         return;
     }
 

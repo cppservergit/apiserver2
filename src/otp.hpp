@@ -13,8 +13,17 @@
 #include <cstddef> // For std::byte
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
+
+#include <stdexcept>
 
 namespace otp {
+
+    // Custom exception for random generation failures
+    class random_exception : public std::runtime_error {
+    public:
+        using std::runtime_error::runtime_error;
+    };
 
     /**
      * @brief Strong type for TOTP step duration.
@@ -54,6 +63,8 @@ namespace otp {
             15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1  // 112-127 (p-z)
         };
 
+        static constexpr char base32_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
         // Use std::byte for raw binary data
         inline std::expected<std::vector<std::byte>, std::string> decode_base32(std::string_view input) {
             std::vector<std::byte> output;
@@ -82,6 +93,29 @@ namespace otp {
                 }
             }
             return output;
+        }
+
+        inline std::string encode_base32(const std::vector<unsigned char>& data) {
+            std::string result;
+            result.reserve((data.size() + 4) / 5 * 8);
+            
+            int buffer = 0;
+            int bits_left = 0;
+            
+            for (unsigned char b : data) {
+                buffer = (buffer << 8) | b;
+                bits_left += 8;
+                while (bits_left >= 5) {
+                    result.push_back(base32_chars[(buffer >> (bits_left - 5)) & 0x1F]);
+                    bits_left -= 5;
+                }
+            }
+            
+            if (bits_left > 0) {
+                result.push_back(base32_chars[(buffer << (5 - bits_left)) & 0x1F]);
+            }
+            
+            return result;
         }
 
         inline std::expected<std::string, std::string> generate_hotp(
@@ -188,6 +222,28 @@ namespace otp {
         } catch (const std::exception& e) {
             return std::unexpected(std::string("An unexpected exception occurred: ") + e.what());
         }
+    }
+
+    /**
+     * @brief Generates a cryptographically secure 16-character Base32 secret.
+     * 
+     * Equivalent to: head -c 10 /dev/urandom | base32 | cut -c 1-16
+     *
+     * @return A 16-character Base32 encoded string.
+     * @throws std::runtime_error if random byte generation fails.
+     */
+    [[nodiscard]] inline std::string get_base32_secret() {
+        std::vector<unsigned char> raw_bytes(10);
+        if (RAND_bytes(raw_bytes.data(), static_cast<int>(raw_bytes.size())) != 1) {
+            throw random_exception("Failed to generate cryptographically secure random bytes");
+        }
+        
+        std::string b32 = detail::encode_base32(raw_bytes);
+        // Ensure exactly 16 chars (10 bytes * 8 bits / 5 bits per char = 16 chars)
+        if (b32.length() > 16) {
+            b32.resize(16);
+        }
+        return b32;
     }
 
 } // namespace otp
