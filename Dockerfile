@@ -33,7 +33,7 @@ RUN wget https://github.com/curl/curl/releases/download/curl-8_19_0/curl-8.19.0.
     && ./configure --prefix=/usr --with-ssl --with-zlib --enable-threaded-resolver \
        --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap \
        --disable-ldap --disable-ldaps --disable-mqtt --disable-pop3 --disable-rtsp \
-       --disable-smb --disable-smtp --disable-telnet --disable-tftp \
+       --disable-smb --disable-telnet --disable-tftp \
        --without-libssh2 --without-librtmp --without-libidn2 --without-nghttp2 \
        --without-brotli --without-zstd --without-libpsl \
        --disable-docs --disable-manual \

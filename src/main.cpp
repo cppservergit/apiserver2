@@ -12,6 +12,7 @@
 #include "env.hpp" // for environment variables
 #include "qrcode.hpp" // for MFA QR code generation
 #include "restclient.hpp" // for  get_remote_customer() API handler
+#include "mail_service.hpp" // for send_email()
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -261,7 +262,7 @@ void get_mfa_qrcode(const http::request& req, http::response& res) {
     auto secret_opt = fetch_user_secret(user);
     if (!secret_opt.has_value()) {
         util::log::error("QR generation failed: for user {} from IP {}: no secret found.", user, req.get_remote_ip());
-        res.set_body(unauthorized, R"({"error":"Cannot generate QR code"})");
+        res.set_body(internal_server_error, R"({"error":"Cannot generate QR code"})");
         return;
     }
 
@@ -300,7 +301,17 @@ void test_mfa_otp(const http::request& req, http::response& res) {
 }
 
 void validate_totp(const http::request& req, http::response& res) {
-    auto claims_result = jwt::get_claims(req.get_bearer_token().value_or(""));
+    auto bearer_opt = req.get_bearer_token();
+    if (!bearer_opt.has_value()) {
+        res.set_body(unauthorized, R"({"error":"Missing token"})");
+        return;
+    }
+
+    auto claims_result = jwt::get_claims(*bearer_opt);
+    if (!claims_result.has_value()) {
+        res.set_body(forbidden, R"({"error":"Invalid token format"})");
+        return;
+    }
     const auto& claims = *claims_result;
     
     // Check specific claim 'preauth' == 'true'
@@ -312,6 +323,10 @@ void validate_totp(const http::request& req, http::response& res) {
 
     // 2. Get User from claims
     auto user_it = claims.find("user");
+    if (user_it == claims.end()) {
+        res.set_body(forbidden, R"({"error":"Invalid token: user missing"})");
+        return;
+    }
     const auto& user = user_it->second;
     const auto totp_val = req.get_required_param<std::string>("totp");
 

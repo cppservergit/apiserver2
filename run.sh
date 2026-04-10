@@ -36,5 +36,10 @@ export REMOTE_API_URL="https://cppserver.com"
 export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
 
+# mail server configuration
+export MAIL_SERVER="smtp://smtp.gmail.com:587"
+export MAIL_USER="admin@martincordova.com"
+export MAIL_PASSWORD="your_app_password_here" # Use an app password for Gmail
+
 # executable
 ./apiserver
