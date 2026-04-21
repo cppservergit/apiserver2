@@ -101,7 +101,7 @@ spec:
 
       containers:
       - name: apiserver2
-        image: cppserver/apiserver2:v1.2.5
+        image: cppserver/apiserver2:v1.2.8
         tty: true # non-buffered stdout logs - prints immediately
         imagePullPolicy: IfNotPresent # for side-loaded images, change to Always if you want to pull every time
         ports:
@@ -155,6 +155,8 @@ spec:
           value: "30"
         - name: MFA_WINDOW # allow codes from 30 seconds before and after
           value: "1"
+        - name: WEBAUTHN_ORIGIN # must match the origin sent by the client device
+          value: "https://cppserver.com"
         # Secrets
         - name: DB1
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: DB1 } }
