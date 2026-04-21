@@ -13,6 +13,7 @@
 #include "qrcode.hpp" // for MFA QR code generation
 #include "restclient.hpp" // for  get_remote_customer() API handler
 #include "mail_service.hpp" // for send_email()
+#include "webauthn.hpp"    // for WebAuthn enrollment
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -189,7 +190,7 @@ void upload_file(const http::request& req, http::response& res) {
         const std::string new_filename = util::get_uuid() + original_filename.extension().string();
         const std::filesystem::path dest_path = blob_path / new_filename;
 
-        util::log::info("Saving uploaded file '{}' as '{}' with title '{}'", file_part->filename, dest_path.string(), title);
+        util::log::debug("Saving uploaded file '{}' as '{}' with title '{}'", file_part->filename, dest_path.string(), title);
 
         std::ofstream out_file(dest_path, std::ios::binary);
         if (!out_file) {
@@ -357,9 +358,132 @@ void validate_totp(const http::request& req, http::response& res) {
     }
 }
 
+void webauthn_enroll(const http::request& req, http::response& res) {
+    try {
+        const auto* body_sv = std::get_if<std::string_view>(&req.get_body());
+        
+        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN", "https://cpp14.mshome.net");
+        WebAuthnValidator validator(origin, body_sv ? *body_sv : "");
+        
+        if (validator.verify()) {
+            const std::string user = req.get_user();
+            const std::string& credential_id = validator.getCredentialIdBase64();
+            const std::string public_key = validator.getPublicKeyBase64();
+
+            sql::exec("LOGINDB", "{CALL dbo.sp_register_webauthn_key(?,?,?,?)}",
+                      user, credential_id, public_key, std::optional<std::string>{});
+
+            util::log::debug("WebAuthn Enrollment successful for user {}. Credential ID: {}",
+                          user, credential_id);
+            res.set_body(ok, R"({"status":"success", "message":"WebAuthn enrollment successful"})");
+        } else {
+            res.set_body(bad_request, R"({"status":"error", "message":"WebAuthn validation failed"})");
+        }
+    } catch (const webauthn_error& e) {
+        util::log::warn("WebAuthn enrollment error for user {}: {}", req.get_user(), e.what());
+        res.set_body(bad_request, std::format(R"({{"status":"error", "message":"{}"}})", e.what()));
+    }
+}
+
+void webauthn_login(const http::request& req, http::response& res) {
+    try {
+        util::log::debug("Entering webauthn_login");
+        const auto* body_sv = std::get_if<std::string_view>(&req.get_body());
+        if (!body_sv) {
+            res.set_body(bad_request, R"({"error":"Missing request body"})");
+            return;
+        }
+
+        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN", "https://cpp14.mshome.net");
+        util::log::debug("Initializing WebAuthnValidator with origin: {}", origin);
+        WebAuthnValidator validator(origin, *body_sv);
+
+        const std::string& credential_id = validator.getCredentialIdBase64();
+        util::log::debug("Extracted Credential ID B64: {}", credential_id);
+        if (credential_id.empty()) {
+            res.set_body(bad_request, R"({"error":"Missing credential ID"})");
+            return;
+        }
+
+        // Fetch user and public key from DB by credential ID
+        util::log::debug("Querying database for credential_id: {}", credential_id);
+        sql::resultset rs = sql::query("LOGINDB", "{CALL dbo.sp_get_webauthn_key(?)}", credential_id);
+        if (rs.empty()) {
+            util::log::warn("Credential ID not found in database: {}", credential_id);
+            res.set_body(unauthorized, R"({"error":"Credential not recognized"})");
+            return;
+        }
+
+        const auto& row = rs.at(0);
+        util::log::debug("Checking resultset status");
+        if (row.get_value<std::string>("status") == "INVALID") {
+            const std::string error_code = row.get_value<std::string>("error_code");
+            const std::string error_desc = row.get_value<std::string>("error_description");
+            util::log::warn("WebAuthn Login failed for credential {} from {}: {} - {}", credential_id, req.get_remote_ip(), error_code, error_desc);
+            res.set_body(unauthorized, std::format(R"({{"error":"{}", "description":"{}"}})", error_code, error_desc));
+            return;
+        }
+
+        util::log::debug("Extracting row values");
+        const std::string user = row.get_value<std::string>("userlogin");
+        const std::string public_key_b64 = row.get_value<std::string>("public_key");
+        const long long stored_counter = row.get_value<long long>("counter");
+        const std::string email = row.get_value<std::string>("email");
+        const std::string display_name = row.get_value<std::string>("displayname");
+        const std::string role_names = row.get_value<std::string>("rolenames");
+
+        util::log::debug("Calling verify_assertion for user: {}", user);
+        if (validator.verify_assertion(public_key_b64)) {
+            util::log::debug("Assertion verified successfully");
+            const uint32_t new_counter = validator.getCounter();
+            
+            util::log::debug("Checking counter: Stored={}, New={}", stored_counter, new_counter);
+            if (stored_counter > 0 && new_counter <= static_cast<uint32_t>(stored_counter)) {
+                util::log::critical("WebAuthn Counter regression detected for user '{}'! Possible clone/replay. Stored: {} New: {}", 
+                                   user, stored_counter, new_counter);
+                res.set_body(unauthorized, R"({"status":"error", "message":"Security error: Invalid credentials"})");
+                return;
+            }
+
+            util::log::debug("Updating counter in database");
+            sql::exec("LOGINDB", "{CALL dbo.sp_update_webauthn_counter(?,?)}", credential_id, static_cast<long long>(new_counter));
+
+            const std::string session_id = util::get_uuid();
+            util::log::debug("Generating JWT for user: {} with sessionId: {}", user, session_id);
+            jwt::claims_map claims = {
+                {"user", user},
+                {"email", email},
+                {"roles", role_names},
+                {"sessionId", session_id}
+            };
+
+            auto token_result = jwt::get_token(claims);
+            if (!token_result) {
+                util::log::error("JWT creation failed for user: {}", user);
+                res.set_body(internal_server_error, R"({"error":"JWT creation failed"})");
+                return;
+            }
+
+            const std::map<std::string, std::string, std::less<>> response_data = {
+                {"displayname", display_name},
+                {"token_type", "bearer"},
+                {"id_token", *token_result}
+            };
+            util::log::info("WebAuthn Login OK for user '{}': sessionId {} - from {}", user, session_id, req.get_remote_ip());
+            res.set_body(ok, json::json_parser::build(response_data));
+        } else {
+            util::log::warn("WebAuthn signature verification failed for user: {}", user);
+            res.set_body(unauthorized, R"({"status":"error", "message":"WebAuthn signature verification failed"})");
+        }
+    } catch (const webauthn_error& e) {
+        util::log::warn("WebAuthn login error: {}", e.what());
+        res.set_body(bad_request, std::format(R"({{"status":"error", "message":"{}"}})", e.what()));
+    }
+}
+
 int main() {
     try {
-        util::log::info("Application starting...");
+        util::log::debug("Application starting...");
 
         server s;
         
@@ -377,10 +501,12 @@ int main() {
         s.register_api(webapi_path{"/mfa/testotp"}, post, totp_validator, &test_mfa_otp, true);
         s.register_api(webapi_path{"/validate/totp"}, post, totp_validator, &validate_totp, true);
         s.register_api(webapi_path{"/customers"}, post, customers_validator, &get_customers, true);
+        s.register_api(webapi_path{"/webauthn/enroll"}, post, &webauthn_enroll, true);
+        s.register_api(webapi_path{"/webauthn/login"}, post, &webauthn_login, false);
         
         s.start();
 
-        util::log::info("Application shutting down gracefully.");
+        util::log::debug("Application shutting down gracefully.");
 
     } catch (const file_system_error& e) {
         util::log::critical("A critical file system error occurred: {}", e.what());

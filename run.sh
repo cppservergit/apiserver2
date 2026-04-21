@@ -41,5 +41,8 @@ export MAIL_SERVER="smtp://smtp.gmail.com:587"
 export MAIL_USER="admin@martincordova.com"
 export MAIL_PASSWORD="your_app_password_here" # Use an app password for Gmail
 
+# webauthn configuration
+export WEBAUTHN_ORIGIN="https://cppserver.com"
+
 # executable
 ./apiserver

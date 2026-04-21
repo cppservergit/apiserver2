@@ -4,21 +4,57 @@
 #include <array>
 #include <algorithm> // Required for std::find_if
 
+#include <charconv>
+
 namespace sql {
 
 template<typename T>
 T row::get_value(std::string_view col_name) const {
-    // FIX: Replaced unordered_map lookup with a flat vector linear search. 
-    // Bounding it with if-initializer maintains the exact same client contract.
-    if (auto it = std::ranges::find_if(m_data, 
-            [col_name](const auto& pair) { return pair.first == col_name; }); it != m_data.end()) {
-        try {
-            return std::any_cast<T>(it->second);
-        } catch (const std::bad_any_cast&) {
-            throw sql::error(std::format("Invalid type requested for column '{}'.", col_name));
-        }
-    } else {
+    auto it = std::ranges::find_if(m_data, 
+            [col_name](const auto& pair) { return pair.first == col_name; });
+    
+    if (it == m_data.end()) {
         throw sql::error(std::format("Column '{}' not found in result set.", col_name));
+    }
+
+    // Handle NULLs: Strings return empty, numeric types throw (unless T is std::optional, but that's handled at a higher level)
+    if (!it->second.has_value()) {
+        if constexpr (std::is_same_v<T, std::string>) return T{};
+        throw sql::error(std::format("Column '{}' is NULL in database.", col_name));
+    }
+
+    try {
+        // 1. Direct any_cast (fastest path)
+        if (it->second.type() == typeid(T)) {
+            return std::any_cast<T>(it->second);
+        }
+
+        // 2. Automatic conversion from string (ODBC fetch stores everything as strings)
+        if (it->second.type() == typeid(std::string)) {
+            const auto& s = std::any_cast<const std::string&>(it->second);
+            
+            if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+                T val{};
+                auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+                if (ec == std::errc{}) return val;
+                if (ec == std::errc::result_out_of_range) throw std::out_of_range("value out of range");
+                throw std::invalid_argument("invalid numeric format");
+            }
+            else if constexpr (std::is_floating_point_v<T>) {
+                return static_cast<T>(std::stod(s)); // std::from_chars for float is only in very recent compilers
+            }
+            else if constexpr (std::is_same_v<T, bool>) {
+                if (s == "1" || s == "true" || s == "TRUE" || s == "y" || s == "Y") return true;
+                return false;
+            }
+        }
+
+        return std::any_cast<T>(it->second);
+    } catch (const std::exception& e) {
+        throw sql::error(std::format("Type conversion failed for column '{}' (Value: '{}'): {}", 
+                                     col_name, 
+                                     it->second.type() == typeid(std::string) ? std::any_cast<std::string>(it->second) : "non-string",
+                                     e.what()));
     }
 }
 
@@ -26,6 +62,7 @@ T row::get_value(std::string_view col_name) const {
 template std::string row::get_value<std::string>(std::string_view) const;
 template int row::get_value<int>(std::string_view) const;
 template long row::get_value<long>(std::string_view) const;
+template long long row::get_value<long long>(std::string_view) const;
 template double row::get_value<double>(std::string_view) const;
 template bool row::get_value<bool>(std::string_view) const;
 
