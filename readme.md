@@ -105,6 +105,7 @@ graph TD
 * **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides high connection reuse saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Kubernetes and Cloud container services. The only HTTP verbs supported are GET, POST and OPTIONS, query parameters are not supported, all data must be sent via POST with JSON or multipart-form-data, nothing else is accepted.
 * **Fast and lightweight:** Compiled to optimized machine code, APIServer2 executable barely weights 450K, with minimal dependencies, it was designed to be run as a container inside a Kubernetes Pod, the OCI image is distroless using Ubuntu 24.04 and weights 27MB (7MB compressed)!
 * **Easy to test:** You don't need Kubernetes or Docker to use it, it is very easy to run baremetal, we provide bash scripts based on CURL for unit-testing and also quick-recipes for MicroK8s deployment.
+* **Security:** Built-in support for WebAuthn/PassKey, Google Recaptcha validation, Multi-factor authentication with TOTP (Google Authenticator), stateless NONCE (signed by the server and with expiration) and JSON Web Token.
 
 ## **Quality Control**
 
