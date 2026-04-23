@@ -42,7 +42,10 @@ export MAIL_USER="admin@martincordova.com"
 export MAIL_PASSWORD="your_app_password_here" # Use an app password for Gmail
 
 # webauthn configuration
-export WEBAUTHN_ORIGIN="https://cppserver.com"
+export WEBAUTHN_ORIGIN="https://ginarojas.com"
+
+# google recaptcha configuration
+export RECAPTCHA_SECRET_KEY="YourSecretKeyHere"
 
 # executable
 ./apiserver
