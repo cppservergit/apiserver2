@@ -22,3 +22,5 @@ unit-test/
 # --- 5. Container Configs (Optional) ---
 # You generally don't need the Dockerfile itself inside the image
 Dockerfile
+sonar-project.properties
+GEMINI.md

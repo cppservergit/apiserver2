@@ -65,6 +65,16 @@ public:
         return std::string{json_str};
     }
 
+    /**
+     * @brief Retrieves a value of type T associated with the given key.
+     * Supported types: bool, int, long, long long, double, std::string.
+     * @tparam T The desired return type.
+     * @param key The JSON key to look up.
+     * @return The value associated with the key, or T{} if not found or on error.
+     */
+    template<typename T>
+    [[nodiscard]] T get(std::string_view key) const;
+
     [[nodiscard]] std::string_view get_string(std::string_view key) const;
     [[nodiscard]] bool has_key(std::string_view key) const noexcept;
     [[nodiscard]] json_parser at(std::string_view key) const;

@@ -17,6 +17,7 @@ stringData:
   MAIL_SERVER: "smtp://smtp.gmail.com:587"
   MAIL_USER: "your-email@gmail.com"
   MAIL_PASSWORD: "your-app-password"
+  RECAPTCHA_SECRET_KEY: "YourSecretKeyHere"
 
 ---
 # ==============================================================================
@@ -157,6 +158,7 @@ spec:
           value: "1"
         - name: WEBAUTHN_ORIGIN # must match the origin sent by the client device
           value: "https://cppserver.com"
+
         # Secrets
         - name: DB1
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: DB1 } }
@@ -176,6 +178,8 @@ spec:
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: MAIL_USER } }
         - name: MAIL_PASSWORD
           valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: MAIL_PASSWORD } }
+        - name: RECAPTCHA_SECRET_KEY 
+          valueFrom: { secretKeyRef: { name: apiserver2-secrets, key: RECAPTCHA_SECRET_KEY } }
 
         # --- PROBES ---
         livenessProbe:

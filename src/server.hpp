@@ -28,7 +28,7 @@
 #include <chrono>
 #include <list>
 
-inline constexpr auto g_version = "1.2.8 20260420";
+inline constexpr auto g_version = "1.2.8 20260422";
 
 using dispatch_task = std::function<void()>;
 

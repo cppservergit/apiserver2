@@ -69,6 +69,42 @@ json_parser& json_parser::operator=(json_parser&& other) noexcept {
     return *this;
 }
 
+template<>
+bool json_parser::get<bool>(std::string_view key) const {
+    const auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? static_cast<bool>(json_object_get_boolean(tmp)) : false;
+}
+
+template<>
+int json_parser::get<int>(std::string_view key) const {
+    const auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? json_object_get_int(tmp) : 0;
+}
+
+template<>
+long json_parser::get<long>(std::string_view key) const {
+    const auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? static_cast<long>(json_object_get_int64(tmp)) : 0L;
+}
+
+template<>
+long long json_parser::get<long long>(std::string_view key) const {
+    const auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? static_cast<long long>(json_object_get_int64(tmp)) : 0LL;
+}
+
+template<>
+double json_parser::get<double>(std::string_view key) const {
+    const auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? json_object_get_double(tmp) : 0.0;
+}
+
+template<>
+std::string json_parser::get<std::string>(std::string_view key) const {
+    auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
+    return tmp ? std::string(json_object_get_string(tmp)) : std::string{};
+}
+
 std::string_view json_parser::get_string(std::string_view key) const {
     auto* tmp = json_object_object_get(m_obj, std::string(key).c_str());
     return tmp ? std::string_view(json_object_get_string(tmp)) : std::string_view{};

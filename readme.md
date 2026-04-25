@@ -105,6 +105,7 @@ graph TD
 * **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides high connection reuse saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Kubernetes and Cloud container services. The only HTTP verbs supported are GET, POST and OPTIONS, query parameters are not supported, all data must be sent via POST with JSON or multipart-form-data, nothing else is accepted.
 * **Fast and lightweight:** Compiled to optimized machine code, APIServer2 executable barely weights 450K, with minimal dependencies, it was designed to be run as a container inside a Kubernetes Pod, the OCI image is distroless using Ubuntu 24.04 and weights 27MB (7MB compressed)!
 * **Easy to test:** You don't need Kubernetes or Docker to use it, it is very easy to run baremetal, we provide bash scripts based on CURL for unit-testing and also quick-recipes for MicroK8s deployment.
+* **Security:** Built-in support for WebAuthn/PassKey, Google Recaptcha validation, Multi-factor authentication with TOTP (Google Authenticator), stateless NONCE (signed by the server and with expiration) and JSON Web Token.
 
 ## **Quality Control**
 
@@ -242,15 +243,15 @@ The server is configured via environment variables. Create a run script (e.g., r
 export PORT=8080
 export POOL_SIZE=4
 export IO_THREADS=1
-export QUEUE_CAPACITY=500
-export MAX_REQUEST_SIZE=5252880  # 5MB
+export QUEUE_CAPACITY=2500
+export MAX_REQUEST_SIZE=5242880  # 5MB
 
 # database configuration
 export DB1="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=demodb;UID=sa;PWD=Basica2024;APP=apiserver;Encryption=off;ClientCharset=UTF-8"
 export LOGINDB="Driver=FreeTDS;SERVER=demodb.mshome.net;PORT=1433;DATABASE=testdb;UID=sa;PWD=Basica2024;APP=apiserver-login;Encryption=off;ClientCharset=UTF-8"
 
 # cors configuration
-export CORS_ORIGINS="null,file://,http://xxx.mydomain.com"
+export CORS_ORIGINS="null,file://,http://www.mydomain.com"
 
 # blobs storage configuration
 export BLOB_PATH="/home/ubuntu/uploads"
@@ -258,11 +259,13 @@ export BLOB_PATH="/home/ubuntu/uploads"
 # json web token configuration
 export JWT_SECRET="B@asica2025*uuid0998554j93m722pQ"
 export JWT_TIMEOUT_SECONDS=300
-export JWT_MFA_TIMEOUT_SECONDS=120
+export JWT_MFA_TIMEOUT_SECONDS=60
 
 # MFA configuration
 export MFA_ENABLED=0
 export MFA_URI="/validate/totp"
+export MFA_WINDOW=0 # allow codes from 30 seconds before and after
+export MFA_DURATION_SECONDS=30 # TOTP codes are valid for 30 seconds
 
 # api key for diagnostics
 export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
@@ -271,6 +274,17 @@ export API_KEY="6976f434-d9c1-11f0-93b8-5254000f64af"
 export REMOTE_API_URL="https://cppserver.com"
 export REMOTE_API_USER="mcordova"
 export REMOTE_API_PASS="basica"
+
+# mail server configuration
+export MAIL_SERVER="smtp://smtp.gmail.com:587"
+export MAIL_USER="admin@martincordova.com"
+export MAIL_PASSWORD="your_app_password_here" # Use an app password for Gmail
+
+# webauthn configuration
+export WEBAUTHN_ORIGIN="https://ginarojas.com"
+
+# google recaptcha configuration
+export RECAPTCHA_SECRET_KEY="YourSecretKeyHere"
 
 # executable
 ./apiserver

@@ -14,6 +14,7 @@
 #include "restclient.hpp" // for  get_remote_customer() API handler
 #include "mail_service.hpp" // for send_email()
 #include "webauthn.hpp"    // for WebAuthn enrollment
+#include "recaptcha.hpp"   // for reCAPTCHA V3 verification
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -69,6 +70,10 @@ const validator customers_validator {
         [](std::string_view s) { return s.size() <= 10; },
         "Filter must be at most 10 characters."
     }
+};
+
+const validator recaptcha_validator {
+    rule<std::string>{"token", requirement::required}
 };
 
 // --- User-Defined API Handlers ---
@@ -362,7 +367,7 @@ void webauthn_enroll(const http::request& req, http::response& res) {
     try {
         const auto* body_sv = std::get_if<std::string_view>(&req.get_body());
         
-        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN", "https://cpp14.mshome.net");
+        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN");
         WebAuthnValidator validator(origin, body_sv ? *body_sv : "");
         
         if (validator.verify()) {
@@ -373,7 +378,7 @@ void webauthn_enroll(const http::request& req, http::response& res) {
             sql::exec("LOGINDB", "{CALL dbo.sp_register_webauthn_key(?,?,?,?)}",
                       user, credential_id, public_key, std::optional<std::string>{});
 
-            util::log::debug("WebAuthn Enrollment successful for user {}. Credential ID: {}",
+            util::log::info("WebAuthn Enrollment successful for user {}. Credential ID: {}",
                           user, credential_id);
             res.set_body(ok, R"({"status":"success", "message":"WebAuthn enrollment successful"})");
         } else {
@@ -387,26 +392,22 @@ void webauthn_enroll(const http::request& req, http::response& res) {
 
 void webauthn_login(const http::request& req, http::response& res) {
     try {
-        util::log::debug("Entering webauthn_login");
         const auto* body_sv = std::get_if<std::string_view>(&req.get_body());
         if (!body_sv) {
             res.set_body(bad_request, R"({"error":"Missing request body"})");
             return;
         }
 
-        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN", "https://cpp14.mshome.net");
-        util::log::debug("Initializing WebAuthnValidator with origin: {}", origin);
+        static const std::string origin = env::get<std::string>("WEBAUTHN_ORIGIN");
         WebAuthnValidator validator(origin, *body_sv);
 
         const std::string& credential_id = validator.getCredentialIdBase64();
-        util::log::debug("Extracted Credential ID B64: {}", credential_id);
         if (credential_id.empty()) {
             res.set_body(bad_request, R"({"error":"Missing credential ID"})");
             return;
         }
 
         // Fetch user and public key from DB by credential ID
-        util::log::debug("Querying database for credential_id: {}", credential_id);
         sql::resultset rs = sql::query("LOGINDB", "{CALL dbo.sp_get_webauthn_key(?)}", credential_id);
         if (rs.empty()) {
             util::log::warn("Credential ID not found in database: {}", credential_id);
@@ -415,7 +416,6 @@ void webauthn_login(const http::request& req, http::response& res) {
         }
 
         const auto& row = rs.at(0);
-        util::log::debug("Checking resultset status");
         if (row.get_value<std::string>("status") == "INVALID") {
             const std::string error_code = row.get_value<std::string>("error_code");
             const std::string error_desc = row.get_value<std::string>("error_description");
@@ -424,7 +424,6 @@ void webauthn_login(const http::request& req, http::response& res) {
             return;
         }
 
-        util::log::debug("Extracting row values");
         const std::string user = row.get_value<std::string>("userlogin");
         const std::string public_key_b64 = row.get_value<std::string>("public_key");
         const long long stored_counter = row.get_value<long long>("counter");
@@ -432,12 +431,10 @@ void webauthn_login(const http::request& req, http::response& res) {
         const std::string display_name = row.get_value<std::string>("displayname");
         const std::string role_names = row.get_value<std::string>("rolenames");
 
-        util::log::debug("Calling verify_assertion for user: {}", user);
         if (validator.verify_assertion(public_key_b64)) {
             util::log::debug("Assertion verified successfully");
             const uint32_t new_counter = validator.getCounter();
             
-            util::log::debug("Checking counter: Stored={}, New={}", stored_counter, new_counter);
             if (stored_counter > 0 && new_counter <= static_cast<uint32_t>(stored_counter)) {
                 util::log::critical("WebAuthn Counter regression detected for user '{}'! Possible clone/replay. Stored: {} New: {}", 
                                    user, stored_counter, new_counter);
@@ -445,11 +442,9 @@ void webauthn_login(const http::request& req, http::response& res) {
                 return;
             }
 
-            util::log::debug("Updating counter in database");
             sql::exec("LOGINDB", "{CALL dbo.sp_update_webauthn_counter(?,?)}", credential_id, static_cast<long long>(new_counter));
 
             const std::string session_id = util::get_uuid();
-            util::log::debug("Generating JWT for user: {} with sessionId: {}", user, session_id);
             jwt::claims_map claims = {
                 {"user", user},
                 {"email", email},
@@ -503,6 +498,7 @@ int main() {
         s.register_api(webapi_path{"/customers"}, post, customers_validator, &get_customers, true);
         s.register_api(webapi_path{"/webauthn/enroll"}, post, &webauthn_enroll, true);
         s.register_api(webapi_path{"/webauthn/login"}, post, &webauthn_login, false);
+        s.register_api(webapi_path{"/recaptcha"}, post, recaptcha_validator, &verify_recaptcha, false);
         
         s.start();
 
