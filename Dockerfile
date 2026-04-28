@@ -47,9 +47,9 @@ RUN wget https://github.com/lurcher/unixODBC/releases/download/v2.3.14/unixODBC-
        --enable-iconv --with-iconv-char-enc=UTF8 --with-iconv-ucode-enc=UTF16LE \
     && make -j$(nproc) && make install
 
-# 4. COMPILE MINIMAL FREETDS (v1.5.16)
+# 4. COMPILE MINIMAL FREETDS (v1.5.17)
 WORKDIR /tmp/freetds
-RUN wget https://www.freetds.org/files/stable/freetds-1.5.16.tar.gz -O freetds.tar.gz \
+RUN wget https://www.freetds.org/files/stable/freetds-1.5.17.tar.gz -O freetds.tar.gz \
     && tar -xvf freetds.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-unixodbc=/usr --with-openssl=/usr \
        --enable-msdblib --disable-libiconv --disable-krb5 --disable-gssapi \
