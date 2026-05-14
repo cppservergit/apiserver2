@@ -13,6 +13,7 @@
 #include <format>
 #include <any>
 #include <utility> // For std::pair
+#include <mutex>
 
 // Include ODBC headers
 #include <sql.h>

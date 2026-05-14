@@ -26,9 +26,9 @@ ENV CC=gcc-14 \
     CXXFLAGS="-O2 -flto=auto" \
     LDFLAGS="-O2 -flto=auto"
 
-# 2. COMPILE MINIMAL LIBCURL (v8.19.0)
+# 2. COMPILE MINIMAL LIBCURL (v8.20.0)
 WORKDIR /tmp/curl
-RUN wget https://github.com/curl/curl/releases/download/curl-8_19_0/curl-8.19.0.tar.gz -O curl.tar.gz \
+RUN wget https://github.com/curl/curl/releases/download/curl-8_20_0/curl-8.20.0.tar.gz -O curl.tar.gz \
     && tar -xvf curl.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-ssl --with-zlib --enable-threaded-resolver \
        --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap \
@@ -47,9 +47,9 @@ RUN wget https://github.com/lurcher/unixODBC/releases/download/v2.3.14/unixODBC-
        --enable-iconv --with-iconv-char-enc=UTF8 --with-iconv-ucode-enc=UTF16LE \
     && make -j$(nproc) && make install
 
-# 4. COMPILE MINIMAL FREETDS (v1.5.16)
+# 4. COMPILE MINIMAL FREETDS (v1.5.17)
 WORKDIR /tmp/freetds
-RUN wget https://www.freetds.org/files/stable/freetds-1.5.16.tar.gz -O freetds.tar.gz \
+RUN wget https://www.freetds.org/files/stable/freetds-1.5.17.tar.gz -O freetds.tar.gz \
     && tar -xvf freetds.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-unixodbc=/usr --with-openssl=/usr \
        --enable-msdblib --disable-libiconv --disable-krb5 --disable-gssapi \
@@ -92,6 +92,9 @@ RUN strip --strip-all /usr/lib/libtdsodbc.so \
     && strip --strip-all /usr/lib/libodbcinst.so.2 \
     && strip --strip-all /usr/lib/x86_64-linux-gnu/libltdl.so.7 \
     && strip --strip-all /usr/lib/libqrencode.so.4 \
+    && strip --strip-all /src/apiserver \
+    && if [ -f /usr/lib/libcurl.so.4 ]; then strip --strip-all /usr/lib/libcurl.so.4; \
+       else strip --strip-all /usr/lib/x86_64-linux-gnu/libcurl.so.4; fi \
     && if [ -f /usr/lib/libjson-c.so.5 ]; then strip --strip-all /usr/lib/libjson-c.so.5; \
        else strip --strip-all /usr/lib/x86_64-linux-gnu/libjson-c.so.5; fi
 
@@ -101,7 +104,8 @@ RUN strip --strip-all /usr/lib/libtdsodbc.so \
 FROM ubuntu:$UBUNTU_RELEASE AS chiseler
 ARG UBUNTU_RELEASE
 ARG TARGETARCH
-ARG CHISEL_VERSION=v1.1.0
+# USING v1.4.0 as the stable baseline
+ARG CHISEL_VERSION=v1.4.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Install Chisel

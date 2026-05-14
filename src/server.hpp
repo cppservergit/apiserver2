@@ -28,7 +28,11 @@
 #include <chrono>
 #include <list>
 
-inline constexpr auto g_version = "1.2.8 20260422";
+inline constexpr auto g_version = "1.2.9";
+
+inline constexpr std::string_view BUILD_INFO = 
+        "Build Date: " __DATE__ " " __TIME__ 
+        " | GCC " __VERSION__;
 
 using dispatch_task = std::function<void()>;
 

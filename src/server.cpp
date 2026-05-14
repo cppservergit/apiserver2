@@ -662,7 +662,7 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
     if (req.get_path() == "/ping") { res.set_body(ok, R"({"status":"OK"})"); return true; }
     if (req.get_path() == "/version") {
         if (!validate_bearer_token(req, "/version")) { res.set_body(bad_request, R"({"error":"Bad Request"})"); return true; }
-        res.set_body(ok, std::format(R"({{"pod_name":"{}","version":"{}"}})", m_metrics->get_pod_name(), g_version));
+        res.set_body(ok, std::format(R"({{"pod_name":"{}","version":"{}","build_info":"{}"}})", m_metrics->get_pod_name(), g_version, BUILD_INFO));
         return true;
     }
     return false;
