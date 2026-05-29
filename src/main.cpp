@@ -65,9 +65,8 @@ const validator sales_validator {
     //custom validator to ensure start_date < end_date
     [](const http::request& req) -> invariant_result {
         const auto start = req.get_required_param<date>("start_date");
-        const auto end   = req.get_required_param<date>("end_date"); 
-        
-        if (start >= end) {
+                
+        if (const auto end   = req.get_required_param<date>("end_date"); start >= end) {
             return std::unexpected(std::make_pair(
                 "date_range", 
                 std::format("start_date {} must be strictly before end_date {}", start, end)
