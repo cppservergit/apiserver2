@@ -22,7 +22,8 @@
 #include <fstream>
 #include <cctype>
 #include <string_view> 
-#include <ranges>      
+#include <ranges>
+#include <format>
 
 // Use namespaces to make code less verbose
 using namespace validation;
@@ -55,9 +56,43 @@ const validator totp_validator {
     rule<std::string>{"totp", requirement::required, [](std::string_view s) { return s.length() >= 6 && s.length() <= 8 && std::ranges::all_of(s, ::isdigit); }, "TOTP must be 6 to 8 digits."}
 };
 
+using date = std::chrono::year_month_day;
 const validator sales_validator {
-    rule<std::chrono::year_month_day>{"start_date", requirement::required},
-    rule<std::chrono::year_month_day>{"end_date", requirement::required}
+
+    rule<date>{"start_date", requirement::required},
+    rule<date>{"end_date", requirement::required},
+
+    //custom validator to ensure start_date < end_date
+    [](const http::request& req) -> invariant_result {
+        const auto start = req.get_required_param<date>("start_date");
+        const auto end   = req.get_required_param<date>("end_date"); 
+        
+        if (start >= end) {
+            return std::unexpected(std::make_pair(
+                "date_range", 
+                std::format("start_date {} must be strictly before end_date {}", start, end)
+            ));
+        }
+        
+        return {}; // Success
+    },
+
+    //custom validator to enforce reasonable date bounds (1994-01-01 to 1996-12-31)
+    [](const http::request& req) -> invariant_result {
+        const auto start = req.get_required_param<date>("start_date");
+        const auto end   = req.get_required_param<date>("end_date");
+        
+        constexpr auto min_date = std::chrono::year(1994) / std::chrono::January / 1;
+        
+        if (constexpr auto max_date = std::chrono::year(1996) / std::chrono::December / 31; start < min_date || end > max_date) {
+            return std::unexpected(std::make_pair(
+                "date_bounds", 
+                std::format("Dates must be between {} and {}", min_date, max_date)
+            ));
+        }
+        
+        return {}; // Success
+    }
 };
 
 const validator upload_validator {
@@ -162,12 +197,6 @@ void login(const http::request& req, http::response& res) {
 void get_sales_by_category(const http::request& req, http::response& res) {
     auto start_date = req.get_required_param<std::chrono::year_month_day>("start_date");
     auto end_date = req.get_required_param<std::chrono::year_month_day>("end_date");
-
-    if (start_date >= end_date) {
-        res.set_body(bad_request, R"({"error":"start_date must be before end_date"})");
-        return;
-    }
-
     res.set_body(ok, sql::get("DB1", "{CALL sp_sales_by_category(?,?)}", start_date, end_date).value_or("[]"));
 }
 

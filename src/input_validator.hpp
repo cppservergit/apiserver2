@@ -15,6 +15,9 @@
 
 namespace validation {
 
+using invariant_error = std::pair<std::string, std::string>;
+using invariant_result = std::expected<void, invariant_error>;
+
 /// @brief Describes the requirement level for a parameter.
 enum class requirement {
     required,
@@ -60,9 +63,14 @@ struct rule {
 template<typename... Rules>
 class validator {
 public:
-    explicit validator(Rules... rules) : m_rulesTuple(std::move(rules)...) {}
+    // 1. Single constructor. CTAD handles standard rules AND trailing lambdas natively.
+    explicit validator(Rules... rules) 
+        : m_rulesTuple(std::move(rules)...) {}
 
     void validate(const http::request& req) const {
+        // The fold expression evaluates strictly left-to-right.
+        // If any validate_one throws, execution halts instantly.
+        // Therefore, trailing invariants only run if all preceding rules pass.
         std::apply(
             [&](const auto&... rule_pack) {
                 (this->validate_one(req, rule_pack), ...);
@@ -72,6 +80,9 @@ public:
     }
 
 private:
+    std::tuple<Rules...> m_rulesTuple;
+
+    // Overload A: Handles standard rule<T> definitions
     template<typename T>
     void validate_one(const http::request& req, const rule<T>& r) const {
         auto result = req.get_value<T>(r.name);
@@ -87,7 +98,7 @@ private:
 
         const auto& maybe_value = *result;
         
-        // FIX: Treat empty strings from form-data as conceptually "missing"
+        // Treat empty strings from form-data as conceptually "missing"
         bool is_empty_string = false;
         if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
             if (maybe_value.has_value() && maybe_value->empty()) {
@@ -114,8 +125,23 @@ private:
             );
         }
     }
-
-    std::tuple<Rules...> m_rulesTuple;
+    
+    // Overload B: Handles cross-parameter invariants (Lambdas)
+    // Constrained so it only matches callables that return invariant_result
+    template<typename Callable>
+    requires std::is_invocable_r_v<invariant_result, Callable, const http::request&>
+    void validate_one(const http::request& req, const Callable& c) const {
+        auto result = c(req);
+        
+        if (!result.has_value()) {
+            const auto& [param_name, msg] = result.error();
+            throw validation_error(
+                param_name,
+                validation_error::error_type::custom_rule_failed,
+                msg
+            );
+        }
+    }
 };
 
 } // namespace validation
