@@ -65,31 +65,12 @@ const validator sales_validator {
     //custom validator to ensure start_date < end_date
     [](const http::request& req) -> invariant_result {
         const auto start = req.get_required_param<date>("start_date");
-                
         if (const auto end   = req.get_required_param<date>("end_date"); start >= end) {
             return std::unexpected(std::make_pair(
                 "date_range", 
                 std::format("start_date {} must be strictly before end_date {}", start, end)
             ));
         }
-        
-        return {}; // Success
-    },
-
-    //custom validator to enforce reasonable date bounds (1994-01-01 to 1996-12-31)
-    [](const http::request& req) -> invariant_result {
-        const auto start = req.get_required_param<date>("start_date");
-        const auto end   = req.get_required_param<date>("end_date");
-        
-        constexpr auto min_date = std::chrono::year(1994) / std::chrono::January / 1;
-        
-        if (constexpr auto max_date = std::chrono::year(1996) / std::chrono::December / 31; start < min_date || end > max_date) {
-            return std::unexpected(std::make_pair(
-                "date_bounds", 
-                std::format("Dates must be between {} and {}", min_date, max_date)
-            ));
-        }
-        
         return {}; // Success
     }
 };
