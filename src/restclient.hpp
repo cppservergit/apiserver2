@@ -56,7 +56,7 @@ public:
         
         // Use thread-local client member to reuse connections (Keep-Alive)
         const auto response = m_client.post(get_url() + uri, body, headers);
-        if (response.status_code != 200) {
+        if (response.status_code != 200 && response.status_code != 404) {
             util::log::error("Remote API {} failed with status {}: {}", uri, response.status_code, response.body);
             // If we get a 401, we might want to invalidate the cache, but for now simple error handling
             if (response.status_code == 401) {

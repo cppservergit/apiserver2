@@ -250,7 +250,7 @@ void get_remote_customer(const http::request& req, http::response& res) {
     // Updated to pass the request object
     // Exception handling is delegated to the worker thread in server.cpp
     const http_response customer_response = RemoteCustomerService::get_customer_info(req, customer_id);
-    res.set_body(ok, customer_response.body);
+    res.set_body(customer_response.status_code== 200 ? ok : not_found, customer_response.body);
 }
 
 // handler that calls sp_customers_like with optional filter parameter
