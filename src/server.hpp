@@ -118,10 +118,15 @@ private:
             return m_response_queue.get();
         }
 
+        [[nodiscard]] int get_shutdown_fd() const noexcept {
+            return m_shutdown_fd;
+        }
+
     private:
         void setup_listening_socket();
         void setup_timerfd();
         void setup_eventfd();
+        void setup_shutdown_fd();
         
         void add_to_epoll(int fd, uint32_t events) const;
         void remove_from_epoll(int fd) const;
@@ -155,6 +160,7 @@ private:
         int m_epoll_fd{-1};
         int m_timer_fd{-1};
         int m_event_fd{-1}; 
+        int m_shutdown_fd{-1}; 
         
         uint16_t m_port;
         std::shared_ptr<metrics> m_metrics;

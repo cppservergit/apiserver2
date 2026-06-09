@@ -74,6 +74,12 @@ void server::io_worker::setup_eventfd() {
     add_to_epoll(m_event_fd, EPOLLIN);
 }
 
+void server::io_worker::setup_shutdown_fd() {
+    m_shutdown_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (m_shutdown_fd == -1) throw server_error("Failed to create shutdown eventfd");
+    add_to_epoll(m_shutdown_fd, EPOLLIN);
+}
+
 // Extracted to fix SonarCloud Cognitive Complexity > 15
 void server::io_worker::handle_epoll_event(const epoll_event& event) {
     const int fd = event.data.fd;
@@ -90,7 +96,10 @@ void server::io_worker::handle_epoll_event(const epoll_event& event) {
     if (fd == m_event_fd) {
         on_response_ready();
         return;
-    } 
+    }
+    if (fd == m_shutdown_fd) {
+        return; // Wake up and check m_running
+    }
     
     if ((ev & EPOLLIN) != 0) {
         on_read(fd);
@@ -115,6 +124,7 @@ void server::io_worker::run() {
         setup_listening_socket();
         setup_timerfd();
         setup_eventfd();
+        setup_shutdown_fd();
     } catch (const server_error& e) {
         util::log::critical("I/O worker startup failed: {}", e.what());
         return;
@@ -736,6 +746,10 @@ void server::start() {
     
     m_running = false;
     for (const auto& w : m_workers) {
+        // Wakes up epoll_wait instantly via dedicated shutdown fd
+        uint64_t u = 1;
+        [[maybe_unused]] ssize_t s = write(w->get_shutdown_fd(), &u, sizeof(u));
+
         w->get_response_queue()->stop(); 
     }
-}
+ }
