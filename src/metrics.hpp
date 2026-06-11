@@ -202,7 +202,55 @@ public:
         return m_pod_name;
     }
 
+    /**
+     * @brief Records a new active task.
+     * @param uri The URI of the request.
+     * @param user The user associated with the request (if any).
+     * @param tid The ID of the thread executing the task.
+     */
+    void add_task(std::string uri, std::string user, std::thread::id tid) {
+        std::scoped_lock lock(m_tasks_mutex);
+        m_active_tasks.emplace_back(std::chrono::system_clock::now(), std::move(uri), std::move(user), tid);
+    }
+
+    /**
+     * @brief Removes a task from the active list.
+     * @param tid The ID of the thread that finished the task.
+     */
+    void remove_task(std::thread::id tid) noexcept {
+        std::scoped_lock lock(m_tasks_mutex);
+        std::erase_if(m_active_tasks, [tid](const auto& t) { return t.tid == tid; });
+    }
+
+    /**
+     * @brief Returns a JSON array of currently active tasks.
+     * @return std::string JSON formatted array.
+     */
+    [[nodiscard]] std::string tasks_to_json() const {
+        std::scoped_lock lock(m_tasks_mutex);
+        std::string json = "[";
+        bool first = true;
+        for (const auto& task : m_active_tasks) {
+            if (!first) {
+                json += ",";
+            }
+            // Use {:%FT%TZ} for ISO 8601 format
+            json += std::format(R"({{"timestamp":"{:%FT%TZ}","uri":"{}","user":"{}","thread_id":"{}"}})", 
+                                task.start_time, task.uri, task.user, task.tid);
+            first = false;
+        }
+        json += "]";
+        return json;
+    }
+
 private:
+    struct task_info {
+        std::chrono::system_clock::time_point start_time;
+        std::string uri;
+        std::string user;
+        std::thread::id tid;
+    };
+
     const std::string m_pod_name;
     const std::chrono::system_clock::time_point m_start_time;
     const int m_pool_size;
@@ -216,6 +264,9 @@ private:
 
     mutable std::mutex m_pools_mutex;
     std::vector<const thread_pool*> m_thread_pools;
+
+    mutable std::mutex m_tasks_mutex;
+    std::vector<task_info> m_active_tasks;
 
     /**
      * @brief Structure to hold a point-in-time snapshot of all metrics.

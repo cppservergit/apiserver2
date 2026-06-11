@@ -356,10 +356,17 @@ void server::io_worker::dispatch_to_worker(int fd, uint64_t connection_id, http:
             const auto start_time = std::chrono::high_resolution_clock::now();
             m_metrics->increment_active_threads();
             
+            // Record task in metrics for /systasks, correlated via thread ID
+            const auto tid = std::this_thread::get_id();
+            m_metrics->add_task(std::string(req_ptr->get_path()), req_ptr->get_user(), tid);
+
             http::response res(req_ptr->get_header_value("Origin"));
             
             execute_handler(*req_ptr, res, endpoint);
             
+            // Task finished, remove from metrics
+            m_metrics->remove_task(tid);
+
             const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_time);
             
             m_response_queue->push({fd, connection_id, std::move(res)});
@@ -673,6 +680,11 @@ bool server::io_worker::handle_internal_api(const http::request& req, http::resp
     if (req.get_path() == "/version") {
         if (!validate_bearer_token(req, "/version")) { res.set_body(bad_request, R"({"error":"Bad Request"})"); return true; }
         res.set_body(ok, std::format(R"({{"pod_name":"{}","version":"{}","build_info":"{}"}})", m_metrics->get_pod_name(), g_version, BUILD_INFO));
+        return true;
+    }
+    if (req.get_path() == "/systasks") {
+        if (!validate_bearer_token(req, "/systasks")) { res.set_body(bad_request, R"({"error":"Bad Request"})"); return true; }
+        res.set_body(ok, m_metrics->tasks_to_json());
         return true;
     }
     return false;
