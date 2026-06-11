@@ -657,41 +657,6 @@ auto request::get_file_upload(std::string_view field_name) const noexcept -> con
     return (it != m_fileParts.end()) ? std::to_address(it) : nullptr;
 }
 
-// Helper for parsing date/time from a string_view
-template<typename T>
-concept is_chrono_type = std::is_same_v<T, std::chrono::system_clock::time_point> ||
-                         std::is_same_v<T, std::chrono::year_month_day>;
-
-template <is_chrono_type T>
-auto parse_chrono_type(std::string_view sv) -> std::optional<T> {
-    T value{};
-    std::istringstream iss{std::string(sv)};
-    iss.imbue(std::locale::classic());
-
-    if constexpr (std::is_same_v<T, std::chrono::system_clock::time_point>) {
-        // Try ISO 8601 format first
-        std::chrono::from_stream(iss, "%Y-%m-%dT%H:%M:%S", value);
-        if (!iss.fail()) {
-            return value;
-        }
-        iss.clear();
-        iss.seekg(0);
-        std::chrono::from_stream(iss, "%Y-%m-%d %H:%M:%S", value);
-        if (!iss.fail()) {
-            return value;
-        }
-    } else if constexpr (std::is_same_v<T, std::chrono::year_month_day>) {
-        std::chrono::from_stream(iss, "%Y-%m-%d", value);
-        if (!iss.fail()) {
-            iss >> std::ws;
-            if (iss.eof()) {
-                return value;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
 template <typename t>
 auto request::get_value(std::string_view param_name) const noexcept -> std::expected<std::optional<t>, param_error> {
     std::optional<std::string_view> value_sv_opt;

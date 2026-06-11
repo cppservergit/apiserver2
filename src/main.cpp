@@ -91,6 +91,15 @@ const validator recaptcha_validator {
     rule<std::string>{"token", requirement::required}
 };
 
+const validator nested_validator {
+    rule<int>{"customer_id", requirement::required},
+    rule<date>{"order_date", requirement::required},
+    array_rule{"details", requirement::required,
+        rule<int>{"product_id", requirement::required, [](int id) { return id > 0; }, "Product ID must be a positive integer."},
+        rule<int>{"quantity", requirement::required, [](const int& q) { return q > 0; },"Quantity must be greater than zero."}
+    }
+};
+
 // --- User-Defined API Handlers ---
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
     res.set_body(ok, R"({"message":"Hello, World!"})");
@@ -485,6 +494,13 @@ void webauthn_login(const http::request& req, http::response& res) {
     }
 }
 
+void handle_nested(const http::request& req, http::response& res) {
+    if (const auto* body = std::get_if<std::string_view>(&req.get_body())) {
+        util::log::info("Received nested request body: {}", *body);
+    }
+    res.set_body(ok, R"({"status":"OK"})");
+}
+
 int main() {
     try {
         util::log::debug("Application starting...");
@@ -508,6 +524,7 @@ int main() {
         s.register_api(webapi_path{"/webauthn/enroll"}, post, &webauthn_enroll, true);
         s.register_api(webapi_path{"/webauthn/login"}, post, &webauthn_login, false);
         s.register_api(webapi_path{"/recaptcha"}, post, recaptcha_validator, &verify_recaptcha, false);
+        s.register_api(webapi_path{"/nested"}, post, nested_validator, &handle_nested, false);
         
         s.start();
 

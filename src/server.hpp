@@ -28,7 +28,7 @@
 #include <chrono>
 #include <list>
 
-inline constexpr auto g_version = "1.3.0";
+inline constexpr auto g_version = "1.3.2";
 
 inline constexpr std::string_view BUILD_INFO = 
         "Build Date: " __DATE__ " " __TIME__ 
