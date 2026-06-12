@@ -227,6 +227,7 @@ public:
      * @return std::string JSON formatted array.
      */
     [[nodiscard]] std::string tasks_to_json() const {
+        const std::chrono::time_zone* tz = get_timezone(false);
         std::scoped_lock lock(m_tasks_mutex);
         std::string json = "[";
         bool first = true;
@@ -234,16 +235,24 @@ public:
             if (!first) {
                 json += ",";
             }
-            // Use {:%FT%TZ} for ISO 8601 format
-            json += std::format(R"({{"timestamp":"{:%FT%TZ}","uri":"{}","user":"{}","thread_id":"{}"}})", 
-                                task.start_time, task.uri, task.user, task.tid);
+
+            std::string ts;
+            if (tz) {
+                ts = std::format("{:%FT%T}", 
+                    std::chrono::zoned_time{tz, std::chrono::floor<std::chrono::seconds>(task.start_time)});
+            } else {
+                ts = std::format("{:%FT%T}", std::chrono::floor<std::chrono::seconds>(task.start_time));
+            }
+
+            json += std::format(R"({{"timestamp":"{}","uri":"{}","user":"{}","thread_id":"{}"}})", 
+                                ts, task.uri, task.user, task.tid);
             first = false;
         }
         json += "]";
         return json;
     }
 
-private:
+    private:
     struct task_info {
         std::chrono::system_clock::time_point start_time;
         std::string uri;
@@ -296,14 +305,14 @@ private:
      */
     MetricsSnapshot collect_metrics_snapshot() const {
         MetricsSnapshot s;
-        
+
         // 1. Atomic Loads
         s.total_reqs = m_total_requests.load(/* NOSONAR */ std::memory_order_relaxed);
         long long total_time_us = m_total_processing_time_us.load(/* NOSONAR */ std::memory_order_relaxed);
         s.current_connections = m_connections.load(/* NOSONAR */ std::memory_order_relaxed);
         s.active_threads = m_active_threads.load(/* NOSONAR */ std::memory_order_relaxed);
         s.pool_size = m_pool_size;
-        
+
         // 2. Static/Member Data
         s.pod_name = m_pod_name;
         s.start_time = m_start_date_str;
@@ -314,11 +323,11 @@ private:
 
         // 4. Calculations
         s.total_time_s = static_cast<double>(total_time_us) / 1'000'000.0;
-        
+
         s.avg_time_s = (s.total_reqs > 0) 
             ? (s.total_time_s / static_cast<double>(s.total_reqs)) 
             : 0.0;
-            
+
         s.memory_usage_pct = (s.total_ram_kb > 0) 
             ? ((static_cast<double>(s.memory_usage_kb) / static_cast<double>(s.total_ram_kb)) * 100.0) 
             : 0.0;
@@ -333,52 +342,54 @@ private:
                 }
             }
         }
-        
+
         return s;
     }
 
     /**
-     * @brief Formats the start time respecting the TZ environment variable via env::get.
-     * * Handles C++20/23 timezone database lookups gracefully.
-     * Priority:
-     * 1. TZ Environment Variable (e.g., "America/Caracas")
-     * 2. System Timezone (/etc/localtime)
-     * 3. UTC Fallback
-     * * @return std::string Formatted timestamp string (ISO 8601-like).
+     * @brief Ultimate Fallback: Raw system time (effectively UTC)
+     * @return std::string Formatted timestamp string (ISO 8601-like).
      */
     [[nodiscard]] std::string format_timestamp() const {
-        const std::chrono::time_zone* tz = nullptr;
-
-        // 1. Try to load from TZ environment variable using env::get
-        // Returns empty string if missing (the fallback logic is inside env.hpp wrapper)
-        //
-        if (const std::string tz_env = env::get<std::string>("TZ", ""); !tz_env.empty()) {
-            try {
-                tz = std::chrono::locate_zone(tz_env);
-            } catch (const std::runtime_error& e) {
-               util::log::warn("metrics", "Failed to locate timezone from TZ env {}: Falling back to system timezone: {}.", tz_env, e.what());
-            }
-        }
-
-        // 2. Fallback to System Timezone
-        if (!tz) {
-            try {
-                tz = std::chrono::current_zone();
-            } catch (const std::runtime_error& e) {
-                util::log::warn("metrics", "Failed to get system timezone: Falling back to UTC: {}.", e.what());
-            }
-        }
-
-        // 3. Format
-        if (tz) {
+        if (const std::chrono::time_zone* tz = get_timezone(true)) {
             return std::format("{:%FT%T}", 
                 std::chrono::zoned_time{tz, 
                 std::chrono::floor<std::chrono::seconds>(m_start_time)});
         }
-
-        // 4. Ultimate Fallback: Raw system time (effectively UTC)
         return std::format("{:%FT%T}", std::chrono::floor<std::chrono::seconds>(m_start_time));
-    }    
-};
+    }
 
-#endif // METRICS_HPP
+    /**
+     * @brief Retrieves the effective timezone based on environment or system settings.
+     * @param verbose If true, logs warnings on failure.
+     * @return const std::chrono::time_zone* Pointer to the timezone, or nullptr if lookup fails.
+     */
+    [[nodiscard]] const std::chrono::time_zone* get_timezone(bool verbose) const {
+        const std::chrono::time_zone* tz = nullptr;
+
+        // 1. Try TZ env
+        if (const std::string tz_env = env::get<std::string>("TZ", ""); !tz_env.empty()) {
+            try {
+                tz = std::chrono::locate_zone(tz_env);
+            } catch (const std::runtime_error& e) {
+                if (verbose) {
+                    util::log::warn("metrics", "Failed to locate timezone from TZ env {}: Falling back to system timezone: {}.", tz_env, e.what());
+                }
+            }
+        }
+
+        // 2. Fallback to System
+        if (!tz) {
+            try {
+                tz = std::chrono::current_zone();
+            } catch (const std::runtime_error& e) {
+                if (verbose) {
+                    util::log::warn("metrics", "Failed to get system timezone: Falling back to UTC: {}.", e.what());
+                }
+            }
+        }
+        return tz;
+    }
+    };
+
+    #endif // METRICS_HPP
