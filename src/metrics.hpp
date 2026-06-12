@@ -222,32 +222,43 @@ public:
         std::erase_if(m_active_tasks, [tid](const auto& t) { return t.tid == tid; });
     }
 
-    /**
+   /**
      * @brief Returns a JSON array of currently active tasks.
      * @return std::string JSON formatted array.
      */
     [[nodiscard]] std::string tasks_to_json() const {
-        const std::chrono::time_zone* tz = get_timezone(false);
         std::scoped_lock lock(m_tasks_mutex);
-        std::string json = "[";
-        bool first = true;
-        for (const auto& task : m_active_tasks) {
-            if (!first) {
-                json += ",";
-            }
-
-            std::string ts;
-            if (tz) {
-                ts = std::format("{:%FT%T}", 
-                    std::chrono::zoned_time{tz, std::chrono::floor<std::chrono::seconds>(task.start_time)});
-            } else {
-                ts = std::format("{:%FT%T}", std::chrono::floor<std::chrono::seconds>(task.start_time));
-            }
-
-            json += std::format(R"({{"timestamp":"{}","uri":"{}","user":"{}","thread_id":"{}"}})", 
-                                ts, task.uri, task.user, task.tid);
-            first = false;
+        
+        // Fast path: return early if there are no tasks
+        if (m_active_tasks.empty()) {
+            return "[]";
         }
+
+        const std::chrono::time_zone* tz = get_timezone(false);
+        std::string json = "[";
+        
+        // Optional optimization: Pre-allocate memory to avoid allocations during the loop.
+        // Adjust the '128' based on the average expected length of your JSON objects.
+        // json.reserve(2 + m_active_tasks.size() * 128);
+
+        for (const auto& task : m_active_tasks) {
+            std::string ts;
+            auto floored_time = std::chrono::floor<std::chrono::seconds>(task.start_time);
+            
+            if (tz) {
+                ts = std::format("{:%FT%T}", std::chrono::zoned_time{tz, floored_time});
+            } else {
+                ts = std::format("{:%FT%T}", floored_time);
+            }
+
+            // We append the comma directly inside the format string at the very end
+            json += std::format(R"({{"timestamp":"{}","uri":"{}","user":"{}","thread_id":"{}"}},)", 
+                                ts, task.uri, task.user, task.tid);
+        }
+        
+        // Remove the trailing comma from the last iteration
+        json.pop_back(); 
+        
         json += "]";
         return json;
     }
