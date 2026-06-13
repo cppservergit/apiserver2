@@ -227,6 +227,7 @@ public:
      * @return std::string JSON formatted array.
      */
     [[nodiscard]] std::string tasks_to_json() const {
+        const auto now = std::chrono::system_clock::now();
         std::scoped_lock lock(m_tasks_mutex);
         
         // Fast path: return early if there are no tasks
@@ -251,9 +252,11 @@ public:
                 ts = std::format("{:%FT%T}", floored_time);
             }
 
+            const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - task.start_time).count();
+
             // We append the comma directly inside the format string at the very end
-            json += std::format(R"({{"timestamp":"{}","uri":"{}","user":"{}","thread_id":"{}"}},)", 
-                                ts, task.uri, task.user, task.tid);
+            json += std::format(R"({{"timestamp":"{}","uri":"{}","user":"{}","thread_id":"{}","duration_ms":{}}},)", 
+                                ts, task.uri, task.user, task.tid, duration);
         }
         
         // Remove the trailing comma from the last iteration
