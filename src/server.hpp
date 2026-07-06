@@ -11,6 +11,7 @@
 #include "thread_pool.hpp"
 #include "shared_queue.hpp"
 #include "util.hpp"
+#include "password.hpp"
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -28,7 +29,7 @@
 #include <chrono>
 #include <list>
 
-inline constexpr auto g_version = "1.3.2";
+inline constexpr auto g_version = "1.3.4";
 
 inline constexpr std::string_view BUILD_INFO = 
         "Build Date: " __DATE__ " " __TIME__ 
@@ -110,8 +111,8 @@ private:
         ~io_worker() noexcept;
         void run();
 
-        [[nodiscard]] const thread_pool* get_thread_pool() const {
-            return m_thread_pool.get();
+        [[nodiscard]] const thread_pool& get_thread_pool() const {
+            return *m_thread_pool;
         }
 
         [[nodiscard]] shared_queue<response_item, true>* get_response_queue() const {

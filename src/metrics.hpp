@@ -23,6 +23,7 @@
 #include <numeric>
 #include <format>
 #include <mutex>
+#include <functional>
 
 /**
  * @class metrics
@@ -96,9 +97,9 @@ public:
      * * The metrics collector will poll registered pools for pending task counts
      * when generating reports (snapshotting).
      *
-     * @param pool Pointer to the thread pool instance.
+     * @param pool Reference to the thread pool instance.
      */
-    void register_thread_pool(const thread_pool* pool) {
+    void register_thread_pool(const thread_pool& pool) {
         std::scoped_lock lock(m_pools_mutex);
         m_thread_pools.push_back(pool);
     }
@@ -286,7 +287,7 @@ public:
     std::atomic<int> m_active_threads{0};
 
     mutable std::mutex m_pools_mutex;
-    std::vector<const thread_pool*> m_thread_pools;
+    std::vector<std::reference_wrapper<const thread_pool>> m_thread_pools;
 
     mutable std::mutex m_tasks_mutex;
     std::vector<task_info> m_active_tasks;
@@ -350,10 +351,8 @@ public:
         s.pending_tasks = 0;
         {
             std::scoped_lock lock(m_pools_mutex);
-            for (const auto* pool : m_thread_pools) {
-                if (pool) {
-                    s.pending_tasks += pool->get_total_pending_tasks();
-                }
+            for (const auto& pool : m_thread_pools) {
+                s.pending_tasks += pool.get().get_total_pending_tasks();
             }
         }
 
