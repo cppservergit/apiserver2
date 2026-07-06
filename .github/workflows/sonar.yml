@@ -29,7 +29,8 @@ jobs:
             libjson-c-dev \
             unixodbc-dev \
             libqrencode-dev \
-            libssl-dev
+            libssl-dev \
+            libsodium-dev
 
       - name: Install Build Wrapper
         # Uses the latest stable version for the wrapper installer
