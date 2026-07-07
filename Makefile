@@ -3,7 +3,7 @@ CXX = g++
 
 # --- Build Configurations ---
 .DEFAULT_GOAL := help
-CXXFLAGS_BASE = -std=c++23 -Wall -Wextra
+CXXFLAGS_BASE = -std=c++23 -Wall -Wextra -Wdangling-pointer=2 -Wdangling-reference -Wreturn-local-addr -Wpedantic -Wshadow -Wnon-virtual-dtor
 
 CXXFLAGS_DEBUG = -g -DENABLE_DEBUG_LOGS -DUSE_STACKTRACE
 CXXFLAGS_RELEASE = -O2 -DLOG_USE_JSON -DNDEBUG -march=x86-64-v3 -flto=auto
@@ -46,7 +46,7 @@ $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(2))
 endef
 
 # --- Libraries to Link ---
-LIBS_COMMON = -lcurl -ljson-c -lcrypto -lodbc -lqrencode
+LIBS_COMMON = -lcurl -ljson-c -lcrypto -lodbc -lqrencode -lsodium
 LIBS_DEBUG = $(LIBS_COMMON) -lstdc++exp -lbacktrace
 
 # --- User-Facing Commands ---

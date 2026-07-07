@@ -15,6 +15,7 @@
 #include "mail_service.hpp" // for send_email()
 #include "webauthn.hpp"    // for WebAuthn enrollment
 #include "recaptcha.hpp"   // for reCAPTCHA V3 verification
+#include "password.hpp"    // for Argon2id hashing and verification
 #include <functional>
 #include <algorithm> 
 #include <chrono>
@@ -100,6 +101,25 @@ const validator nested_validator {
     }
 };
 
+const validator gethash_validator {
+    rule<std::string>{"password", requirement::required, [](std::string_view s) { 
+        if (s.length() < 8) return false;
+        if (s.contains(' ')) return false;
+        
+        bool has_upper = false;
+        bool has_digit = false;
+        bool has_special = false;
+        
+        for (char c : s) {
+            if (std::isupper(static_cast<unsigned char>(c))) has_upper = true;
+            else if (std::isdigit(static_cast<unsigned char>(c))) has_digit = true;
+            else if (c == '!' || c == '_' || c == '*' || c == '.' || c == '@') has_special = true;
+        }
+        
+        return has_upper && has_digit && has_special;
+    }, "Password must be at least 8 chars, no spaces, 1 uppercase, 1 number, and 1 special char (!_*.@)."}
+};
+
 // --- User-Defined API Handlers ---
 void hello_world([[maybe_unused]] const http::request& req, http::response& res) {
     res.set_body(ok, R"({"message":"Hello, World!"})");
@@ -127,25 +147,49 @@ void get_customer(const http::request& req, http::response& res) {
 }
 
 void login(const http::request& req, http::response& res) {
+    // Generate dummy hash once for timing attack mitigation
+    static const Crypto::HashArray dummy_hash = Crypto::hash_password("dummy_password_for_timing_mitigation");
+
     const auto user = req.get_required_param<std::string>("username");
-    const auto password = req.get_required_param<std::string>("password");
+    std::string password = req.get_required_param<std::string>("password");
     const std::string session_id = util::get_uuid();
     const std::string_view remote_ip = req.get_remote_ip();
 
-    sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?,?)}", user, password, session_id, remote_ip);
+    sql::resultset rs = sql::query("LOGINDB", "{CALL cpp_dblogin(?,?,?)}", user, session_id, remote_ip);
 
     if (rs.empty()) {
+        static_cast<void>(Crypto::verify_password(password, dummy_hash));
+        sodium_memzero(password.data(), password.size());
         res.set_body(unauthorized, R"({"error":"Invalid credentials"})");
         return;
     }
 
     const auto& row = rs.at(0);
     if (row.get_value<std::string>("status") == "INVALID") {
+        static_cast<void>(Crypto::verify_password(password, dummy_hash));
+        sodium_memzero(password.data(), password.size());
         const std::string error_code = row.get_value<std::string>("error_code");
         const std::string error_desc = row.get_value<std::string>("error_description");
         util::log::warn("Login failed for user '{}' from {}: {} - {}", user, remote_ip, error_code, error_desc);
         res.set_body(unauthorized, std::format(R"({{"error":"{}", "description":"{}"}})", error_code, error_desc));
     } else {
+        bool valid_password = false;
+        try {
+            const std::string stored_hash_str = row.get_value<std::string>("passwd");
+            const auto hash_array = Crypto::parse_db_hash(stored_hash_str);
+            valid_password = Crypto::verify_password(password, hash_array);
+        } catch (const Crypto::PasswordHashParseError& e) {
+            util::log::error("Corrupted hash in database for user '{}': {}", user, e.what());
+        }
+
+        sodium_memzero(password.data(), password.size());
+
+        if (!valid_password) {
+            util::log::warn("Login failed for user '{}' from {}: Invalid password", user, remote_ip);
+            res.set_body(unauthorized, R"({"error":"Invalid credentials"})");
+            return;
+        }
+
         const std::string email = row.get_value<std::string>("email");
         const std::string display_name = row.get_value<std::string>("displayname");
         const std::string role_names = row.get_value<std::string>("rolenames");
@@ -501,6 +545,21 @@ void handle_nested(const http::request& req, http::response& res) {
     res.set_body(ok, R"({"status":"OK"})");
 }
 
+void get_hash(const http::request& req, http::response& res) {
+    std::string password = req.get_required_param<std::string>("password");
+    
+    try {
+        const auto hash_array = Crypto::hash_password(password);
+        sodium_memzero(password.data(), password.size());
+        std::string hash_str(hash_array.data());
+        res.set_body(ok, std::format(R"({{"hash":"{}"}})", hash_str));
+    } catch (const Crypto::PasswordHashingError& e) {
+        sodium_memzero(password.data(), password.size());
+        util::log::error("Hashing failed: {}", e.what());
+        res.set_body(internal_server_error, R"({"error":"Hashing failed"})");
+    }
+}
+
 int main() {
     try {
         util::log::debug("Application starting...");
@@ -525,6 +584,7 @@ int main() {
         s.register_api(webapi_path{"/webauthn/login"}, post, &webauthn_login, false);
         s.register_api(webapi_path{"/recaptcha"}, post, recaptcha_validator, &verify_recaptcha, false);
         s.register_api(webapi_path{"/nested"}, post, nested_validator, &handle_nested, false);
+        s.register_api(webapi_path{"/gethash"}, post, gethash_validator, &get_hash, false);
         
         s.start();
 
