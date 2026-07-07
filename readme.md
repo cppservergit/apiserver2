@@ -105,11 +105,11 @@ graph TD
 * **HTTP 1.1 Keep-Alive server:** APIServer2 is a plain HTTP 1.1 server that is designed to run behind a Load Balancer that provides the TLS facade, it provides high connection reuse saving lots of resources and CPU time avoiding creation/destruction of sockets between the Load Balancer and the backend servers (APIServer2 instances). This is a common and convenient setup for OnPrem, Kubernetes and Cloud container services. The only HTTP verbs supported are GET, POST and OPTIONS, query parameters are not supported, all data must be sent via POST with JSON or multipart-form-data, nothing else is accepted.
 * **Fast and lightweight:** Compiled to optimized machine code, APIServer2 executable barely weights 450K, with minimal dependencies, it was designed to be run as a container inside a Kubernetes Pod, the OCI image is distroless using Ubuntu 24.04 and weights 27MB (7MB compressed)!
 * **Easy to test:** You don't need Kubernetes or Docker to use it, it is very easy to run baremetal, we provide bash scripts based on CURL for unit-testing and also quick-recipes for MicroK8s deployment.
-* **Security:** Built-in support for WebAuthn/PassKey, Google Recaptcha validation, Multi-factor authentication with TOTP (Google Authenticator), stateless NONCE (signed by the server and with expiration) and JSON Web Token.
+* **Security:** Built-in support for WebAuthn/PassKey, Google Recaptcha validation, Multi-factor authentication with TOTP (Google Authenticator), stateless NONCE (signed by the server and with expiration) and JSON Web Token. Also Argon2Id built-in password hashing is supported using libsodium, the simple example security database is based on this password authentication.
 
 ## **Quality Control**
 
-APIServer2 has been tested using G++ 14.2 sanitizers and SonarCloud static analysis, specifically:
+APIServer2 has been tested using G++ 14.2 sanitizers, valgrind and SonarCloud static analysis, specifically:
 
 * `-fsanitize=thread`: Thread-safe, no data races.
 * `-fsanitize=address`: Memory safety.
@@ -126,11 +126,20 @@ sudo sysctl vm.mmap_rnd_bits=30
 
 ## **Download Repo and install dependencies**
 
+It is assumed an Ubuntu 24.04 VM, on Windows 10/11 you can create it with Multipass like this:
+```
+multipass launch 24.04 -n dev -m 4G -c 4 -d 10G
+```
+Then log into your VM:
+```
+multipass shell dev
+```
+
 In your projects or home directory, run:
 ```
 git clone https://github.com/cppservergit/apiserver2.git && \
 cd apiserver2 && \
-sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc libcurl4-openssl-dev libqrencode-dev && \
+sudo apt install -y g++-14 make libssl-dev libjson-c-dev unixodbc-dev tdsodbc libcurl4-openssl-dev libqrencode-dev libsodium-dev && \
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 chmod +x run.sh
 ```
@@ -170,7 +179,7 @@ You should see output similar to this:
 ```
 Use CTRL-C to stop the server
 ```
-INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shutting down.
+[  INFO  ] [Thread: 126044113238656] [--------] Received signal 2 (Interrupt), shutting down.
 [  INFO  ] [Thread: 126044113238656] [--------] Application shutting down gracefully.
 ```
 
