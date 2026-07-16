@@ -26,9 +26,9 @@ ENV CC=gcc-14 \
     CXXFLAGS="-O2 -flto=auto" \
     LDFLAGS="-O2 -flto=auto"
 
-# 2. COMPILE MINIMAL LIBCURL (v8.20.0)
+# 2. COMPILE MINIMAL LIBCURL (v8.21.0)
 WORKDIR /tmp/curl
-RUN wget https://github.com/curl/curl/releases/download/curl-8_20_0/curl-8.20.0.tar.gz -O curl.tar.gz \
+RUN wget https://github.com/curl/curl/releases/download/curl-8_21_0/curl-8.21.0.tar.gz -O curl.tar.gz \
     && tar -xvf curl.tar.gz --strip-components=1 \
     && ./configure --prefix=/usr --with-ssl --with-zlib --enable-threaded-resolver \
        --disable-dict --disable-file --disable-ftp --disable-gopher --disable-imap \
@@ -73,7 +73,6 @@ RUN wget https://github.com/json-c/json-c/archive/refs/tags/json-c-0.18-20240915
     && make -j$(nproc) && make install
 
 # 6. COMPILE MINIMAL LIBQRENCODE (v4.1.1)
-# Built entirely without PNG support to keep the container tiny
 WORKDIR /tmp/qrencode
 RUN wget https://github.com/fukuchi/libqrencode/archive/refs/tags/v4.1.1.tar.gz -O qrencode.tar.gz \
     && tar -xvf qrencode.tar.gz --strip-components=1 \
@@ -81,17 +80,25 @@ RUN wget https://github.com/fukuchi/libqrencode/archive/refs/tags/v4.1.1.tar.gz 
     && ./configure --prefix=/usr --without-png --without-tools --without-tests \
     && make -j$(nproc) && make install
 
-# 7. COMPILE APPLICATION
+# [NEW] 7. COMPILE MINIMAL LIBSODIUM (v1.0.22-stable)
+WORKDIR /tmp/libsodium
+RUN wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.22-stable.tar.gz -O libsodium.tar.gz \
+    && tar -xvf libsodium.tar.gz --strip-components=1 \
+    && ./configure --prefix=/usr --disable-static \
+    && make -j$(nproc) && make install
+
+# 8. COMPILE APPLICATION
 WORKDIR /src
 COPY . .
 RUN make release CXX=g++-14
 
-# 8. STRIP BINARIES (Aggressive)
+# 9. STRIP BINARIES (Aggressive)
 RUN strip --strip-all /usr/lib/libtdsodbc.so \
     && strip --strip-all /usr/lib/libodbc.so.2 \
     && strip --strip-all /usr/lib/libodbcinst.so.2 \
     && strip --strip-all /usr/lib/x86_64-linux-gnu/libltdl.so.7 \
     && strip --strip-all /usr/lib/libqrencode.so.4 \
+    && strip --strip-all /usr/lib/libsodium.so.* \
     && strip --strip-all /src/apiserver \
     && if [ -f /usr/lib/libcurl.so.4 ]; then strip --strip-all /usr/lib/libcurl.so.4; \
        else strip --strip-all /usr/lib/x86_64-linux-gnu/libcurl.so.4; fi \
@@ -104,7 +111,6 @@ RUN strip --strip-all /usr/lib/libtdsodbc.so \
 FROM ubuntu:$UBUNTU_RELEASE AS chiseler
 ARG UBUNTU_RELEASE
 ARG TARGETARCH
-# USING v1.4.0 as the stable baseline
 ARG CHISEL_VERSION=v1.4.0
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -141,6 +147,8 @@ COPY --from=builder /usr/lib/libtdsodbc.so /rootfs/usr/lib/x86_64-linux-gnu/libt
 COPY --from=builder /usr/lib/libcurl.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libcurl.so.4
 COPY --from=builder /usr/lib/*/libjson-c.so.5 /rootfs/usr/lib/x86_64-linux-gnu/libjson-c.so.5
 COPY --from=builder /usr/lib/libqrencode.so.4 /rootfs/usr/lib/x86_64-linux-gnu/libqrencode.so.4
+# [NEW] Copy the aggressively stripped libsodium binaries
+COPY --from=builder /usr/lib/libsodium.so* /rootfs/usr/lib/x86_64-linux-gnu/
 
 # 5. PRE-COPY SYSTEM LIBRARIES
 COPY --from=builder \
